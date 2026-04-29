@@ -15,6 +15,7 @@ export function PriceListDetail() {
   const { toast } = useToast();
   const [priceList, setPriceList] = useState<PriceListFull | null>(null);
   const [customer, setCustomer] = useState<Customer | null>(null);
+  const [exportedPath, setExportedPath] = useState<string | null>(null);
 
   useEffect(() => {
     if (!id) return;
@@ -30,25 +31,36 @@ export function PriceListDetail() {
   async function handleExport() {
     if (!id) return;
     const result = await api.exportXlsx(id);
-    if (result.saved) toast('Exported successfully', 'success');
-    else if (result.error) toast(`Export failed: ${result.error}`, 'error');
+    if (result.saved && result.path) {
+      setExportedPath(result.path as string);
+      toast('Exported successfully', 'success');
+    } else if (result.error) {
+      toast(`Export failed: ${result.error}`, 'error');
+    }
   }
 
-  function handleMailClient() {
+  async function handleMailClient() {
     if (!customer || !priceList) return;
-    const emails = [
+    if (!exportedPath) {
+      toast('Export the file first, then open the mail client', 'error');
+      return;
+    }
+    const to = [
       customer.email_to_customer,
       customer.email_internal_copy,
       customer.email_pbp_copy,
       customer.email_pbp_common,
     ].filter(Boolean).join(';');
-    const subject = encodeURIComponent(
-      `Price List — ${customer.customer_short_name} — ${priceList.price_list_version}`
-    );
-    const body = encodeURIComponent(
-      `Dear Customer,\n\nPlease find attached the updated price list for ${customer.customer_full_name}.\n\nEffective: ${priceList.effective}\nVersion: ${priceList.price_list_version}\n\nBest regards,`
-    );
-    window.location.href = `mailto:${emails}?subject=${subject}&body=${body}`;
+    const subject = `Price List — ${customer.customer_short_name} — ${priceList.price_list_version}`;
+    const body = `Dear Customer,\n\nPlease find attached the updated price list for ${customer.customer_full_name}.\n\nEffective: ${priceList.effective}\nVersion: ${priceList.price_list_version}\n\nBest regards,`;
+    const result = await api.openMailWithAttachment({ filePath: exportedPath, to, subject, body });
+    if (!result.success) {
+      const isPermission = String(result.error).includes('-1743') || String(result.error).includes('Not authorized');
+      const msg = isPermission
+        ? 'Mail access denied. Go to System Settings → Privacy & Security → Automation → EPL Tool and enable Mail.'
+        : `Could not open mail client: ${result.error}`;
+      toast(msg, 'error');
+    }
   }
 
   if (!priceList) {
@@ -70,13 +82,19 @@ export function PriceListDetail() {
           </h1>
           <p className="text-gray-500 text-sm">{priceList.price_list_id}</p>
         </div>
-        <Button onClick={handleMailClient} variant="outline" className="gap-2" disabled={!customer}>
-          <Mail size={15} />
-          Open Mail Client
-        </Button>
         <Button onClick={handleExport} className="gap-2">
           <FileDown size={15} />
           Export XLSX
+        </Button>
+        <Button
+          onClick={handleMailClient}
+          variant="outline"
+          className="gap-2"
+          disabled={!customer || !exportedPath}
+          title={!exportedPath ? 'Export the file first' : ''}
+        >
+          <Mail size={15} />
+          Open Mail Client
         </Button>
       </div>
 

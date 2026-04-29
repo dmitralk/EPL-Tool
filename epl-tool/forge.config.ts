@@ -36,6 +36,12 @@ const config: ForgeConfig = {
     },
     name: 'EPL Tool',
     executableName: 'epl-tool',
+    // Required so macOS shows the "Allow EPL Tool to control Mail?" permission
+    // dialog instead of silently returning Apple Events error -1743.
+    extendInfo: {
+      NSAppleEventsUsageDescription:
+        'EPL Tool uses Apple Mail to compose emails with price list attachments.',
+    },
   },
   rebuildConfig: {
     forceRebuild: true,

@@ -16,7 +16,7 @@ export function Step4ExportPreview() {
   const { toast } = useToast();
   const [saving, setSaving] = useState(true);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [exported, setExported] = useState(false);
+  const [exportedPath, setExportedPath] = useState<string | null>(null);
 
   useEffect(() => {
     async function save() {
@@ -47,23 +47,32 @@ export function Step4ExportPreview() {
   async function handleExport() {
     if (!state.savedPriceListId) return;
     const result = await api.exportXlsx(state.savedPriceListId);
-    if (result.saved) {
-      setExported(true);
+    if (result.saved && result.path) {
+      setExportedPath(result.path as string);
       toast('File exported successfully', 'success');
     } else if (result.error) {
       toast(`Export failed: ${result.error}`, 'error');
     }
   }
 
-  function handleMailClient() {
+  async function handleMailClient() {
+    if (!exportedPath) {
+      toast('Export the file first, then open the mail client', 'error');
+      return;
+    }
     const customer = state.customer!;
-    const emails = [customer.email_to_customer, customer.email_internal_copy, customer.email_pbp_copy, customer.email_pbp_common]
+    const to = [customer.email_to_customer, customer.email_internal_copy, customer.email_pbp_copy, customer.email_pbp_common]
       .filter(Boolean).join(';');
-    const subject = encodeURIComponent(`Price List — ${customer.customer_short_name} — ${state.price_list_version}`);
-    const body = encodeURIComponent(
-      `Dear Customer,\n\nPlease find attached the updated price list for ${customer.customer_full_name}.\n\nEffective: ${state.effective}\nVersion: ${state.price_list_version}\n\nBest regards,`
-    );
-    window.location.href = `mailto:${emails}?subject=${subject}&body=${body}`;
+    const subject = `Price List — ${customer.customer_short_name} — ${state.price_list_version}`;
+    const body = `Dear Customer,\n\nPlease find attached the updated price list for ${customer.customer_full_name}.\n\nEffective: ${state.effective}\nVersion: ${state.price_list_version}\n\nBest regards,`;
+    const result = await api.openMailWithAttachment({ filePath: exportedPath, to, subject, body });
+    if (!result.success) {
+      const isPermission = String(result.error).includes('-1743') || String(result.error).includes('Not authorized');
+      const msg = isPermission
+        ? 'Mail access denied. Go to System Settings → Privacy & Security → Automation → EPL Tool and enable Mail.'
+        : `Could not open mail client: ${result.error}`;
+      toast(msg, 'error');
+    }
   }
 
   if (saving) {
@@ -147,19 +156,25 @@ export function Step4ExportPreview() {
 
         {/* Actions */}
         <div className="flex gap-3 mb-4">
-          <Button onClick={handleExport} className="flex-1 gap-2" variant={exported ? 'secondary' : 'default'}>
+          <Button onClick={handleExport} className="flex-1 gap-2" variant={exportedPath ? 'secondary' : 'default'}>
             <FileDown size={16} />
-            {exported ? 'Export Again' : 'Export to Excel'}
+            {exportedPath ? 'Export Again' : 'Export to Excel'}
           </Button>
-          <Button onClick={handleMailClient} variant="outline" className="flex-1 gap-2">
+          <Button
+            onClick={handleMailClient}
+            variant="outline"
+            className="flex-1 gap-2"
+            disabled={!exportedPath}
+            title={!exportedPath ? 'Export the file first' : ''}
+          >
             <Mail size={16} />
             Open Mail Client
           </Button>
         </div>
 
-        {exported && (
+        {exportedPath && (
           <div className="p-3 bg-green-50 border border-green-200 rounded-md text-sm text-green-800 mb-4">
-            File saved. Open your email client to attach and send it.
+            File saved. Click "Open Mail Client" to compose an email with the attachment.
           </div>
         )}
 

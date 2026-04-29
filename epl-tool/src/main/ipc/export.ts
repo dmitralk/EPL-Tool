@@ -1,8 +1,14 @@
-import { ipcMain, dialog } from 'electron';
+import { ipcMain, dialog, shell } from 'electron';
 import fs from 'fs';
+import os from 'os';
+import path from 'path';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
 import { getDb } from '../database';
 import { buildPriceListXlsx } from '../export/buildPriceListXlsx';
 import type { PriceListFull, Customer, PackagingRow } from '../../types';
+
+const execFileAsync = promisify(execFile);
 
 export function registerExportHandlers() {
   ipcMain.handle('export:xlsx', async (_e, price_list_id: string) => {
@@ -57,4 +63,71 @@ export function registerExportHandlers() {
       return { saved: false, error: (err as Error).message };
     }
   });
+
+  ipcMain.handle('export:open-mail-with-attachment', async (
+    _e,
+    { filePath, to, subject, body }: { filePath: string; to: string; subject: string; body: string }
+  ) => {
+    try {
+      if (process.platform === 'darwin') {
+        await openMailMac({ filePath, to, subject, body });
+      } else if (process.platform === 'win32') {
+        await openMailWin({ filePath, to, subject, body });
+      } else {
+        // Linux fallback — no attachment support via mailto
+        const url = `mailto:${to}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+        await shell.openExternal(url);
+      }
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: (err as Error).message };
+    }
+  });
+}
+
+function escapeAppleScript(s: string): string {
+  return s.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+}
+
+async function openMailMac({ filePath, to, subject, body }: { filePath: string; to: string; subject: string; body: string }) {
+  const recipients = to.split(';').map(e => e.trim()).filter(Boolean);
+  const recipientLines = recipients
+    .map(addr => `make new to recipient at end of to recipients with properties {address:"${escapeAppleScript(addr)}"}`)
+    .join('\n      ');
+
+  // AppleScript requires line breaks as literal returns, not \n
+  const bodyLines = body.split('\n').map(escapeAppleScript);
+  const contentExpr = bodyLines.length > 1
+    ? bodyLines.map(l => `"${l}"`).join(' & return & ')
+    : `"${bodyLines[0] ?? ''}"`;
+
+  const script = `tell application "Mail"
+  activate
+  set newMessage to make new outgoing message with properties {subject:"${escapeAppleScript(subject)}", content:${contentExpr}}
+  tell newMessage
+    ${recipientLines}
+    make new attachment with properties {file name:POSIX file "${filePath}"}
+    set visible to true
+  end tell
+end tell`;
+
+  const scriptPath = path.join(os.tmpdir(), 'epl-tool-mail.applescript');
+  fs.writeFileSync(scriptPath, script, 'utf8');
+  await execFileAsync('osascript', [scriptPath]);
+}
+
+async function openMailWin({ filePath, to, subject, body }: { filePath: string; to: string; subject: string; body: string }) {
+  // Requires Outlook to be installed. Each value is passed as a separate argument
+  // to avoid quoting issues in PowerShell.
+  const ps = [
+    `$ol = New-Object -ComObject Outlook.Application`,
+    `$mail = $ol.CreateItem(0)`,
+    `$mail.To = [System.Uri]::UnescapeDataString('${encodeURIComponent(to)}')`,
+    `$mail.Subject = [System.Uri]::UnescapeDataString('${encodeURIComponent(subject)}')`,
+    `$mail.Body = [System.Uri]::UnescapeDataString('${encodeURIComponent(body)}')`,
+    `$mail.Attachments.Add('${filePath.replace(/'/g, "''")}')`,
+    `$mail.Display()`,
+  ].join('; ');
+
+  await execFileAsync('powershell', ['-NoProfile', '-NonInteractive', '-Command', ps]);
 }

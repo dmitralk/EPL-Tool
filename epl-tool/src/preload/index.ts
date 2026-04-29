@@ -39,6 +39,8 @@ const api = {
 
   // Export
   exportXlsx: (price_list_id: string) => ipcRenderer.invoke('export:xlsx', price_list_id),
+  openMailWithAttachment: (params: { filePath: string; to: string; subject: string; body: string }) =>
+    ipcRenderer.invoke('export:open-mail-with-attachment', params),
 
   // Settings
   getSetting: (key: string) => ipcRenderer.invoke('settings:get', key),
