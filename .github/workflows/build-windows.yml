@@ -1,0 +1,43 @@
+name: Build Windows
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'epl-tool/**'
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    defaults:
+      run:
+        working-directory: epl-tool
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: epl-tool/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Windows package
+        run: npm run make
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: EPL-Tool-Windows
+          path: |
+            epl-tool/out/make/squirrel.windows/**
+            epl-tool/out/make/zip/win32/**
+          if-no-files-found: warn
+          retention-days: 30
