@@ -9,9 +9,10 @@ import { FuseV1Options, FuseVersion } from '@electron/fuses';
 import path from 'path';
 import fs from 'fs';
 
-// Native modules that must be copied into the packaged app alongside the asar.
-// These cannot be bundled by Vite because they contain compiled .node binaries.
-const NATIVE_MODULES = ['better-sqlite3', 'bindings', 'file-uri-to-path'];
+// Modules that must be copied into the packaged app alongside the asar.
+// better-sqlite3/bindings/file-uri-to-path: contain compiled .node binaries.
+// xlsx: uses require('fs') internally; bundling via Vite breaks that call.
+const NATIVE_MODULES = ['better-sqlite3', 'bindings', 'file-uri-to-path', 'xlsx'];
 
 function copyDirSync(src: string, dest: string) {
   if (!fs.existsSync(src)) return;

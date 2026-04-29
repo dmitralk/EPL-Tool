@@ -173,19 +173,21 @@ export function registerMigrationHandlers() {
           VALUES (?,?,?,?,?,?,?)
         `);
 
+        // Detect column layout once from the header row.
+        // 16-col layout: [0]=SAP Plant, [1]=Customer ref, [2]=Effective, [3]=Mailing date,
+        //   [4]=Customer Short Name, [5]=Version, [6]=Comments, [7]=Price Type, [8]=Discount%,
+        //   [9]=Price List ID, [10]=Product type, [11]=RIP, [12]=Product, [13]=Net price,
+        //   [14]=Currency, [15]=Unit.
+        // 15-col layout (no SAP Plant): same but shifted left by 1.
+        const header = rows[0] as unknown[];
+        const offset = String(header[0] ?? '').toLowerCase().includes('plant') ? 1 : 0;
+
         const seenPriceLists = new Set<string>();
 
         for (const r of rows.slice(1)) {
-          if (!r || (r as unknown[]).length < 10) continue;
-
-          // Detect column alignment: 16 cols (with sap_plant) or 15 (without)
-          let offset = 0;
-          const firstVal = clean(r[0]);
-          const secondVal = clean(r[1]);
-          // If second value looks like a SAP ref (starts with X) and first is short, it has sap_plant
-          if (firstVal && firstVal.length <= 5 && secondVal && secondVal.length > 3) {
-            offset = 1; // sap_plant present
-          }
+          // Skip blank/spacer rows — only process rows that have a rip code
+          const rip = clean(r[offset + 10]);
+          if (!rip) continue;
 
           const sap_plant = offset === 1 ? clean(r[0]) : null;
           const customer_ref_sap = clean(r[offset]);
@@ -197,13 +199,12 @@ export function registerMigrationHandlers() {
           let discount_pct_raw = r[offset + 7];
           const price_list_id = clean(r[offset + 8]);
           const prod_type = clean(r[offset + 9]);
-          const rip = clean(r[offset + 10]);
           const prod_name = clean(r[offset + 11]);
           const net_price = safeFloat(r[offset + 12]);
           const currency = clean(r[offset + 13]);
           const unit = clean(r[offset + 14]);
 
-          if (!customer_ref_sap || !price_list_id || !rip || net_price === null) continue;
+          if (!customer_ref_sap || !price_list_id || net_price === null) continue;
 
           // Normalize price type
           if (clean(discount_pct_raw as unknown) === 'Net Price') {

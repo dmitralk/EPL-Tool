@@ -1,6 +1,6 @@
 import ExcelJS from 'exceljs';
 import fs from 'fs';
-import type { PriceListFull, Customer, PackagingRow, AdminEmail } from '../../types';
+import type { PriceListFull, Customer, PackagingRow } from '../../types';
 
 interface ExportData {
   priceList: PriceListFull;
@@ -29,6 +29,8 @@ function formatDate(iso: string): string {
   }
 }
 
+const COL_COUNT = 6;
+
 const headerFill: ExcelJS.Fill = {
   type: 'pattern',
   pattern: 'solid',
@@ -48,6 +50,20 @@ const tableBorder: Partial<ExcelJS.Borders> = {
   right: { style: 'thin' },
 };
 
+const noFill: ExcelJS.Fill = { type: 'pattern', pattern: 'none' };
+
+// Apply "center across selection" to every cell in the row (A–F).
+// Text stays in cell A; adjacent cells must be empty for Excel to centre across them.
+// Pass fill/font to also style each cell (e.g. dark-blue EXPORT PRICES header).
+function centerAcrossRow(row: ExcelJS.Row, fill?: ExcelJS.Fill, font?: Partial<ExcelJS.Font>) {
+  for (let col = 1; col <= COL_COUNT; col++) {
+    const cell = row.getCell(col);
+    cell.alignment = { horizontal: 'centerContinuous', vertical: 'middle' };
+    if (fill) cell.fill = fill;
+    if (font) cell.font = font;
+  }
+}
+
 export async function buildPriceListXlsx(data: ExportData): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
   const ws = wb.addWorksheet('Price list');
@@ -62,54 +78,39 @@ export async function buildPriceListXlsx(data: ExportData): Promise<Buffer> {
     { width: 16 },  // F: Unit
   ];
 
-  // Logo (rows 1-2, right side)
-  if (data.logoPath && fs.existsSync(data.logoPath)) {
-    const ext = data.logoPath.split('.').pop()?.toLowerCase() as 'png' | 'jpeg' | 'gif';
-    const imageId = wb.addImage({ filename: data.logoPath, extension: ext || 'png' });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ws.addImage(imageId, { tl: { col: 3, row: 0 }, br: { col: 6, row: 2 } } as any);
-  }
-
-  // Row 1-2: empty (logo placeholder)
+  // ── Rows 1-2: empty space for logo (right side) ────────────────────────────
   ws.addRow([]);
   ws.addRow([]);
 
-  // Row 3: Mailing date
+  // ── Rows 3-6: header info ───────────────────────────────────────────────────
   const row3 = ws.addRow(['Mailing date', formatDate(data.priceList.mailing_date)]);
   row3.font = { bold: true };
 
-  // Row 4: Customer
   const row4 = ws.addRow(['Customer', data.customer.customer_full_name]);
   row4.font = { bold: true };
 
-  // Row 5: Effective + Revision
   const row5 = ws.addRow(['Effective', formatDate(data.priceList.effective), `Revision: ${data.priceList.price_list_version}`]);
   row5.font = { bold: true };
 
-  // Row 6: Customer ref
   const row6 = ws.addRow(['Customer ref.', data.customer.customer_ref_sap]);
   row6.font = { bold: true };
 
-  // Row 7: empty
+  // ── Row 7: empty ────────────────────────────────────────────────────────────
   ws.addRow([]);
 
-  // Row 8: "EXPORT PRICES" merged header
-  const row8 = ws.addRow(['EXPORT PRICES']);
-  ws.mergeCells(`A${row8.number}:F${row8.number}`);
-  row8.getCell(1).fill = headerFill;
-  row8.getCell(1).font = { ...headerFont, size: 12 };
-  row8.getCell(1).alignment = { horizontal: 'center', vertical: 'middle' };
+  // ── Row 8: "EXPORT PRICES" — center across selection, no merge ──────────────
+  // Adjacent cells must have no value (null) for centerContinuous to work in Excel.
+  const row8 = ws.addRow(['EXPORT PRICES', null, null, null, null, null]);
   row8.height = 20;
+  centerAcrossRow(row8, headerFill, { ...headerFont, size: 12 });
 
-  // Row 9: Disclaimer
+  // ── Row 9: Disclaimer — left-aligned, no merge ──────────────────────────────
   const row9 = ws.addRow(['All prices in bulk ex plant and are subject to packaging charge when no bulk is available']);
-  ws.mergeCells(`A${row9.number}:F${row9.number}`);
   row9.getCell(1).font = { italic: true, size: 9 };
-  row9.getCell(1).alignment = { wrapText: true };
+  row9.getCell(1).alignment = { horizontal: 'left', vertical: 'middle' };
 
-  // Row 10: Column headers
-  const headers = ['Product type', 'RIP code', 'Product', 'Net price\n(Currency / Unit)', 'Currency', 'Unit'];
-  const headerRow = ws.addRow(headers);
+  // ── Row 10: Column headers ──────────────────────────────────────────────────
+  const headerRow = ws.addRow(['Product type', 'RIP code', 'Product', 'Net price\n(Currency / Unit)', 'Currency', 'Unit']);
   headerRow.height = 34;
   headerRow.eachCell((cell) => {
     cell.fill = headerFill;
@@ -118,7 +119,7 @@ export async function buildPriceListXlsx(data: ExportData): Promise<Buffer> {
     cell.border = tableBorder;
   });
 
-  // Product rows
+  // ── Product rows ────────────────────────────────────────────────────────────
   for (const entry of data.priceList.entries) {
     const r = ws.addRow([
       entry.product_type,
@@ -132,34 +133,25 @@ export async function buildPriceListXlsx(data: ExportData): Promise<Buffer> {
       cell.border = tableBorder;
       cell.alignment = { vertical: 'middle' };
     });
-    // Net price: right-aligned, 2 decimal places
     const priceCell = r.getCell(4);
     priceCell.numFmt = '#,##0.00';
     priceCell.alignment = { horizontal: 'right', vertical: 'middle' };
   }
 
-  // Blank row before packaging
+  // ── Blank row before packaging ───────────────────────────────────────────────
   ws.addRow([]);
 
-  // Packaging section
+  // ── Packaging section ────────────────────────────────────────────────────────
   const packagingByType = groupBy(
     data.packaging.filter(p => p.price !== null),
     p => p.product_type
   );
 
   for (const [ptype, items] of packagingByType) {
-    // Section header
-    const secRow = ws.addRow([ptype]);
-    const lastRowNum = secRow.number;
-    ws.mergeCells(`A${lastRowNum}:F${lastRowNum}`);
-    secRow.getCell(1).fill = {
-      type: 'pattern',
-      pattern: 'solid',
-      fgColor: { argb: 'FFD6E4F7' },
-    };
-    secRow.getCell(1).font = { bold: true, size: 10 };
-    secRow.getCell(1).alignment = { horizontal: 'left', vertical: 'middle' };
+    // Section header: center across selection, no fill, no merge
+    const secRow = ws.addRow([ptype, null, null, null, null, null]);
     secRow.height = 18;
+    centerAcrossRow(secRow, noFill, { bold: true, size: 10 });
 
     for (const pkg of items) {
       const pkgRow = ws.addRow([
@@ -181,16 +173,23 @@ export async function buildPriceListXlsx(data: ExportData): Promise<Buffer> {
     ws.addRow([]);
   }
 
-  // Contact row
+  // ── Contact row — left-aligned, no merge ────────────────────────────────────
   const contactText = `For any information please contact us at: ${data.adminEmail}`;
   const contactRow = ws.addRow([contactText]);
-  const contactRowNum = contactRow.number;
-  ws.mergeCells(`A${contactRowNum}:F${contactRowNum}`);
   contactRow.getCell(1).font = { italic: true, size: 9 };
-  contactRow.getCell(1).alignment = { horizontal: 'center', vertical: 'middle' };
+  contactRow.getCell(1).alignment = { horizontal: 'left', vertical: 'middle' };
 
-  // Freeze top 10 rows
-  ws.views = [{ state: 'frozen', xSplit: 0, ySplit: 10 }];
+  // ── Sheet view: freeze top 10 rows, no gridlines ────────────────────────────
+  ws.views = [{ state: 'frozen', xSplit: 0, ySplit: 10, showGridLines: false }];
+
+  // ── Logo: added last so its anchor doesn't pre-create rows ──────────────────
+  // Covers cols D-F, rows 1-6 (right side of header block).
+  if (data.logoPath && fs.existsSync(data.logoPath)) {
+    const ext = data.logoPath.split('.').pop()?.toLowerCase() as 'png' | 'jpeg' | 'gif';
+    const imageId = wb.addImage({ filename: data.logoPath, extension: ext || 'png' });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ws.addImage(imageId, { tl: { col: 3, row: 0 }, br: { col: 6, row: 6 } } as any);
+  }
 
   const arrayBuffer = await wb.xlsx.writeBuffer();
   return Buffer.from(arrayBuffer);
