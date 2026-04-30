@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Search } from 'lucide-react';
+import { Plus, Search, FileDown, Mail } from 'lucide-react';
 import { api } from '../../lib/ipc';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
@@ -19,6 +19,9 @@ export function PriceListsScreen() {
   const [filterCustomer, setFilterCustomer] = useState('');
   const [search, setSearch] = useState('');
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkWorking, setBulkWorking] = useState(false);
+  const selectAllRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     async function load() {
@@ -38,9 +41,33 @@ export function PriceListsScreen() {
     return true;
   });
 
+  // Keep the select-all checkbox indeterminate state in sync
+  useEffect(() => {
+    if (selectAllRef.current) {
+      selectAllRef.current.indeterminate = selected.size > 0 && selected.size < filtered.length;
+    }
+  }, [selected.size, filtered.length]);
+
+  function toggleSelect(id: string) {
+    setSelected(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleSelectAll() {
+    if (selected.size === filtered.length) {
+      setSelected(new Set());
+    } else {
+      setSelected(new Set(filtered.map(pl => pl.price_list_id)));
+    }
+  }
+
   async function handleDelete(id: string) {
     await api.deletePriceList(id);
     setLists(prev => prev.filter(p => p.price_list_id !== id));
+    setSelected(prev => { const next = new Set(prev); next.delete(id); return next; });
     toast('Price list deleted', 'info');
   }
 
@@ -48,6 +75,40 @@ export function PriceListsScreen() {
     const result = await api.exportXlsx(id);
     if (result.saved) toast('Exported successfully', 'success');
     else if (result.error) toast(`Export failed: ${result.error}`, 'error');
+  }
+
+  async function handleBulkExport() {
+    setBulkWorking(true);
+    const result = await api.exportXlsxBulk([...selected]);
+    setBulkWorking(false);
+    if ((result as any).canceled) return;
+    const r = (result as any).results as { id: string; filename?: string; error?: string }[];
+    const ok = r.filter(x => !x.error).length;
+    const fail = r.filter(x => x.error).length;
+    if (fail === 0) {
+      toast(`Exported ${ok} file${ok !== 1 ? 's' : ''} to ${(result as any).folder}`, 'success');
+    } else {
+      toast(`${ok} exported, ${fail} failed`, 'error');
+    }
+  }
+
+  async function handleBulkEmail() {
+    setBulkWorking(true);
+    const result = await api.openMailBulk([...selected]);
+    setBulkWorking(false);
+    if ((result as any).canceled) return;
+    const r = (result as any).results as { id: string; filename?: string; error?: string }[];
+    const ok = r.filter(x => !x.error).length;
+    const fail = r.filter(x => x.error).length;
+    if (fail === 0) {
+      toast(`Opened ${ok} email${ok !== 1 ? 's' : ''} with attachments`, 'success');
+    } else {
+      const isPermission = r.some(x => x.error && (x.error.includes('-1743') || x.error.includes('Not authorized')));
+      const msg = isPermission
+        ? 'Mail access denied. Go to System Settings → Privacy & Security → Automation → EPL Tool and enable Mail.'
+        : `${ok} emails opened, ${fail} failed`;
+      toast(msg, 'error');
+    }
   }
 
   return (
@@ -88,11 +149,59 @@ export function PriceListsScreen() {
         </Select>
       </div>
 
+      {/* Bulk action bar */}
+      {selected.size > 0 && (
+        <div className="flex items-center gap-3 mb-4 px-4 py-2.5 bg-blue-50 border border-blue-200 rounded-lg">
+          <span className="text-sm font-medium text-blue-800">
+            {selected.size} selected
+          </span>
+          <div className="flex gap-2 ml-auto">
+            <Button
+              size="sm"
+              onClick={handleBulkExport}
+              disabled={bulkWorking}
+              className="gap-1.5"
+            >
+              <FileDown size={13} />
+              {bulkWorking ? 'Working…' : `Export (${selected.size})`}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleBulkEmail}
+              disabled={bulkWorking}
+              className="gap-1.5"
+            >
+              <Mail size={13} />
+              {bulkWorking ? 'Working…' : `Email (${selected.size})`}
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setSelected(new Set())}
+              className="text-gray-500"
+            >
+              Clear
+            </Button>
+          </div>
+        </div>
+      )}
+
       {/* Table */}
       <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-gray-50 border-b border-gray-200">
             <tr>
+              <th className="px-4 py-3 w-10">
+                <input
+                  ref={selectAllRef}
+                  type="checkbox"
+                  className="rounded border-gray-300 cursor-pointer"
+                  checked={filtered.length > 0 && selected.size === filtered.length}
+                  onChange={toggleSelectAll}
+                  disabled={filtered.length === 0}
+                />
+              </th>
               <th className="text-left px-4 py-3 font-medium text-gray-600">Customer</th>
               <th className="text-left px-4 py-3 font-medium text-gray-600">Effective</th>
               <th className="text-left px-4 py-3 font-medium text-gray-600">Mailing</th>
@@ -104,13 +213,24 @@ export function PriceListsScreen() {
           <tbody className="divide-y divide-gray-100">
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={6} className="text-center py-10 text-gray-400">
+                <td colSpan={7} className="text-center py-10 text-gray-400">
                   No price lists found
                 </td>
               </tr>
             ) : (
               filtered.map(pl => (
-                <tr key={pl.price_list_id} className="hover:bg-gray-50 transition-colors">
+                <tr
+                  key={pl.price_list_id}
+                  className={`hover:bg-gray-50 transition-colors ${selected.has(pl.price_list_id) ? 'bg-blue-50/40' : ''}`}
+                >
+                  <td className="px-4 py-3">
+                    <input
+                      type="checkbox"
+                      className="rounded border-gray-300 cursor-pointer"
+                      checked={selected.has(pl.price_list_id)}
+                      onChange={() => toggleSelect(pl.price_list_id)}
+                    />
+                  </td>
                   <td className="px-4 py-3 font-medium text-gray-900">
                     {pl.customer_short_name ?? pl.customer_ref_sap}
                   </td>
@@ -130,8 +250,12 @@ export function PriceListsScreen() {
                       <Button variant="outline" size="sm" onClick={() => handleExport(pl.price_list_id)}>
                         Export
                       </Button>
-                      <Button variant="ghost" size="sm" onClick={() => setDeleteId(pl.price_list_id)}
-                        className="text-red-500 hover:text-red-700 hover:bg-red-50">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setDeleteId(pl.price_list_id)}
+                        className="text-red-500 hover:text-red-700 hover:bg-red-50"
+                      >
                         Delete
                       </Button>
                     </div>
