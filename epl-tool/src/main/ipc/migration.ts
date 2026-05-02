@@ -1,5 +1,5 @@
 import { ipcMain, dialog } from 'electron';
-import { getDb } from '../database';
+import { getDb, isOpen } from '../database';
 import type { MigrationResult } from '../../types';
 import * as XLSX from 'xlsx';
 
@@ -43,6 +43,10 @@ export function registerMigrationHandlers() {
 
   ipcMain.handle('migration:import-excel', async (_e, filePath: string): Promise<MigrationResult> => {
     const counts = { customers: 0, products: 0, standardEpl: 0, packaging: 0, priceLists: 0, priceListEntries: 0, adminEmails: 0 };
+
+    if (!isOpen()) {
+      return { success: false, counts, error: 'No database is open. Open or create a database first (use "Change Database" in the sidebar).' };
+    }
 
     try {
       const wb = XLSX.readFile(filePath, { cellDates: false });
@@ -123,12 +127,12 @@ export function registerMigrationHandlers() {
               counts.standardEpl++;
             }
           }
-          // EUR side
-          const ripEur = clean(r[7]);
+          // EUR side — cols 8-13 (cols 6-7 are empty separators between the two tables)
+          const ripEur = clean(r[9]);
           if (ripEur) {
-            const price = safeFloat(r[9]);
+            const price = safeFloat(r[11]);
             if (price !== null) {
-              insertEpl.run('EUR', clean(r[6]), ripEur, clean(r[8]), price, clean(r[11]) ?? '100 KG');
+              insertEpl.run('EUR', clean(r[8]), ripEur, clean(r[10]), price, clean(r[13]) ?? '100 KG');
               counts.standardEpl++;
             }
           }
@@ -217,6 +221,8 @@ export function registerMigrationHandlers() {
 
           if (!seenPriceLists.has(price_list_id)) {
             seenPriceLists.add(price_list_id);
+            // Clear existing entries so re-importing doesn't create duplicates
+            db.prepare('DELETE FROM price_list_entries WHERE price_list_id = ?').run(price_list_id);
             insertPL.run(
               price_list_id, customer_ref_sap, sap_plant,
               effective, mailing_date,

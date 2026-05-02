@@ -8,6 +8,10 @@ import { PriceListsScreen } from './screens/PriceLists/PriceListsScreen';
 import { PriceListDetail } from './screens/PriceLists/PriceListDetail';
 import { CreatePriceList } from './screens/PriceLists/CreatePriceList/index';
 import { SettingsScreen } from './screens/Settings/SettingsScreen';
+import { CustomersScreen } from './screens/Customers/CustomersScreen';
+import { CustomerDetail } from './screens/Customers/CustomerDetail';
+import { MasterDataScreen } from './screens/MasterData/MasterDataScreen';
+import { StandardEplScreen } from './screens/StandardEpl/StandardEplScreen';
 import { ToastProvider } from './components/ui/toast';
 
 function DbGuard({ children }: { children: React.ReactNode }) {
@@ -44,6 +48,10 @@ export function App() {
             <Route path="price-lists" element={<PriceListsScreen />} />
             <Route path="price-lists/create" element={<CreatePriceList />} />
             <Route path="price-lists/:id" element={<PriceListDetail />} />
+            <Route path="customers" element={<CustomersScreen />} />
+            <Route path="customers/:ref" element={<CustomerDetail />} />
+            <Route path="master-data" element={<MasterDataScreen />} />
+            <Route path="standard-epl" element={<StandardEplScreen />} />
             <Route path="settings" element={<SettingsScreen />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />

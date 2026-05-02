@@ -23,7 +23,9 @@ const api = {
 
   // Standard EPL
   getStandardEpl: (currency?: 'USD' | 'EUR') => ipcRenderer.invoke('standard-epl:list', currency),
+  getStandardEplCombined: () => ipcRenderer.invoke('standard-epl:list-combined'),
   updateStandardEplPrice: (id: number, price: number) => ipcRenderer.invoke('standard-epl:update-price', id, price),
+  upsertStandardEpl: (data: unknown) => ipcRenderer.invoke('standard-epl:upsert', data),
 
   // Packaging
   getPackaging: (version?: string) => ipcRenderer.invoke('packaging:list', version),

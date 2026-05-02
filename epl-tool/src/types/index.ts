@@ -99,6 +99,20 @@ export interface CreatePriceListInput {
   entries: Omit<PriceListEntry, 'id' | 'price_list_id'>[];
 }
 
+export interface CombinedEplRow {
+  id: number;
+  rip_code: string;
+  product_type: string;
+  product_name: string;
+  plant: string | null;
+  usd_id: number | null;
+  usd_price: number | null;
+  usd_unit: string | null;
+  eur_id: number | null;
+  eur_price: number | null;
+  eur_unit: string | null;
+}
+
 export interface MigrationResult {
   success: boolean;
   counts: {

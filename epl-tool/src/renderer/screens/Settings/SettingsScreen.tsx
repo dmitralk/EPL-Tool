@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { api } from '../../lib/ipc';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
@@ -9,6 +10,8 @@ import type { AdminEmail } from '../../../types';
 
 export function SettingsScreen() {
   const { toast } = useToast();
+  const navigate = useNavigate();
+  const [dbOpen, setDbOpen] = useState(true);
   const [dbPath, setDbPath] = useState<string | null>(null);
   const [logoPath, setLogoPath] = useState<string | null>(null);
   const [adminEmails, setAdminEmails] = useState<AdminEmail[]>([]);
@@ -19,11 +22,13 @@ export function SettingsScreen() {
 
   useEffect(() => {
     async function load() {
-      const [path, logo, emails] = await Promise.all([
+      const [open, path, logo, emails] = await Promise.all([
+        api.dbIsOpen(),
         api.dbGetPath(),
         api.getSetting('logo_path'),
         api.getAdminEmails(),
       ]);
+      setDbOpen(Boolean(open));
       setDbPath(path);
       setLogoPath(logo);
       setAdminEmails(emails as AdminEmail[]);
@@ -67,6 +72,13 @@ export function SettingsScreen() {
   return (
     <div className="p-6 max-w-3xl mx-auto space-y-5">
       <h1 className="text-2xl font-bold text-gray-900">Settings</h1>
+
+      {!dbOpen && (
+        <div className="flex items-center justify-between gap-4 px-4 py-3 bg-amber-50 border border-amber-300 rounded-lg text-sm text-amber-800">
+          <span>No database is open. Open or create one before importing data.</span>
+          <Button size="sm" onClick={() => navigate('/setup')}>Open Database</Button>
+        </div>
+      )}
 
       {/* Database */}
       <Card>
@@ -142,9 +154,12 @@ export function SettingsScreen() {
           <p className="text-sm text-gray-600 mb-3">
             Import customers, products, standard EPL prices, packaging, and price list history from your <strong>All_Prices.xlsx</strong> file.
           </p>
-          <Button onClick={() => setImportOpen(true)} variant="outline">
+          <Button onClick={() => setImportOpen(true)} variant="outline" disabled={!dbOpen}>
             Import from Excel…
           </Button>
+          {!dbOpen && (
+            <p className="text-xs text-amber-600 mt-1">Open a database first.</p>
+          )}
         </CardContent>
       </Card>
 

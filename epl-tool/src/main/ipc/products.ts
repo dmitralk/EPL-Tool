@@ -21,10 +21,20 @@ export function registerProductHandlers() {
     const db = getDb();
     const fields = Object.keys(data).filter(k => k !== 'id').map(k => `${k} = @${k}`).join(', ');
     db.prepare(`UPDATE products SET ${fields} WHERE id = @id`).run({ ...data, id });
-    return db.prepare('SELECT * FROM products WHERE id = ?').get(id);
+    const updated = db.prepare('SELECT * FROM products WHERE id = ?').get(id) as Product;
+    if ('product_name' in data || 'product_type' in data) {
+      db.prepare('UPDATE standard_epl SET product_name = ?, product_type = ? WHERE rip_code = ?')
+        .run(updated.product_name, updated.product_type, updated.rip_code);
+    }
+    return updated;
   });
 
   ipcMain.handle('products:delete', (_e, id: number) => {
-    getDb().prepare('DELETE FROM products WHERE id = ?').run(id);
+    const db = getDb();
+    const product = db.prepare('SELECT rip_code FROM products WHERE id = ?').get(id) as Product | undefined;
+    if (product) {
+      db.prepare('DELETE FROM standard_epl WHERE rip_code = ?').run(product.rip_code);
+    }
+    db.prepare('DELETE FROM products WHERE id = ?').run(id);
   });
 }
