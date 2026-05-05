@@ -152,13 +152,14 @@ export function registerMigrationHandlers() {
           const col1 = clean(r[1]);
           const col2 = clean(r[2]);
 
-          if (col0 && col0 !== 'Packagin Version' && col0 !== 'Packaging Version') {
+          // clean() removes spaces, so compare against space-stripped header strings
+          if (col0 && col0 !== 'PackaginVersion' && col0 !== 'PackagingVersion') {
             version = col0;
           }
           if (!version || (!col1 && !col2)) { sortOrder++; continue; }
 
           const price = safeFloat(r[3]);
-          const currency = clean(r[4]) ?? version.includes('EUR') ? 'EUR' : 'USD';
+          const currency = clean(r[4]) ?? (version.includes('EUR') ? 'EUR' : 'USD');
           insertPkg.run(version, col1 ?? '', col2 ?? '', price, currency, clean(r[5]), sortOrder++);
           counts.packaging++;
         }
