@@ -3,13 +3,14 @@ import { Search } from 'lucide-react';
 import { api } from '../../lib/ipc';
 import { Input } from '../../components/ui/input';
 import { useToast } from '../../components/ui/toast';
-import type { CombinedEplRow } from '../../../types';
+import type { CombinedEplRow, Unit } from '../../../types';
 
 type EditingCell = { id: number; currency: 'USD' | 'EUR'; field: 'price' | 'unit' };
 
 export function StandardEplScreen() {
   const { toast } = useToast();
   const [rows, setRows] = useState<CombinedEplRow[]>([]);
+  const [units, setUnits] = useState<Unit[]>([]);
   const [search, setSearch] = useState('');
   const [editing, setEditing] = useState<EditingCell | null>(null);
   const [draftValue, setDraftValue] = useState('');
@@ -17,11 +18,17 @@ export function StandardEplScreen() {
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    api.getStandardEplCombined().then(r => setRows(r as CombinedEplRow[]));
+    Promise.all([
+      api.getStandardEplCombined(),
+      api.getUnits(),
+    ]).then(([r, u]) => {
+      setRows(r as CombinedEplRow[]);
+      setUnits(u as Unit[]);
+    });
   }, []);
 
   useEffect(() => {
-    if (editing) inputRef.current?.select();
+    if (editing?.field === 'price') inputRef.current?.select();
   }, [editing]);
 
   const filtered = rows.filter(r => {
@@ -34,12 +41,14 @@ export function StandardEplScreen() {
     );
   });
 
+  const defaultUnit = units[0]?.name ?? '100 KG';
+
   function startEdit(row: CombinedEplRow, currency: 'USD' | 'EUR', field: 'price' | 'unit') {
     const current = currency === 'USD'
       ? (field === 'price' ? row.usd_price : row.usd_unit)
       : (field === 'price' ? row.eur_price : row.eur_unit);
     setEditing({ id: row.id, currency, field });
-    setDraftValue(current !== null && current !== undefined ? String(current) : '');
+    setDraftValue(current !== null && current !== undefined ? String(current) : (field === 'unit' ? defaultUnit : ''));
   }
 
   function cancelEdit() {
@@ -47,24 +56,20 @@ export function StandardEplScreen() {
     setDraftValue('');
   }
 
-  async function commitEdit(row: CombinedEplRow) {
+  async function commitEdit(row: CombinedEplRow, valueOverride?: string) {
     if (!editing) return;
     const { currency, field } = editing;
+    const value = valueOverride ?? draftValue;
 
     const existingId = currency === 'USD' ? row.usd_id : row.eur_id;
     const currentPrice = currency === 'USD' ? row.usd_price : row.eur_price;
     const currentUnit = currency === 'USD' ? row.usd_unit : row.eur_unit;
 
-    const newPrice = field === 'price' ? parseFloat(draftValue) : (currentPrice ?? 0);
-    const newUnit = field === 'unit' ? draftValue.trim() : (currentUnit ?? '100 KG');
+    const newPrice = field === 'price' ? parseFloat(value) : (currentPrice ?? 0);
+    const newUnit = field === 'unit' ? value : (currentUnit ?? defaultUnit);
 
     if (field === 'price' && (isNaN(newPrice) || newPrice < 0)) {
       toast('Invalid price', 'error');
-      cancelEdit();
-      return;
-    }
-    if (field === 'unit' && !newUnit) {
-      toast('Unit cannot be empty', 'error');
       cancelEdit();
       return;
     }
@@ -91,13 +96,12 @@ export function StandardEplScreen() {
           product_name: row.product_name,
           currency,
           net_price: field === 'price' ? newPrice : 0,
-          unit: field === 'unit' ? newUnit : '100 KG',
+          unit: newUnit,
         });
       }
-      // Refresh the row in local state
       const updated = await api.getStandardEplCombined();
       setRows(updated as CombinedEplRow[]);
-      toast('Price updated', 'success');
+      toast('Saved', 'success');
     } catch {
       toast('Failed to save', 'error');
     } finally {
@@ -105,11 +109,6 @@ export function StandardEplScreen() {
       setEditing(null);
       setDraftValue('');
     }
-  }
-
-  function handleKeyDown(e: React.KeyboardEvent, row: CombinedEplRow) {
-    if (e.key === 'Enter') commitEdit(row);
-    if (e.key === 'Escape') cancelEdit();
   }
 
   function PriceCell({ row, currency }: { row: CombinedEplRow; currency: 'USD' | 'EUR' }) {
@@ -129,7 +128,7 @@ export function StandardEplScreen() {
             className="w-24 text-sm border border-blue-400 rounded px-2 py-0.5 focus:outline-none focus:ring-1 focus:ring-blue-500"
             value={draftValue}
             onChange={e => setDraftValue(e.target.value)}
-            onKeyDown={e => handleKeyDown(e, row)}
+            onKeyDown={e => { if (e.key === 'Enter') commitEdit(row); if (e.key === 'Escape') cancelEdit(); }}
             onBlur={() => commitEdit(row)}
             disabled={saving}
           />
@@ -143,24 +142,31 @@ export function StandardEplScreen() {
             {price !== null ? price.toFixed(2) : 'no price'}
           </button>
         )}
-        {/* Unit */}
+        {/* Unit — select dropdown */}
         {isEditingUnit ? (
-          <input
-            ref={inputRef}
-            className="w-20 text-xs border border-blue-400 rounded px-2 py-0.5 focus:outline-none focus:ring-1 focus:ring-blue-500"
+          <select
+            autoFocus
+            className="text-xs border border-blue-400 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-blue-500 bg-white"
             value={draftValue}
-            onChange={e => setDraftValue(e.target.value)}
-            onKeyDown={e => handleKeyDown(e, row)}
-            onBlur={() => commitEdit(row)}
+            onChange={e => {
+              const chosen = e.target.value;
+              setDraftValue(chosen);
+              commitEdit(row, chosen);
+            }}
+            onBlur={() => cancelEdit()}
             disabled={saving}
-          />
+          >
+            {units.map(u => (
+              <option key={u.id} value={u.name}>{u.name}</option>
+            ))}
+          </select>
         ) : (
           <button
             className="text-xs text-gray-400 hover:text-blue-600 hover:bg-blue-50 px-1 py-0.5 rounded cursor-pointer transition-colors"
             onClick={() => startEdit(row, currency, 'unit')}
-            title="Click to edit unit"
+            title="Click to change unit"
           >
-            {unit ?? '—'}
+            {unit ?? defaultUnit}
           </button>
         )}
       </div>

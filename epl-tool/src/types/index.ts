@@ -81,6 +81,11 @@ export interface PriceListFull extends PriceListHeader {
   entries: PriceListEntry[];
 }
 
+export interface Unit {
+  id: number;
+  name: string;
+}
+
 export interface AdminEmail {
   id: number;
   email_name: string;

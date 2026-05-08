@@ -98,7 +98,12 @@ export function registerExportHandlers() {
     return { canceled: false, folder, results };
   });
 
-  ipcMain.handle('export:open-mail-bulk', async (_e, ids: string[]) => {
+  ipcMain.handle('export:open-mail-bulk', async (
+    _e,
+    ids: string[],
+    subjectTemplate: string,
+    bodyTemplate: string,
+  ) => {
     const { filePaths, canceled } = await dialog.showOpenDialog({
       properties: ['openDirectory', 'createDirectory'],
       message: 'Choose folder to save files before opening emails',
@@ -109,6 +114,10 @@ export function registerExportHandlers() {
     const folder = filePaths[0];
     const results: { id: string; filename?: string; error?: string }[] = [];
 
+    function applyTemplate(template: string, vars: Record<string, string>): string {
+      return template.replace(/\{(\w+)\}/g, (_, key) => vars[key] ?? `{${key}}`);
+    }
+
     for (const id of ids) {
       try {
         const data = fetchExportData(db, id);
@@ -118,10 +127,16 @@ export function registerExportHandlers() {
         const buffer = await buildPriceListXlsx(data);
         fs.writeFileSync(filePath, buffer);
 
+        const vars = {
+          customer: customer.customer_short_name,
+          customer_full: customer.customer_full_name,
+          version: priceList.price_list_version,
+          effective: priceList.effective,
+        };
         const to = [customer.email_to_customer, customer.email_internal_copy, customer.email_pbp_copy, customer.email_pbp_common]
           .filter(Boolean).join(';');
-        const subject = `Price List — ${customer.customer_short_name} — ${priceList.price_list_version}`;
-        const body = `Dear Customer,\n\nPlease find attached the updated price list for ${customer.customer_full_name}.\n\nEffective: ${priceList.effective}\nVersion: ${priceList.price_list_version}\n\nBest regards,`;
+        const subject = applyTemplate(subjectTemplate, vars);
+        const body = applyTemplate(bodyTemplate, vars);
 
         if (process.platform === 'darwin') {
           await openMailMac({ filePath, to, subject, body });

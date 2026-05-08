@@ -72,6 +72,20 @@ export function registerSettingsHandlers() {
     }
   });
 
+  ipcMain.handle('settings:get-units', () => {
+    return getDb().prepare('SELECT * FROM units ORDER BY name').all();
+  });
+
+  ipcMain.handle('settings:create-unit', (_e, name: string) => {
+    const db = getDb();
+    const result = db.prepare('INSERT INTO units (name) VALUES (?)').run(name.trim());
+    return db.prepare('SELECT * FROM units WHERE id = ?').get(result.lastInsertRowid);
+  });
+
+  ipcMain.handle('settings:delete-unit', (_e, id: number) => {
+    getDb().prepare('DELETE FROM units WHERE id = ?').run(id);
+  });
+
   ipcMain.handle('settings:select-logo', async () => {
     const result = await dialog.showOpenDialog({
       properties: ['openFile'],

@@ -6,12 +6,13 @@ import { Select } from '../../../components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '../../../components/ui/card';
 import { todayISO, nextVersion } from '../../../lib/utils';
 import { useWizard } from './index';
-import type { Customer } from '../../../../types';
+import type { Customer, PriceListFull } from '../../../../types';
 
 export function Step1SelectCustomer() {
   const { state, dispatch } = useWizard();
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [loadingPrev, setLoadingPrev] = useState(false);
 
   useEffect(() => {
     api.getCustomers().then(c => setCustomers(c as Customer[]));
@@ -19,13 +20,35 @@ export function Step1SelectCustomer() {
 
   const selectedCustomer = state.customer;
 
-  function handleCustomerChange(ref: string) {
+  async function handleCustomerChange(ref: string) {
     const c = customers.find(c => c.customer_ref_sap === ref) ?? null;
-    if (c) {
-      dispatch({ type: 'SET_CUSTOMER', customer: c });
-      // Auto-suggest next version
-      const nextVer = nextVersion(c.last_price_list_version);
-      dispatch({ type: 'SET_FIELD', field: 'price_list_version', value: nextVer });
+    if (!c) return;
+    dispatch({ type: 'SET_CUSTOMER', customer: c });
+    const nextVer = nextVersion(c.last_price_list_version);
+    dispatch({ type: 'SET_FIELD', field: 'price_list_version', value: nextVer });
+
+    // Fetch the latest price list for this customer to pre-populate products
+    setLoadingPrev(true);
+    try {
+      const lists = await api.getPriceLists({ customer_ref_sap: ref }) as { price_list_id: string }[];
+      if (lists.length === 0) {
+        dispatch({ type: 'SET_PREVIOUS_ENTRIES', entries: null });
+      } else {
+        const latest = await api.getPriceList(lists[0].price_list_id) as PriceListFull;
+        dispatch({
+          type: 'SET_PREVIOUS_ENTRIES',
+          entries: latest.entries.map(e => ({
+            product_type: e.product_type,
+            rip_code: e.rip_code,
+            product_name: e.product_name,
+            net_price: e.net_price,
+            currency: e.currency,
+            unit: e.unit,
+          })),
+        });
+      }
+    } finally {
+      setLoadingPrev(false);
     }
   }
 
@@ -67,6 +90,19 @@ export function Step1SelectCustomer() {
           {selectedCustomer && (
             <div className="p-3 bg-blue-50 rounded-md text-sm text-blue-800">
               <strong>{selectedCustomer.customer_full_name}</strong> · {selectedCustomer.country} · {selectedCustomer.currency} · Packaging: {selectedCustomer.packaging_version}
+            </div>
+          )}
+
+          {loadingPrev && (
+            <div className="text-xs text-gray-400 flex items-center gap-1">
+              <span className="animate-spin">⟳</span> Checking previous price lists…
+            </div>
+          )}
+          {!loadingPrev && state.previousEntries !== undefined && (
+            <div className={`p-3 rounded-md text-sm ${state.previousEntries === null ? 'bg-amber-50 text-amber-800 border border-amber-200' : 'bg-green-50 text-green-800 border border-green-200'}`}>
+              {state.previousEntries === null
+                ? 'No previous price list found — you will add products manually in Step 3.'
+                : `${state.previousEntries.length} product(s) from the latest price list will be pre-loaded.`}
             </div>
           )}
 

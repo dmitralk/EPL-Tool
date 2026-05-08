@@ -6,7 +6,7 @@ import { Button } from '../../components/ui/button';
 import { Input, Label } from '../../components/ui/input';
 import { useToast } from '../../components/ui/toast';
 import { Dialog } from '../../components/ui/dialog';
-import type { AdminEmail } from '../../../types';
+import type { AdminEmail, Unit } from '../../../types';
 
 export function SettingsScreen() {
   const { toast } = useToast();
@@ -16,22 +16,27 @@ export function SettingsScreen() {
   const [logoPath, setLogoPath] = useState<string | null>(null);
   const [adminEmails, setAdminEmails] = useState<AdminEmail[]>([]);
   const [editingEmail, setEditingEmail] = useState<{ id: number; value: string } | null>(null);
+  const [units, setUnits] = useState<Unit[]>([]);
+  const [newUnit, setNewUnit] = useState('');
+  const [addingUnit, setAddingUnit] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState<string | null>(null);
 
   useEffect(() => {
     async function load() {
-      const [open, path, logo, emails] = await Promise.all([
+      const [open, path, logo, emails, unitList] = await Promise.all([
         api.dbIsOpen(),
         api.dbGetPath(),
         api.getSetting('logo_path'),
         api.getAdminEmails(),
+        api.getUnits(),
       ]);
       setDbOpen(Boolean(open));
       setDbPath(path);
       setLogoPath(logo);
       setAdminEmails(emails as AdminEmail[]);
+      setUnits(unitList as Unit[]);
     }
     load();
   }, []);
@@ -50,6 +55,26 @@ export function SettingsScreen() {
     setAdminEmails(prev => prev.map(e => e.id === editingEmail.id ? { ...e, email: editingEmail.value } : e));
     setEditingEmail(null);
     toast('Email updated', 'success');
+  }
+
+  async function handleAddUnit() {
+    const name = newUnit.trim();
+    if (!name) return;
+    try {
+      const created = await api.createUnit(name);
+      setUnits(prev => [...prev, created as Unit].sort((a, b) => a.name.localeCompare(b.name)));
+      setNewUnit('');
+      setAddingUnit(false);
+      toast('Unit added', 'success');
+    } catch {
+      toast('Unit already exists', 'error');
+    }
+  }
+
+  async function handleDeleteUnit(id: number) {
+    await api.deleteUnit(id);
+    setUnits(prev => prev.filter(u => u.id !== id));
+    toast('Unit deleted', 'success');
   }
 
   async function handleImport() {
@@ -144,6 +169,50 @@ export function SettingsScreen() {
               ))}
             </div>
           )}
+        </CardContent>
+      </Card>
+
+      {/* Units */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <CardTitle>Standard Units</CardTitle>
+            <Button size="sm" variant="outline" onClick={() => setAddingUnit(true)}>+ Add Unit</Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-2">
+            {units.map(u => (
+              <div key={u.id} className="flex items-center justify-between gap-3 py-1">
+                <span className="text-sm font-mono text-gray-900">{u.name}</span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-red-500 hover:text-red-700 hover:bg-red-50 h-6 px-2 text-xs"
+                  onClick={() => handleDeleteUnit(u.id)}
+                >
+                  Remove
+                </Button>
+              </div>
+            ))}
+          </div>
+          {addingUnit && (
+            <div className="flex gap-2 mt-3">
+              <Input
+                autoFocus
+                placeholder="e.g. 100 LB"
+                value={newUnit}
+                onChange={e => setNewUnit(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') handleAddUnit(); if (e.key === 'Escape') setAddingUnit(false); }}
+                className="flex-1"
+              />
+              <Button size="sm" onClick={handleAddUnit}>Add</Button>
+              <Button size="sm" variant="outline" onClick={() => { setAddingUnit(false); setNewUnit(''); }}>Cancel</Button>
+            </div>
+          )}
+          <p className="text-xs text-gray-400 mt-3">
+            These units appear in the Standard EPL price editor.
+          </p>
         </CardContent>
       </Card>
 

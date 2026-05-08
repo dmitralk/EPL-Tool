@@ -15,20 +15,43 @@ export function Step2ConfigurePricing() {
   const [error, setError] = useState('');
 
   const currency = state.customer!.currency;
+  const prevEntries = state.previousEntries ?? []; // treat undefined/null as empty
+  const hasPrevious = state.previousEntries !== null && state.previousEntries !== undefined;
 
   useEffect(() => {
     api.getStandardEpl(currency).then(rows => setEplRows(rows as StandardEplRow[]));
   }, [currency]);
 
-  function computeLines(discountPct: number): ProductLine[] {
-    return eplRows.map(row => ({
-      product_type: row.product_type,
-      rip_code: row.rip_code,
-      product_name: row.product_name,
-      net_price: Math.round(row.net_price * (1 - discountPct / 100) * 100) / 100,
-      currency: row.currency,
-      unit: row.unit,
-    }));
+  // Build an index of standard EPL prices by rip_code for quick lookup
+  const eplByRip = new Map(eplRows.map(r => [r.rip_code, r]));
+
+  function computeDiscountLines(discountPct: number): ProductLine[] {
+    return prevEntries.map(prev => {
+      const epl = eplByRip.get(prev.rip_code);
+      const basePrice = epl?.net_price ?? prev.net_price;
+      return {
+        product_type: prev.product_type,
+        rip_code: prev.rip_code,
+        product_name: prev.product_name,
+        net_price: Math.round(basePrice * (1 - discountPct / 100) * 100) / 100,
+        currency: prev.currency,
+        unit: epl?.unit ?? prev.unit,
+      };
+    });
+  }
+
+  function computeNetPriceLines(): ProductLine[] {
+    return prevEntries.map(prev => {
+      const epl = eplByRip.get(prev.rip_code);
+      return {
+        product_type: prev.product_type,
+        rip_code: prev.rip_code,
+        product_name: prev.product_name,
+        net_price: prev.net_price,
+        currency: prev.currency,
+        unit: epl?.unit ?? prev.unit,
+      };
+    });
   }
 
   function handleNext() {
@@ -39,28 +62,17 @@ export function Step2ConfigurePricing() {
         return;
       }
       dispatch({ type: 'SET_FIELD', field: 'discount_percent', value: pct });
-      dispatch({ type: 'SET_PRODUCT_LINES', lines: computeLines(pct) });
+      dispatch({ type: 'SET_PRODUCT_LINES', lines: computeDiscountLines(pct) });
     } else {
       dispatch({ type: 'SET_FIELD', field: 'discount_percent', value: null });
-      // For Net Price mode: pre-populate with EPL prices as starting point
-      if (state.product_lines.length === 0) {
-        dispatch({
-          type: 'SET_PRODUCT_LINES', lines: eplRows.map(row => ({
-            product_type: row.product_type,
-            rip_code: row.rip_code,
-            product_name: row.product_name,
-            net_price: row.net_price,
-            currency: row.currency,
-            unit: row.unit,
-          }))
-        });
-      }
+      dispatch({ type: 'SET_PRODUCT_LINES', lines: computeNetPriceLines() });
     }
     dispatch({ type: 'SET_STEP', step: 3 });
   }
 
-  const preview = state.price_type === 'Discount' && discountInput
-    ? computeLines(parseFloat(discountInput) || 0)
+  const discountPct = parseFloat(discountInput) || 0;
+  const preview = state.price_type === 'Discount' && discountInput && prevEntries.length > 0
+    ? computeDiscountLines(discountPct)
     : [];
 
   return (
@@ -68,6 +80,13 @@ export function Step2ConfigurePricing() {
       <CardHeader><CardTitle>Step 2 — Configure Pricing</CardTitle></CardHeader>
       <CardContent>
         <div className="space-y-5">
+          {/* Source info */}
+          <div className={`p-3 rounded-md text-sm ${hasPrevious ? 'bg-green-50 text-green-800 border border-green-200' : 'bg-amber-50 text-amber-800 border border-amber-200'}`}>
+            {hasPrevious
+              ? `${prevEntries.length} product(s) from the latest price list will be used as the starting point. You can add or remove products in the next step.`
+              : 'No previous price list — the product list will start empty. You will add products in the next step.'}
+          </div>
+
           {/* Mode toggle */}
           <div>
             <Label>Pricing Method</Label>
@@ -112,48 +131,51 @@ export function Step2ConfigurePricing() {
 
           {state.price_type === 'Net Price' && (
             <div className="p-3 bg-blue-50 rounded-md text-sm text-blue-700">
-              You will enter prices manually in the next step. Standard EPL prices are pre-loaded as a starting point.
+              {hasPrevious
+                ? 'Previous prices are pre-loaded. You can edit each price in the next step.'
+                : 'You will enter prices manually in the next step after adding products.'}
             </div>
           )}
 
-          {/* Standard EPL reference table */}
-          <div>
-            <div className="text-sm font-medium text-gray-700 mb-2">
-              Standard EPL — {currency} ({eplRows.length} products)
-            </div>
-            <div className="border border-gray-200 rounded-md overflow-hidden max-h-64 overflow-y-auto">
-              <table className="w-full text-xs">
-                <thead className="bg-gray-50 sticky top-0">
-                  <tr>
-                    <th className="text-left px-3 py-2 font-medium text-gray-600">RIP</th>
-                    <th className="text-left px-3 py-2 font-medium text-gray-600">Product</th>
-                    <th className="text-right px-3 py-2 font-medium text-gray-600">Standard Price</th>
-                    {preview.length > 0 && (
-                      <th className="text-right px-3 py-2 font-medium text-blue-600">
-                        After {discountInput}% disc.
-                      </th>
-                    )}
-                    <th className="text-left px-3 py-2 font-medium text-gray-600">Unit</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {eplRows.map((row, i) => (
-                    <tr key={row.id} className="hover:bg-gray-50">
-                      <td className="px-3 py-1.5 font-mono text-gray-500">{row.rip_code}</td>
-                      <td className="px-3 py-1.5 text-gray-800">{row.product_name}</td>
-                      <td className="px-3 py-1.5 text-right text-gray-700">{row.net_price.toFixed(2)}</td>
-                      {preview.length > 0 && (
-                        <td className="px-3 py-1.5 text-right text-blue-700 font-medium">
-                          {preview[i]?.net_price.toFixed(2)}
-                        </td>
-                      )}
-                      <td className="px-3 py-1.5 text-gray-500">{row.unit}</td>
+          {/* Preview table — only shown when there are previous products and discount is set */}
+          {preview.length > 0 && (
+            <div>
+              <div className="text-sm font-medium text-gray-700 mb-2">
+                Price preview — {currency} ({preview.length} products, {discountInput}% discount)
+              </div>
+              <div className="border border-gray-200 rounded-md overflow-hidden max-h-56 overflow-y-auto">
+                <table className="w-full text-xs">
+                  <thead className="bg-gray-50 sticky top-0">
+                    <tr>
+                      <th className="text-left px-3 py-2 font-medium text-gray-600">RIP</th>
+                      <th className="text-left px-3 py-2 font-medium text-gray-600">Product</th>
+                      <th className="text-right px-3 py-2 font-medium text-gray-600">EPL Base</th>
+                      <th className="text-right px-3 py-2 font-medium text-blue-600">After disc.</th>
+                      <th className="text-left px-3 py-2 font-medium text-gray-600">Unit</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {prevEntries.map((prev, i) => {
+                      const epl = eplByRip.get(prev.rip_code);
+                      return (
+                        <tr key={prev.rip_code} className="hover:bg-gray-50">
+                          <td className="px-3 py-1.5 font-mono text-gray-500">{prev.rip_code}</td>
+                          <td className="px-3 py-1.5 text-gray-800">{prev.product_name}</td>
+                          <td className="px-3 py-1.5 text-right text-gray-500">
+                            {epl ? epl.net_price.toFixed(2) : <span className="italic text-gray-400">prev</span>}
+                          </td>
+                          <td className="px-3 py-1.5 text-right text-blue-700 font-medium">
+                            {preview[i]?.net_price.toFixed(2)}
+                          </td>
+                          <td className="px-3 py-1.5 text-gray-500">{epl?.unit ?? prev.unit}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             </div>
-          </div>
+          )}
 
           <div className="flex justify-between pt-2">
             <Button variant="outline" onClick={() => dispatch({ type: 'SET_STEP', step: 1 })}>

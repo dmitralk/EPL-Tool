@@ -6,10 +6,13 @@ import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { Select } from '../../components/ui/select';
 import { Badge } from '../../components/ui/badge';
-import { ConfirmDialog } from '../../components/ui/dialog';
+import { ConfirmDialog, Dialog } from '../../components/ui/dialog';
 import { useToast } from '../../components/ui/toast';
 import { formatDate } from '../../lib/utils';
 import type { PriceListHeader, Customer } from '../../../types';
+
+const DEFAULT_SUBJECT = 'Price List — {customer} — {version}';
+const DEFAULT_BODY = `Dear Customer,\n\nPlease find attached the updated price list for {customer_full}.\n\nEffective: {effective}\nVersion: {version}\n\nBest regards,`;
 
 export function PriceListsScreen() {
   const navigate = useNavigate();
@@ -21,13 +24,23 @@ export function PriceListsScreen() {
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkWorking, setBulkWorking] = useState(false);
+  const [composeOpen, setComposeOpen] = useState(false);
+  const [emailSubject, setEmailSubject] = useState(DEFAULT_SUBJECT);
+  const [emailBody, setEmailBody] = useState(DEFAULT_BODY);
   const selectAllRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     async function load() {
-      const [l, c] = await Promise.all([api.getPriceLists(), api.getCustomers()]);
+      const [l, c, savedSubject, savedBody] = await Promise.all([
+        api.getPriceLists(),
+        api.getCustomers(),
+        api.getSetting('email_subject_template'),
+        api.getSetting('email_body_template'),
+      ]);
       setLists(l as PriceListHeader[]);
       setCustomers(c as Customer[]);
+      if (savedSubject) setEmailSubject(savedSubject);
+      if (savedBody) setEmailBody(savedBody);
     }
     load();
   }, []);
@@ -92,9 +105,14 @@ export function PriceListsScreen() {
     }
   }
 
-  async function handleBulkEmail() {
+  async function handleSendEmails() {
+    setComposeOpen(false);
     setBulkWorking(true);
-    const result = await api.openMailBulk([...selected]);
+    await Promise.all([
+      api.setSetting('email_subject_template', emailSubject),
+      api.setSetting('email_body_template', emailBody),
+    ]);
+    const result = await api.openMailBulk([...selected], emailSubject, emailBody);
     setBulkWorking(false);
     if ((result as any).canceled) return;
     const r = (result as any).results as { id: string; filename?: string; error?: string }[];
@@ -168,7 +186,7 @@ export function PriceListsScreen() {
             <Button
               size="sm"
               variant="outline"
-              onClick={handleBulkEmail}
+              onClick={() => setComposeOpen(true)}
               disabled={bulkWorking}
               className="gap-1.5"
             >
@@ -275,6 +293,42 @@ export function PriceListsScreen() {
         description="This will permanently delete the price list and all its entries. This cannot be undone."
         confirmLabel="Delete"
       />
+
+      <Dialog
+        open={composeOpen}
+        onClose={() => setComposeOpen(false)}
+        title={`Email ${selected.size} Price List${selected.size !== 1 ? 's' : ''}`}
+      >
+        <p className="text-xs text-gray-500 mb-3">
+          Available placeholders: <code className="bg-gray-100 px-1 rounded">{'{customer}'}</code> <code className="bg-gray-100 px-1 rounded">{'{customer_full}'}</code> <code className="bg-gray-100 px-1 rounded">{'{version}'}</code> <code className="bg-gray-100 px-1 rounded">{'{effective}'}</code>
+        </p>
+        <div className="space-y-3 mb-4">
+          <div>
+            <label className="text-xs font-medium text-gray-600 mb-1 block">Subject</label>
+            <input
+              className="w-full text-sm border border-gray-300 rounded px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              value={emailSubject}
+              onChange={e => setEmailSubject(e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-gray-600 mb-1 block">Body</label>
+            <textarea
+              className="w-full text-sm border border-gray-300 rounded px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500 resize-y font-mono"
+              rows={8}
+              value={emailBody}
+              onChange={e => setEmailBody(e.target.value)}
+            />
+          </div>
+        </div>
+        <p className="text-xs text-gray-400 mb-4">Template is saved automatically when you send.</p>
+        <div className="flex justify-end gap-2">
+          <Button variant="outline" onClick={() => setComposeOpen(false)}>Cancel</Button>
+          <Button onClick={handleSendEmails} className="gap-1.5">
+            <Mail size={13} /> Send {selected.size} Email{selected.size !== 1 ? 's' : ''}
+          </Button>
+        </div>
+      </Dialog>
     </div>
   );
 }

@@ -67,9 +67,18 @@ CREATE TABLE IF NOT EXISTS app_settings (
   key TEXT PRIMARY KEY, value TEXT
 );
 
+CREATE TABLE IF NOT EXISTS units (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL UNIQUE
+);
+
 CREATE INDEX IF NOT EXISTS idx_price_lists_customer ON price_lists(customer_ref_sap);
 CREATE INDEX IF NOT EXISTS idx_price_list_entries_pl ON price_list_entries(price_list_id);
 CREATE INDEX IF NOT EXISTS idx_standard_epl_currency ON standard_epl(currency);
+`;
+
+const SEED_SQL = `
+INSERT OR IGNORE INTO units (name) VALUES ('100 KG'), ('100 L');
 `;
 
 export function openDatabase(filePath: string): void {
@@ -78,6 +87,7 @@ export function openDatabase(filePath: string): void {
   db.pragma('foreign_keys = ON');
   db.pragma('synchronous = NORMAL');
   db.exec(SCHEMA_SQL);
+  db.exec(SEED_SQL);
 }
 
 export function getDb(): Database.Database {

@@ -20,11 +20,14 @@ export interface WizardState {
   discount_percent: number | null;
   product_lines: ProductLine[];
   savedPriceListId: string | null;
+  // undefined = still loading, null = no previous list found, array = entries from latest list
+  previousEntries: ProductLine[] | null | undefined;
 }
 
 type Action =
   | { type: 'SET_STEP'; step: WizardState['step'] }
   | { type: 'SET_CUSTOMER'; customer: Customer }
+  | { type: 'SET_PREVIOUS_ENTRIES'; entries: ProductLine[] | null }
   | { type: 'SET_FIELD'; field: keyof WizardState; value: unknown }
   | { type: 'SET_PRODUCT_LINES'; lines: ProductLine[] }
   | { type: 'SET_SAVED_ID'; id: string };
@@ -41,12 +44,15 @@ const initial: WizardState = {
   discount_percent: null,
   product_lines: [],
   savedPriceListId: null,
+  previousEntries: undefined,
 };
 
 function reducer(state: WizardState, action: Action): WizardState {
   switch (action.type) {
     case 'SET_STEP': return { ...state, step: action.step };
-    case 'SET_CUSTOMER': return { ...state, customer: action.customer };
+    // Reset previous entries and product lines whenever the customer changes
+    case 'SET_CUSTOMER': return { ...state, customer: action.customer, previousEntries: undefined, product_lines: [] };
+    case 'SET_PREVIOUS_ENTRIES': return { ...state, previousEntries: action.entries };
     case 'SET_FIELD': return { ...state, [action.field]: action.value };
     case 'SET_PRODUCT_LINES': return { ...state, product_lines: action.lines };
     case 'SET_SAVED_ID': return { ...state, savedPriceListId: action.id };

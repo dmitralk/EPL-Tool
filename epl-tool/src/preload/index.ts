@@ -44,13 +44,16 @@ const api = {
   exportXlsxBulk: (ids: string[]) => ipcRenderer.invoke('export:xlsx-bulk', ids),
   openMailWithAttachment: (params: { filePath: string; to: string; subject: string; body: string }) =>
     ipcRenderer.invoke('export:open-mail-with-attachment', params),
-  openMailBulk: (ids: string[]) => ipcRenderer.invoke('export:open-mail-bulk', ids),
+  openMailBulk: (ids: string[], subject: string, body: string) => ipcRenderer.invoke('export:open-mail-bulk', ids, subject, body),
 
   // Settings
   getSetting: (key: string) => ipcRenderer.invoke('settings:get', key),
   setSetting: (key: string, value: string) => ipcRenderer.invoke('settings:set', key, value),
   getAdminEmails: () => ipcRenderer.invoke('settings:get-admin-emails'),
   updateAdminEmail: (id: number, email: string) => ipcRenderer.invoke('settings:update-admin-email', id, email),
+  getUnits: () => ipcRenderer.invoke('settings:get-units'),
+  createUnit: (name: string) => ipcRenderer.invoke('settings:create-unit', name),
+  deleteUnit: (id: number) => ipcRenderer.invoke('settings:delete-unit', id),
   selectLogo: () => ipcRenderer.invoke('settings:select-logo'),
 
   // Migration
