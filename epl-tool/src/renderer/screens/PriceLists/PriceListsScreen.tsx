@@ -21,6 +21,7 @@ export function PriceListsScreen() {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [filterCustomer, setFilterCustomer] = useState('');
   const [search, setSearch] = useState('');
+  const [showLatestOnly, setShowLatestOnly] = useState(true);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkWorking, setBulkWorking] = useState(false);
@@ -45,7 +46,7 @@ export function PriceListsScreen() {
     load();
   }, []);
 
-  const filtered = lists.filter(pl => {
+  const searched = lists.filter(pl => {
     if (filterCustomer && pl.customer_ref_sap !== filterCustomer) return false;
     if (search) {
       const s = search.toLowerCase();
@@ -53,6 +54,21 @@ export function PriceListsScreen() {
     }
     return true;
   });
+
+  const filtered = showLatestOnly ? (() => {
+    const latestByCustomer = new Map<string, PriceListHeader>();
+    for (const pl of searched) {
+      const existing = latestByCustomer.get(pl.customer_ref_sap);
+      if (!existing) {
+        latestByCustomer.set(pl.customer_ref_sap, pl);
+      } else {
+        const plDate = pl.effective ? new Date(pl.effective).getTime() : -Infinity;
+        const existingDate = existing.effective ? new Date(existing.effective).getTime() : -Infinity;
+        if (plDate > existingDate) latestByCustomer.set(pl.customer_ref_sap, pl);
+      }
+    }
+    return [...latestByCustomer.values()];
+  })() : searched;
 
   // Keep the select-all checkbox indeterminate state in sync
   useEffect(() => {
@@ -134,7 +150,9 @@ export function PriceListsScreen() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Price Lists</h1>
-          <p className="text-gray-500 text-sm mt-0.5">{lists.length} total</p>
+          <p className="text-gray-500 text-sm mt-0.5">
+            {showLatestOnly ? `${filtered.length} customers` : `${filtered.length} of ${lists.length} price lists`}
+          </p>
         </div>
         <Button onClick={() => navigate('/price-lists/create')} className="gap-2">
           <Plus size={15} />
@@ -165,6 +183,16 @@ export function PriceListsScreen() {
             </option>
           ))}
         </Select>
+        <button
+          onClick={() => { setShowLatestOnly(v => !v); setSelected(new Set()); }}
+          className={`ml-auto text-sm px-3 py-1.5 rounded-md border transition-colors whitespace-nowrap ${
+            showLatestOnly
+              ? 'bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100'
+              : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-50'
+          }`}
+        >
+          {showLatestOnly ? 'Latest only' : 'View all'}
+        </button>
       </div>
 
       {/* Bulk action bar */}
