@@ -73,7 +73,7 @@ This file is read automatically by Claude Code at conversation start. It gives f
 │   │           │   ├── CustomerDetail.tsx      ← inline editing, price list table
 │   │           │   └── ComparisonPanel.tsx     ← side-by-side price list diff
 │   │           ├── PriceLists/
-│   │           │   ├── PriceListsScreen.tsx    ← list, bulk export, bulk email compose dialog
+│   │           │   ├── PriceListsScreen.tsx    ← list with latest-only toggle, bulk export, bulk email compose dialog
 │   │           │   ├── PriceListDetail.tsx
 │   │           │   └── CreatePriceList/        ← 4-step wizard
 │   │           │       ├── index.tsx           ← WizardContext + reducer
@@ -183,6 +183,9 @@ function clean(v: unknown): string | null {
 
 **Single price list email** (Step 4) uses a hardcoded subject/body, not the saved template from bulk email settings. Template: subject = `"Price List — {shortName} — {version}"`, body = fixed greeting text. This is intentional (quick one-off) but is inconsistent with bulk email — something to unify if needed later.
 
+### PriceListsScreen.tsx — list view
+Default view shows **one row per customer** — the price list with the latest `effective` date ("Latest only" mode). A toggle button in the filter bar switches to "View all" to show every price list, then back. The subtitle reflects the mode: `N customers` (latest only) or `N of Total price lists` (all). Null `effective` dates are treated as oldest so a dated list always wins. Switching the toggle clears the current selection to avoid stale state. Filtering by customer or search text is applied first; the latest-only reduction runs after.
+
 ### Bulk email compose dialog (PriceListsScreen.tsx)
 Clicking "Email (N)" opens a compose dialog with Subject + Body fields. Supports `{customer}`, `{customer_full}`, `{version}`, `{effective}` placeholders (substituted per customer at send time). Template auto-saved to `app_settings` (`email_subject_template`, `email_body_template`) on send, and reloaded from settings on next open.
 
@@ -213,7 +216,7 @@ npm run package      # build macOS app → out/EPL Tool-darwin-arm64/
 npm run make         # build installers (Squirrel for Windows via GitHub Actions)
 ```
 
-**IMPORTANT**: After any change to main process code (IPC handlers, database, export), run `npm run package` — the renderer hot-reloads but main process changes require a rebuild.
+**IMPORTANT**: Run `npm run package` after any code change — main process changes (IPC, database, export) require it unconditionally; renderer changes only hot-reload in `npm start` dev mode, not in the packaged `.app`. The user launches the packaged app normally, so always rebuild to ship renderer changes too.
 
 ### forge.config.ts — native module packaging
 
