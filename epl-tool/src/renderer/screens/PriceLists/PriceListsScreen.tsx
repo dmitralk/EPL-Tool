@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Search, FileDown, Mail } from 'lucide-react';
+import { Plus, Search, FileDown, Mail, ArrowLeftRight } from 'lucide-react';
 import { api } from '../../lib/ipc';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
@@ -8,7 +8,8 @@ import { Select } from '../../components/ui/select';
 import { Badge } from '../../components/ui/badge';
 import { ConfirmDialog, Dialog } from '../../components/ui/dialog';
 import { useToast } from '../../components/ui/toast';
-import { formatDate } from '../../lib/utils';
+import { formatDate, priceTypeLabel } from '../../lib/utils';
+import { ComparisonPanel } from '../Customers/ComparisonPanel';
 import type { PriceListHeader, Customer } from '../../../types';
 
 const DEFAULT_SUBJECT = 'Price List — {customer} — {version}';
@@ -28,7 +29,9 @@ export function PriceListsScreen() {
   const [composeOpen, setComposeOpen] = useState(false);
   const [emailSubject, setEmailSubject] = useState(DEFAULT_SUBJECT);
   const [emailBody, setEmailBody] = useState(DEFAULT_BODY);
+  const [comparing, setComparing] = useState<{ idA: string; idB: string } | null>(null);
   const selectAllRef = useRef<HTMLInputElement>(null);
+  const comparisonRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     async function load() {
@@ -121,6 +124,17 @@ export function PriceListsScreen() {
     }
   }
 
+  function handleCompare() {
+    const [idA, idB] = [...selected];
+    setComparing({ idA, idB });
+  }
+
+  useEffect(() => {
+    if (comparing) {
+      comparisonRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, [comparing]);
+
   async function handleSendEmails() {
     setComposeOpen(false);
     setBulkWorking(true);
@@ -154,7 +168,7 @@ export function PriceListsScreen() {
             {showLatestOnly ? `${filtered.length} customers` : `${filtered.length} of ${lists.length} price lists`}
           </p>
         </div>
-        <Button onClick={() => navigate('/price-lists/create')} className="gap-2">
+        <Button onClick={() => navigate('/price-lists/new')} className="gap-2">
           <Plus size={15} />
           New Price List
         </Button>
@@ -183,16 +197,28 @@ export function PriceListsScreen() {
             </option>
           ))}
         </Select>
-        <button
-          onClick={() => { setShowLatestOnly(v => !v); setSelected(new Set()); }}
-          className={`ml-auto text-sm px-3 py-1.5 rounded-md border transition-colors whitespace-nowrap ${
-            showLatestOnly
-              ? 'bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100'
-              : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-50'
-          }`}
-        >
-          {showLatestOnly ? 'Latest only' : 'View all'}
-        </button>
+        <div className="ml-auto flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={selected.size !== 2}
+            onClick={handleCompare}
+            className="gap-1.5 whitespace-nowrap"
+          >
+            <ArrowLeftRight size={13} />
+            {selected.size === 2 ? 'Compare selected' : 'Select 2 to compare'}
+          </Button>
+          <button
+            onClick={() => { setShowLatestOnly(v => !v); setSelected(new Set()); }}
+            className={`text-sm px-3 py-1.5 rounded-md border transition-colors whitespace-nowrap ${
+              showLatestOnly
+                ? 'bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100'
+                : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-50'
+            }`}
+          >
+            {showLatestOnly ? 'Latest only' : 'View all'}
+          </button>
+        </div>
       </div>
 
       {/* Bulk action bar */}
@@ -285,7 +311,7 @@ export function PriceListsScreen() {
                   <td className="px-4 py-3 text-gray-600">{pl.price_list_version}</td>
                   <td className="px-4 py-3">
                     <Badge variant={pl.price_type === 'Discount' ? 'default' : 'secondary'}>
-                      {pl.price_type === 'Discount' ? `${pl.discount_percent}% disc.` : 'Net Price'}
+                      {priceTypeLabel(pl.price_type, pl.discount_percent)}
                     </Badge>
                   </td>
                   <td className="px-4 py-3">
@@ -321,6 +347,16 @@ export function PriceListsScreen() {
         description="This will permanently delete the price list and all its entries. This cannot be undone."
         confirmLabel="Delete"
       />
+
+      {comparing && (
+        <div ref={comparisonRef} className="mt-6">
+          <ComparisonPanel
+            initialIdA={comparing.idA}
+            initialIdB={comparing.idB}
+            onClose={() => setComparing(null)}
+          />
+        </div>
+      )}
 
       <Dialog
         open={composeOpen}

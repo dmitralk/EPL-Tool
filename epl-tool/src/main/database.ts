@@ -44,7 +44,7 @@ CREATE TABLE IF NOT EXISTS price_lists (
   customer_ref_sap TEXT NOT NULL,
   sap_plant TEXT, effective TEXT NOT NULL, mailing_date TEXT NOT NULL,
   price_list_version TEXT NOT NULL, comments_about_changes TEXT,
-  price_type TEXT NOT NULL CHECK (price_type IN ('Discount','Net Price')),
+  price_type TEXT NOT NULL CHECK (price_type IN ('Discount','Net Price','PrevPercent','PrevAbsolute')),
   discount_percent REAL,
   created_at TEXT DEFAULT (datetime('now'))
 );
@@ -88,6 +88,66 @@ export function openDatabase(filePath: string): void {
   db.pragma('synchronous = NORMAL');
   db.exec(SCHEMA_SQL);
   db.exec(SEED_SQL);
+  migrateIfNeeded(db);
+}
+
+function migrateIfNeeded(db: Database.Database): void {
+  // Migration 1: Widen price_type CHECK constraint to include PrevPercent and PrevAbsolute.
+  // Uses legacy_alter_table=ON to prevent SQLite 3.26.0+ from rewriting FK references
+  // in price_list_entries when renaming price_lists (which would corrupt the FK).
+  const plRow = db.prepare(
+    `SELECT sql FROM sqlite_master WHERE type='table' AND name='price_lists'`
+  ).get() as { sql: string } | undefined;
+
+  if (plRow && !plRow.sql.includes('PrevPercent')) {
+    db.pragma('foreign_keys = OFF');
+    db.pragma('legacy_alter_table = ON');
+    db.exec(`
+      ALTER TABLE price_lists RENAME TO _price_lists_old;
+      CREATE TABLE price_lists (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        price_list_id TEXT NOT NULL UNIQUE,
+        customer_ref_sap TEXT NOT NULL,
+        sap_plant TEXT, effective TEXT NOT NULL, mailing_date TEXT NOT NULL,
+        price_list_version TEXT NOT NULL, comments_about_changes TEXT,
+        price_type TEXT NOT NULL CHECK (price_type IN ('Discount','Net Price','PrevPercent','PrevAbsolute')),
+        discount_percent REAL,
+        created_at TEXT DEFAULT (datetime('now'))
+      );
+      INSERT INTO price_lists SELECT * FROM _price_lists_old;
+      DROP TABLE _price_lists_old;
+      CREATE INDEX IF NOT EXISTS idx_price_lists_customer ON price_lists(customer_ref_sap);
+    `);
+    db.pragma('legacy_alter_table = OFF');
+    db.pragma('foreign_keys = ON');
+  }
+
+  // Migration 2: Fix price_list_entries FK if it was corrupted by a prior run of Migration 1
+  // without legacy_alter_table=ON. SQLite 3.26.0+ rewrites the FK reference from
+  // REFERENCES price_lists → REFERENCES _price_lists_old when the table is renamed,
+  // which breaks all subsequent inserts with foreign_keys=ON once _price_lists_old is dropped.
+  const pleRow = db.prepare(
+    `SELECT sql FROM sqlite_master WHERE type='table' AND name='price_list_entries'`
+  ).get() as { sql: string } | undefined;
+
+  if (pleRow?.sql.includes('_price_lists_old')) {
+    db.pragma('foreign_keys = OFF');
+    db.exec(`
+      ALTER TABLE price_list_entries RENAME TO _price_list_entries_old;
+      CREATE TABLE price_list_entries (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        price_list_id TEXT NOT NULL,
+        product_type TEXT NOT NULL, rip_code TEXT NOT NULL,
+        product_name TEXT NOT NULL, net_price REAL NOT NULL,
+        currency TEXT NOT NULL, unit TEXT NOT NULL,
+        FOREIGN KEY (price_list_id) REFERENCES price_lists(price_list_id)
+      );
+      INSERT INTO price_list_entries SELECT * FROM _price_list_entries_old;
+      DROP TABLE _price_list_entries_old;
+      CREATE INDEX IF NOT EXISTS idx_price_list_entries_pl ON price_list_entries(price_list_id);
+    `);
+    db.pragma('foreign_keys = ON');
+  }
 }
 
 export function getDb(): Database.Database {

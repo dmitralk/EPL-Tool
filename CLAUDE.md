@@ -60,7 +60,7 @@ This file is read automatically by Claude Code at conversation start. It gives f
 │   │       ├── App.tsx     ← React Router, DbGuard, all routes
 │   │       ├── lib/
 │   │       │   ├── ipc.ts  ← typed wrapper: `export const api = window.api`
-│   │       │   └── utils.ts
+│   │       │   └── utils.ts  ← cn, formatDate, formatCurrency, todayISO, nextVersion, priceTypeLabel
 │   │       ├── components/
 │   │       │   ├── ui/     ← button, input, select, dialog, card, badge, toast, etc.
 │   │       │   └── layout/ ← AppShell.tsx, Sidebar.tsx
@@ -73,12 +73,12 @@ This file is read automatically by Claude Code at conversation start. It gives f
 │   │           │   ├── CustomerDetail.tsx      ← inline editing, price list table
 │   │           │   └── ComparisonPanel.tsx     ← side-by-side price list diff
 │   │           ├── PriceLists/
-│   │           │   ├── PriceListsScreen.tsx    ← list with latest-only toggle, bulk export, bulk email compose dialog
+│   │           │   ├── PriceListsScreen.tsx    ← list with latest-only toggle, bulk export, bulk email compose dialog, compare button
 │   │           │   ├── PriceListDetail.tsx
 │   │           │   └── CreatePriceList/        ← 4-step wizard
 │   │           │       ├── index.tsx           ← WizardContext + reducer
 │   │           │       ├── Step1SelectCustomer.tsx  ← fetches prev price list on customer select
-│   │           │       ├── Step2ConfigurePricing.tsx ← discount or net price mode
+│   │           │       ├── Step2ConfigurePricing.tsx ← 4 pricing methods (see below)
 │   │           │       ├── Step3ReviewProducts.tsx  ← add/remove products, inline price edit
 │   │           │       └── Step4ExportPreview.tsx
 │   │           ├── MasterData/MasterDataScreen.tsx   ← product CRUD
@@ -100,7 +100,7 @@ customers       -- customer masterdata; currency IN ('USD','EUR')
 products        -- product catalogue; rip_code UNIQUE
 standard_epl    -- standard prices; UNIQUE(currency, rip_code); USD and EUR rows separate
 packaging       -- packaging charges + pallets; groups by packaging_version
-price_lists     -- price list headers; price_type IN ('Discount','Net Price'); has created_at DEFAULT datetime('now')
+price_lists     -- price list headers; price_type IN ('Discount','Net Price','PrevPercent','PrevAbsolute'); has created_at DEFAULT datetime('now')
 price_list_entries -- one row per product per price list
 admin_emails    -- shared email addresses (PBP Costing, PBP Common)
 app_settings    -- key/value store (logo_path, db_path, email_subject_template, email_body_template)
@@ -110,6 +110,8 @@ units           -- configurable unit list; seeded with '100 KG', '100 L' on DB o
 Pragmas set on every open: `journal_mode=WAL`, `foreign_keys=ON`, `synchronous=NORMAL`.
 
 Schema runs `CREATE TABLE IF NOT EXISTS` so opening an existing DB is safe. Units table is seeded with `INSERT OR IGNORE`.
+
+**DB migration (`migrateIfNeeded` in database.ts)** — runs on every `openDatabase` call after schema init. Currently performs one migration: widens the `price_type` CHECK constraint on the `price_lists` table to include `'PrevPercent'` and `'PrevAbsolute'`. Detection: checks `sqlite_master` for the old two-value constraint string; skips if already migrated. Uses `PRAGMA foreign_keys = OFF` during the table recreation, then re-enables it. Existing data is preserved via `INSERT INTO price_lists SELECT * FROM _price_lists_old`.
 
 **Indexes:** Three performance indexes are created: `idx_price_lists_customer` (for customer filter), `idx_price_list_entries_pl` (for entry lookups), `idx_standard_epl_currency` (for currency filter).
 
@@ -175,9 +177,45 @@ function clean(v: unknown): string | null {
 ### Price list creation wizard (CreatePriceList/)
 4-step flow with shared `WizardContext` reducer:
 1. **Step 1** — customer + dates; on customer select, async fetches their latest price list entries → `previousEntries` in wizard state
-2. **Step 2** — pricing mode (Discount % or Net Price); computes product lines from `previousEntries` (not from all standard EPL). If no previous list, starts empty.
+2. **Step 2** — pricing method selector (4 options, see below); computes product lines from `previousEntries`. If no previous list, starts empty.
 3. **Step 3** — review/edit prices, remove products, add products from EPL catalogue via dialog
 4. **Step 4** — auto-saves price list to DB on mount (no user action needed); export button triggers native save dialog; mail button only enabled after export
+
+**Step 2 pricing methods** — `WizardState.price_type` stores one of four values:
+
+| `price_type` | Label | `discount_percent` stores | Available when |
+|---|---|---|---|
+| `'Discount'` | % Discount from Standard EPL | discount % (0–99.99) | always |
+| `'Net Price'` | Enter Net Prices Directly | `null` | always |
+| `'PrevPercent'` | % Change from Previous List | signed change % (e.g. 5 or -3.5) | requires `previousEntries` |
+| `'PrevAbsolute'` | Fixed Amount Change from Previous List | signed amount (e.g. 10 or -5.5) | requires `previousEntries` |
+
+- `'Discount'` applies the % to the **standard EPL price** for each product (falls back to previous price if no EPL row exists).
+- `'PrevPercent'` applies `prev_price × (1 + pct/100)` to each entry in the **previous price list**.
+- `'PrevAbsolute'` applies `prev_price + amount` to each entry in the **previous price list**.
+- `'Net Price'` pre-loads previous prices unchanged; user edits freely in Step 3. No overrides available for this method.
+- Methods requiring `previousEntries` are rendered disabled (greyed out) when no previous list is found.
+- All methods (except Net Price) show a live price preview table as the user types the value.
+- `discount_percent` is repurposed for the signed value in `PrevPercent` / `PrevAbsolute` — the meaning depends on `price_type`.
+
+**Granular overrides (three-level pricing)** — for all methods except `'Net Price'`, Step 2 shows two optional override sections below the base value. The same method applies at every level; only the value differs. Resolution order: **product (RIP) override > product-type override > all-products base**.
+
+`WizardState` carries:
+```typescript
+typeOverrides: Override[];  // level 2 — per product_type
+ripOverrides:  Override[];  // level 3 — per rip_code
+// Override = { scopeValue: string; valueStr: string }
+// valueStr is the raw input string; parsed to float during computation; invalid/empty → fall through to next level
+```
+
+- **Product Type Overrides**: dropdown lists unique `product_type` values from the standard EPL. Each selected type is removed from other rows' options to prevent duplicates.
+- **Product Overrides**: dropdown lists all EPL products (`rip_code — product_name`), same duplicate prevention.
+- Clicking "+ Add" inserts a new row defaulting to the first unused option and copying the current base value as the starting `valueStr`.
+- Switching the pricing method resets all overrides (values have different meanings across methods) — handled in the reducer's `SET_FIELD` case for `price_type`.
+- The preview table shows a `type` (blue) or `product` (amber) badge per row when an override is applied; rows using the base value show nothing.
+- Overrides are wizard-only state — they are not stored in the DB. Only the final computed `net_price` per product ends up in `price_list_entries`. `discount_percent` on the header row always stores the all-products base value.
+
+**Step 3 behaviour for all methods**: `isNetPrice` is `true` for every method except `'Discount'` (prices are freely editable). When adding a new product from the EPL catalogue in Step 3, `'Discount'` mode applies the discount to the EPL price; all other modes use the raw EPL price as a starting point. The Step 3 subtitle notes how many granular overrides were applied (e.g. "with 3 granular overrides").
 
 **Step 4 sequential dependency**: DB save → export to file → open mail client. Each step is gated on the previous one completing successfully.
 
@@ -186,12 +224,23 @@ function clean(v: unknown): string | null {
 ### PriceListsScreen.tsx — list view
 Default view shows **one row per customer** — the price list with the latest `effective` date ("Latest only" mode). A toggle button in the filter bar switches to "View all" to show every price list, then back. The subtitle reflects the mode: `N customers` (latest only) or `N of Total price lists` (all). Null `effective` dates are treated as oldest so a dated list always wins. Switching the toggle clears the current selection to avoid stale state. Filtering by customer or search text is applied first; the latest-only reduction runs after.
 
+**Compare button** — always visible in the filter bar. Enabled (blue) when exactly 2 rows are checked; disabled (grey, "Select 2 to compare") otherwise. Clicking it sets `comparing: { idA, idB }` state and renders a `<ComparisonPanel>` below the table (same component used in CustomerDetail). The page auto-scrolls to the panel on open. Panel has its own "Close" button.
+
 ### Bulk email compose dialog (PriceListsScreen.tsx)
 Clicking "Email (N)" opens a compose dialog with Subject + Body fields. Supports `{customer}`, `{customer_full}`, `{version}`, `{effective}` placeholders (substituted per customer at send time). Template auto-saved to `app_settings` (`email_subject_template`, `email_body_template`) on send, and reloaded from settings on next open.
 
 **Email recipients** (both single and bulk): combines `email_to_customer`, `email_internal_copy`, `email_pbp_copy`, `email_pbp_common` from the customer record, filters out null/empty, joins with `;`. All four addresses can be present simultaneously.
 
 **Bulk flow**: user selects N price lists → clicks "Email (N)" → compose dialog → "Send" → for each selected list: exports xlsx to a chosen folder, opens a mail draft. The folder picker appears once before the loop starts.
+
+### priceTypeLabel (utils.ts)
+Shared helper used by all badge display locations (PriceListsScreen, CustomerDetail, Dashboard, PriceListDetail, Step4ExportPreview). Returns a short human-readable label for any `price_type` + `discount_percent` combination:
+- `'Discount'` → `"10% disc."`
+- `'Net Price'` → `"Net Price"`
+- `'PrevPercent'` → `"+5% adj."` / `"-3.5% adj."`
+- `'PrevAbsolute'` → `"+10 adj."` / `"-5.5 adj."`
+
+When adding a new `price_type` value, update this function and the DB CHECK constraint together.
 
 ### Standard units (Settings + StandardEplScreen)
 Units stored in `units` table; seeded on DB open. Settings screen has a "Standard Units" card for add/remove. StandardEplScreen uses a `<select>` dropdown (not text input) for unit editing.
@@ -216,7 +265,11 @@ npm run package      # build macOS app → out/EPL Tool-darwin-arm64/
 npm run make         # build installers (Squirrel for Windows via GitHub Actions)
 ```
 
-**IMPORTANT**: Run `npm run package` after any code change — main process changes (IPC, database, export) require it unconditionally; renderer changes only hot-reload in `npm start` dev mode, not in the packaged `.app`. The user launches the packaged app normally, so always rebuild to ship renderer changes too.
+**When to use which command:**
+- `npm start` — sufficient for renderer-only changes (`src/renderer/`); Vite HMR picks them up instantly.
+- `npm run package` — required for any change in `src/main/` (IPC handlers, database, export logic, `index.ts`). Also run it to produce the final build the user launches.
+
+Always run one of these after every code change — renderer HMR only works in `npm start` dev mode, not in the packaged app.
 
 ### forge.config.ts — native module packaging
 

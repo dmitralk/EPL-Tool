@@ -28,3 +28,16 @@ export function nextVersion(last: string | null | undefined): string {
   if (match) return `V${parseInt(match[1]) + 1}`;
   return 'V1';
 }
+
+export function priceTypeLabel(priceType: string, discountPercent: number | null): string {
+  if (priceType === 'Discount') return `${discountPercent}% disc.`;
+  if (priceType === 'PrevPercent') {
+    const v = discountPercent ?? 0;
+    return `${v > 0 ? '+' : ''}${v}% adj.`;
+  }
+  if (priceType === 'PrevAbsolute') {
+    const v = discountPercent ?? 0;
+    return `${v > 0 ? '+' : ''}${v} adj.`;
+  }
+  return 'Net Price';
+}

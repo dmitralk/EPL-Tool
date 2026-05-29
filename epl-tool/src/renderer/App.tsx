@@ -7,6 +7,8 @@ import { Dashboard } from './screens/Dashboard';
 import { PriceListsScreen } from './screens/PriceLists/PriceListsScreen';
 import { PriceListDetail } from './screens/PriceLists/PriceListDetail';
 import { CreatePriceList } from './screens/PriceLists/CreatePriceList/index';
+import { NewPriceListGateway } from './screens/PriceLists/NewPriceListGateway';
+import { MassCreatePriceList } from './screens/PriceLists/MassPriceList/index';
 import { SettingsScreen } from './screens/Settings/SettingsScreen';
 import { CustomersScreen } from './screens/Customers/CustomersScreen';
 import { CustomerDetail } from './screens/Customers/CustomerDetail';
@@ -46,7 +48,9 @@ export function App() {
           >
             <Route index element={<Dashboard />} />
             <Route path="price-lists" element={<PriceListsScreen />} />
+            <Route path="price-lists/new" element={<NewPriceListGateway />} />
             <Route path="price-lists/create" element={<CreatePriceList />} />
+            <Route path="price-lists/create/mass" element={<MassCreatePriceList />} />
             <Route path="price-lists/:id" element={<PriceListDetail />} />
             <Route path="customers" element={<CustomersScreen />} />
             <Route path="customers/:ref" element={<CustomerDetail />} />

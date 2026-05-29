@@ -6,7 +6,7 @@ import { Button } from '../../components/ui/button';
 import { Badge } from '../../components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
 import { useToast } from '../../components/ui/toast';
-import { formatDate, formatCurrency } from '../../lib/utils';
+import { formatDate, formatCurrency, priceTypeLabel } from '../../lib/utils';
 import type { PriceListFull, Customer } from '../../../types';
 
 export function PriceListDetail() {
@@ -119,11 +119,17 @@ export function PriceListDetail() {
             <dl className="space-y-2 text-sm">
               <Row label="Price Type">
                 <Badge variant={priceList.price_type === 'Discount' ? 'default' : 'secondary'}>
-                  {priceList.price_type}
+                  {priceTypeLabel(priceList.price_type, priceList.discount_percent)}
                 </Badge>
               </Row>
               {priceList.price_type === 'Discount' && (
                 <Row label="Discount" value={`${priceList.discount_percent}%`} />
+              )}
+              {priceList.price_type === 'PrevPercent' && priceList.discount_percent != null && (
+                <Row label="Adjustment" value={`${priceList.discount_percent > 0 ? '+' : ''}${priceList.discount_percent}%`} />
+              )}
+              {priceList.price_type === 'PrevAbsolute' && priceList.discount_percent != null && (
+                <Row label="Adjustment" value={`${priceList.discount_percent > 0 ? '+' : ''}${priceList.discount_percent}`} />
               )}
               <Row label="Currency" value={customer?.currency ?? '—'} />
               <Row label="Comments" value={priceList.comments_about_changes ?? '—'} />

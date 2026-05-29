@@ -8,6 +8,12 @@ import type { Customer, PriceListEntry } from '../../../../types';
 
 export interface ProductLine extends Omit<PriceListEntry, 'id' | 'price_list_id'> {}
 
+/** A single granular override: applies to one product type or one RIP code. */
+export interface Override {
+  scopeValue: string; // product_type name OR rip_code
+  valueStr: string;   // raw input string; parsed to float during computation
+}
+
 export interface WizardState {
   step: 1 | 2 | 3 | 4;
   customer: Customer | null;
@@ -16,8 +22,10 @@ export interface WizardState {
   price_list_version: string;
   sap_plant: string;
   comments_about_changes: string;
-  price_type: 'Discount' | 'Net Price';
+  price_type: 'Discount' | 'Net Price' | 'PrevPercent' | 'PrevAbsolute';
   discount_percent: number | null;
+  typeOverrides: Override[]; // level-2: per product-type overrides
+  ripOverrides: Override[];  // level-3: per RIP code overrides
   product_lines: ProductLine[];
   savedPriceListId: string | null;
   // undefined = still loading, null = no previous list found, array = entries from latest list
@@ -42,6 +50,8 @@ const initial: WizardState = {
   comments_about_changes: '',
   price_type: 'Discount',
   discount_percent: null,
+  typeOverrides: [],
+  ripOverrides: [],
   product_lines: [],
   savedPriceListId: null,
   previousEntries: undefined,
@@ -53,7 +63,12 @@ function reducer(state: WizardState, action: Action): WizardState {
     // Reset previous entries and product lines whenever the customer changes
     case 'SET_CUSTOMER': return { ...state, customer: action.customer, previousEntries: undefined, product_lines: [] };
     case 'SET_PREVIOUS_ENTRIES': return { ...state, previousEntries: action.entries };
-    case 'SET_FIELD': return { ...state, [action.field]: action.value };
+    case 'SET_FIELD':
+      // Switching the pricing method resets overrides — they're method-specific values
+      if (action.field === 'price_type') {
+        return { ...state, price_type: action.value as WizardState['price_type'], typeOverrides: [], ripOverrides: [] };
+      }
+      return { ...state, [action.field]: action.value };
     case 'SET_PRODUCT_LINES': return { ...state, product_lines: action.lines };
     case 'SET_SAVED_ID': return { ...state, savedPriceListId: action.id };
     default: return state;

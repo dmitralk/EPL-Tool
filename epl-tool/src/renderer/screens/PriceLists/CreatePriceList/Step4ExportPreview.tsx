@@ -6,7 +6,7 @@ import { Button } from '../../../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../../../components/ui/card';
 import { Badge } from '../../../components/ui/badge';
 import { useToast } from '../../../components/ui/toast';
-import { formatDate } from '../../../lib/utils';
+import { formatDate, priceTypeLabel } from '../../../lib/utils';
 import { useWizard } from './index';
 import type { PriceListFull } from '../../../../types';
 
@@ -137,7 +137,7 @@ export function Step4ExportPreview() {
             <div className="flex items-center justify-between mb-2">
               <span className="text-gray-600 text-xs">Products</span>
               <Badge variant={state.price_type === 'Discount' ? 'default' : 'secondary'}>
-                {state.price_type === 'Discount' ? `${state.discount_percent}% discount` : 'Net Price'}
+                {priceTypeLabel(state.price_type, state.discount_percent)}
               </Badge>
             </div>
             <div className="space-y-1 max-h-40 overflow-y-auto">

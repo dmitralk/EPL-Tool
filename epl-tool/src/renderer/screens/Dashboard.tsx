@@ -7,7 +7,7 @@ import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
 import { Dialog } from '../components/ui/dialog';
 import { useToast } from '../components/ui/toast';
-import { formatDate } from '../lib/utils';
+import { formatDate, priceTypeLabel } from '../lib/utils';
 import type { PriceListHeader } from '../../types';
 
 interface Stats {
@@ -166,7 +166,7 @@ export function Dashboard() {
                     <td className="px-3 py-3 text-gray-600">{pl.price_list_version}</td>
                     <td className="px-3 py-3">
                       <Badge variant={pl.price_type === 'Discount' ? 'default' : 'secondary'}>
-                        {pl.price_type === 'Discount' ? `Discount ${pl.discount_percent}%` : 'Net Price'}
+                        {priceTypeLabel(pl.price_type, pl.discount_percent)}
                       </Badge>
                     </td>
                     <td className="px-3 py-3 text-right">

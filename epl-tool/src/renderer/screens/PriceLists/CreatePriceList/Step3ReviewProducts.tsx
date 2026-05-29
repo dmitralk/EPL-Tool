@@ -19,9 +19,31 @@ export function Step3ReviewProducts() {
   const [addSearch, setAddSearch] = useState('');
   const [selectedRips, setSelectedRips] = useState<Set<string>>(new Set());
 
-  const isNetPrice = state.price_type === 'Net Price';
+  const isNetPrice = state.price_type !== 'Discount';
   const discountPct = state.discount_percent ?? 0;
   const currency = state.customer!.currency;
+
+  const overrideCount = state.typeOverrides.length + state.ripOverrides.length;
+  const overrideSuffix = overrideCount > 0
+    ? ` with ${overrideCount} granular override${overrideCount !== 1 ? 's' : ''}`
+    : '';
+
+  const step3Description = (() => {
+    switch (state.price_type) {
+      case 'Discount':
+        return `Prices computed at ${state.discount_percent}% discount from Standard EPL${overrideSuffix}. You can override individual prices below.`;
+      case 'PrevPercent': {
+        const v = state.discount_percent ?? 0;
+        return `Prices adjusted ${v > 0 ? '+' : ''}${v}% from the previous list${overrideSuffix}. You can override individual prices below.`;
+      }
+      case 'PrevAbsolute': {
+        const v = state.discount_percent ?? 0;
+        return `Prices adjusted ${v > 0 ? '+' : ''}${v} ${currency} from the previous list${overrideSuffix}. You can override individual prices below.`;
+      }
+      default:
+        return 'Enter or review the net price for each product.';
+    }
+  })();
 
   // Load EPL rows when the add dialog opens
   useEffect(() => {
@@ -108,11 +130,7 @@ export function Step3ReviewProducts() {
         <div className="flex items-start justify-between">
           <div>
             <CardTitle>Step 3 — Review Products</CardTitle>
-            <p className="text-sm text-gray-500 mt-1">
-              {isNetPrice
-                ? 'Enter the net price for each product.'
-                : `Prices computed at ${state.discount_percent}% discount. You can override individual prices.`}
-            </p>
+            <p className="text-sm text-gray-500 mt-1">{step3Description}</p>
           </div>
           <Button variant="outline" size="sm" onClick={() => setAddOpen(true)} className="shrink-0 mt-1">
             + Add Products

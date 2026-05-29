@@ -1,6 +1,6 @@
 # EPL Tool
 
-A desktop application for generating and managing customer Export Price Lists (EPL) at Lubmarine. Replaces a manual Excel-based workflow.
+A desktop application for generating and managing customer Export Price Lists (EPL). Replaces a manual Excel-based workflow.
 
 ---
 
@@ -8,7 +8,7 @@ A desktop application for generating and managing customer Export Price Lists (E
 
 - Stores all customer, product, and pricing data in a local SQLite database
 - Creates formatted price lists per customer (discount-based or net price)
-- Exports price lists to Excel in the standard Lubmarine format (with logo, packaging section, contact line)
+- Exports price lists to Excel in the standard format (with logo, packaging section, contact line)
 - Opens email drafts in Mail / Outlook with the Excel file attached
 - Imports master data from the `All_Prices.xlsx` source file
 
@@ -16,7 +16,7 @@ A desktop application for generating and managing customer Export Price Lists (E
 
 ## Requirements
 
-- **macOS** (Apple Silicon or Intel) or **Windows 10/11**
+- **Windows 10/11**
 - Node.js 20+ and npm (for development only)
 - No admin rights required to run the packaged app
 

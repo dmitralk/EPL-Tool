@@ -6,7 +6,7 @@ import { Button } from '../../components/ui/button';
 import { Badge } from '../../components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
 import { useToast } from '../../components/ui/toast';
-import { formatDate } from '../../lib/utils';
+import { formatDate, priceTypeLabel } from '../../lib/utils';
 import { ComparisonPanel } from './ComparisonPanel';
 import type { AdminEmail, Customer, PriceListHeader } from '../../../types';
 
@@ -278,7 +278,7 @@ export function CustomerDetail() {
                     <td className="px-4 py-3 font-medium text-gray-900">{pl.price_list_version}</td>
                     <td className="px-4 py-3">
                       <Badge variant={pl.price_type === 'Discount' ? 'default' : 'secondary'}>
-                        {pl.price_type === 'Discount' ? `${pl.discount_percent}% disc.` : 'Net Price'}
+                        {priceTypeLabel(pl.price_type, pl.discount_percent)}
                       </Badge>
                     </td>
                     <td className="px-4 py-3 text-right">

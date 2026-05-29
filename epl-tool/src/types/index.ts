@@ -61,7 +61,7 @@ export interface PriceListHeader {
   mailing_date: string;
   price_list_version: string;
   comments_about_changes: string | null;
-  price_type: 'Discount' | 'Net Price';
+  price_type: 'Discount' | 'Net Price' | 'PrevPercent' | 'PrevAbsolute';
   discount_percent: number | null;
   created_at?: string;
 }
@@ -99,7 +99,7 @@ export interface CreatePriceListInput {
   mailing_date: string;
   price_list_version: string;
   comments_about_changes: string;
-  price_type: 'Discount' | 'Net Price';
+  price_type: 'Discount' | 'Net Price' | 'PrevPercent' | 'PrevAbsolute';
   discount_percent: number | null;
   entries: Omit<PriceListEntry, 'id' | 'price_list_id'>[];
 }
