@@ -7,7 +7,7 @@ const navItems = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
   { to: '/price-lists', label: 'Price Lists', icon: FileText },
   { to: '/customers', label: 'Customers', icon: Users },
-  { to: '/master-data', label: 'Master Data', icon: Package },
+  { to: '/master-data', label: 'Products', icon: Package },
   { to: '/standard-epl', label: 'Standard EPL', icon: BookOpen },
 ];
 

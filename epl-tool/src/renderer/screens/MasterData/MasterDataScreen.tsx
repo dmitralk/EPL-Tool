@@ -109,7 +109,7 @@ export function MasterDataScreen() {
     <div className="p-6">
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Master Data</h1>
+          <h1 className="text-2xl font-bold text-gray-900">Products</h1>
           <p className="text-gray-500 text-sm mt-0.5">{products.length} products</p>
         </div>
         <Button onClick={() => setAddOpen(true)} className="gap-2">

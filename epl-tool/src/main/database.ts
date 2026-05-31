@@ -8,13 +8,19 @@ CREATE TABLE IF NOT EXISTS customers (
   zone TEXT, country TEXT, customer_type TEXT, comment_on_business_model TEXT,
   customer_ref_type_sap TEXT, customer_ref_sap TEXT NOT NULL UNIQUE,
   customer_short_name TEXT NOT NULL, customer_full_name TEXT NOT NULL,
-  currency TEXT NOT NULL CHECK (currency IN ('USD','EUR')),
+  currency TEXT NOT NULL,
   packaging_version TEXT NOT NULL,
   price_list_managed_by TEXT, customer_spoc TEXT,
   effective TEXT, mailing_date TEXT,
   last_price_list_version TEXT, last_price_list_id TEXT,
   email_to_customer TEXT, email_internal_copy TEXT,
   email_pbp_copy TEXT, email_pbp_common TEXT
+);
+
+CREATE TABLE IF NOT EXISTS currencies (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  code TEXT NOT NULL UNIQUE,
+  is_main INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS products (
@@ -79,6 +85,7 @@ CREATE INDEX IF NOT EXISTS idx_standard_epl_currency ON standard_epl(currency);
 
 const SEED_SQL = `
 INSERT OR IGNORE INTO units (name) VALUES ('100 KG'), ('100 L');
+INSERT OR IGNORE INTO currencies (code, is_main) VALUES ('USD', 1), ('EUR', 1);
 `;
 
 export function openDatabase(filePath: string): void {
@@ -145,6 +152,58 @@ function migrateIfNeeded(db: Database.Database): void {
       INSERT INTO price_list_entries SELECT * FROM _price_list_entries_old;
       DROP TABLE _price_list_entries_old;
       CREATE INDEX IF NOT EXISTS idx_price_list_entries_pl ON price_list_entries(price_list_id);
+    `);
+    db.pragma('foreign_keys = ON');
+  }
+
+  // Migration 3: Add main_supply_region column to customers table.
+  const custRow = db.prepare(
+    `SELECT sql FROM sqlite_master WHERE type='table' AND name='customers'`
+  ).get() as { sql: string } | undefined;
+
+  if (custRow && !custRow.sql.includes('main_supply_region')) {
+    db.exec(`
+      ALTER TABLE customers ADD COLUMN main_supply_region TEXT
+        CHECK (main_supply_region IN ('ASIA','EUROPE','AMERICA'));
+    `);
+  }
+
+  // Migration 4: Add is_deleted soft-delete flag to customers table.
+  const custRow2 = db.prepare(
+    `SELECT sql FROM sqlite_master WHERE type='table' AND name='customers'`
+  ).get() as { sql: string } | undefined;
+
+  if (custRow2 && !custRow2.sql.includes('is_deleted')) {
+    db.exec(`ALTER TABLE customers ADD COLUMN is_deleted INTEGER NOT NULL DEFAULT 0;`);
+  }
+
+  // Migration 5: Relax customers.currency CHECK constraint to allow currencies beyond USD/EUR.
+  // Detection: old schema has the two-value CHECK; new schema has none.
+  const custRow3 = db.prepare(
+    `SELECT sql FROM sqlite_master WHERE type='table' AND name='customers'`
+  ).get() as { sql: string } | undefined;
+
+  if (custRow3?.sql.includes("CHECK (currency IN ('USD','EUR'))")) {
+    db.pragma('foreign_keys = OFF');
+    db.exec(`
+      ALTER TABLE customers RENAME TO _customers_old;
+      CREATE TABLE customers (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        zone TEXT, country TEXT, customer_type TEXT, comment_on_business_model TEXT,
+        customer_ref_type_sap TEXT, customer_ref_sap TEXT NOT NULL UNIQUE,
+        customer_short_name TEXT NOT NULL, customer_full_name TEXT NOT NULL,
+        currency TEXT NOT NULL,
+        packaging_version TEXT NOT NULL,
+        price_list_managed_by TEXT, customer_spoc TEXT,
+        effective TEXT, mailing_date TEXT,
+        last_price_list_version TEXT, last_price_list_id TEXT,
+        email_to_customer TEXT, email_internal_copy TEXT,
+        email_pbp_copy TEXT, email_pbp_common TEXT,
+        main_supply_region TEXT CHECK (main_supply_region IN ('ASIA','EUROPE','AMERICA')),
+        is_deleted INTEGER NOT NULL DEFAULT 0
+      );
+      INSERT INTO customers SELECT * FROM _customers_old;
+      DROP TABLE _customers_old;
     `);
     db.pragma('foreign_keys = ON');
   }

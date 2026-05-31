@@ -8,7 +8,7 @@ export interface Customer {
   customer_ref_sap: string;
   customer_short_name: string;
   customer_full_name: string;
-  currency: 'USD' | 'EUR';
+  currency: string;
   packaging_version: string;
   price_list_managed_by: string | null;
   customer_spoc: string | null;
@@ -20,6 +20,8 @@ export interface Customer {
   email_internal_copy: string | null;
   email_pbp_copy: string | null;
   email_pbp_common: string | null;
+  main_supply_region: 'ASIA' | 'EUROPE' | 'AMERICA' | null;
+  is_deleted: 0 | 1;
 }
 
 export interface Product {
@@ -135,4 +137,45 @@ export interface MigrationResult {
 export interface DbOpenResult {
   ok: boolean;
   error?: string;
+}
+
+export interface SheetPreview {
+  available: boolean;
+  count: number;
+  skipped: number;
+  notes: string[];
+  samples: string[];
+}
+
+export interface ImportPreview {
+  success: boolean;
+  error?: string;
+  adminEmails: SheetPreview;
+  customers: SheetPreview;
+  products: SheetPreview;
+  standardEpl: SheetPreview;
+  packaging: SheetPreview;
+  priceLists: SheetPreview;
+}
+
+export interface ImportOptions {
+  adminEmails: boolean;
+  customers: boolean;
+  products: boolean;
+  standardEpl: boolean;
+  packaging: boolean;
+  priceLists: boolean;
+}
+
+export interface Currency {
+  id: number;
+  code: string;
+  is_main: 0 | 1;
+}
+
+export interface PackagingVersion {
+  version: string;
+  currency: string;
+  row_count: number;
+  customer_count: number;
 }

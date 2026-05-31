@@ -1,14 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, GitCompareArrows, Pencil, Lock } from 'lucide-react';
+import { ArrowLeft, GitCompareArrows, Pencil, Lock, EyeOff } from 'lucide-react';
 import { api } from '../../lib/ipc';
 import { Button } from '../../components/ui/button';
 import { Badge } from '../../components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
+import { ConfirmDialog } from '../../components/ui/dialog';
 import { useToast } from '../../components/ui/toast';
 import { formatDate, priceTypeLabel } from '../../lib/utils';
 import { ComparisonPanel } from './ComparisonPanel';
-import type { AdminEmail, Customer, PriceListHeader } from '../../../types';
+import type { AdminEmail, Currency, Customer, PackagingVersion, PriceListHeader } from '../../../types';
 
 export function CustomerDetail() {
   const { ref } = useParams<{ ref: string }>();
@@ -18,6 +19,8 @@ export function CustomerDetail() {
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [priceLists, setPriceLists] = useState<PriceListHeader[]>([]);
   const [adminEmails, setAdminEmails] = useState<AdminEmail[]>([]);
+  const [currencies, setCurrencies] = useState<Currency[]>([]);
+  const [packagingVersions, setPackagingVersions] = useState<PackagingVersion[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [comparing, setComparing] = useState<{ idA: string; idB: string } | null>(null);
   const selectAllRef = useRef<HTMLInputElement>(null);
@@ -26,6 +29,7 @@ export function CustomerDetail() {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<Customer | null>(null);
   const [saving, setSaving] = useState(false);
+  const [hideConfirmOpen, setHideConfirmOpen] = useState(false);
 
   useEffect(() => {
     if (!ref) return;
@@ -34,10 +38,14 @@ export function CustomerDetail() {
       api.getCustomer(decoded),
       api.getPriceLists({ customer_ref_sap: decoded }),
       api.getAdminEmails(),
-    ]).then(([c, lists, emails]) => {
+      api.getCurrencies(),
+      api.listPackagingVersions(),
+    ]).then(([c, lists, emails, currencyList, pkgVersions]) => {
       setCustomer(c as Customer);
       setPriceLists(lists as PriceListHeader[]);
       setAdminEmails(emails as AdminEmail[]);
+      setCurrencies(currencyList as Currency[]);
+      setPackagingVersions(pkgVersions as PackagingVersion[]);
     });
   }, [ref]);
 
@@ -99,6 +107,13 @@ export function CustomerDetail() {
     }
   }
 
+  async function handleHideCustomer() {
+    if (!customer) return;
+    await api.softDeleteCustomer(customer.customer_ref_sap);
+    toast('Customer hidden', 'info');
+    navigate('/customers');
+  }
+
   function set<K extends keyof Customer>(key: K, value: Customer[K]) {
     setDraft(d => d ? { ...d, [key]: value } : d);
   }
@@ -141,6 +156,13 @@ export function CustomerDetail() {
             <Button variant="outline" onClick={startEdit} className="gap-2">
               <Pencil size={14} /> Edit
             </Button>
+            <Button
+              variant="ghost"
+              onClick={() => setHideConfirmOpen(true)}
+              className="gap-2 text-red-500 hover:text-red-700 hover:bg-red-50"
+            >
+              <EyeOff size={14} /> Hide
+            </Button>
           </div>
         )}
       </div>
@@ -166,11 +188,12 @@ export function CustomerDetail() {
                   <dd>
                     <select
                       value={d.currency}
-                      onChange={e => set('currency', e.target.value as 'USD' | 'EUR')}
+                      onChange={e => set('currency', e.target.value)}
                       className="text-sm font-medium border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500"
                     >
-                      <option value="USD">USD</option>
-                      <option value="EUR">EUR</option>
+                      {currencies.map(c => (
+                        <option key={c.code} value={c.code}>{c.code}</option>
+                      ))}
                     </select>
                   </dd>
                 ) : (
@@ -183,8 +206,52 @@ export function CustomerDetail() {
                 onChange={v => set('country', v || null)} />
               <ERow label="Zone" value={d.zone ?? ''} editing={editing}
                 onChange={v => set('zone', v || null)} />
-              <ERow label="Packaging" value={d.packaging_version} editing={editing}
-                onChange={v => set('packaging_version', v)} />
+              <div className="flex justify-between items-center gap-4">
+                <dt className="text-gray-500 shrink-0 text-sm">
+                  Main Supply Region
+                  <div className="text-xs text-gray-400 font-normal">depends on main source plant</div>
+                </dt>
+                {editing ? (
+                  <dd>
+                    <select
+                      value={d.main_supply_region ?? ''}
+                      onChange={e => set('main_supply_region', (e.target.value || null) as 'ASIA' | 'EUROPE' | 'AMERICA' | null)}
+                      className="text-sm font-medium border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    >
+                      <option value="">—</option>
+                      <option value="ASIA">ASIA</option>
+                      <option value="EUROPE">EUROPE</option>
+                      <option value="AMERICA">AMERICA</option>
+                    </select>
+                  </dd>
+                ) : (
+                  <dd className="text-gray-900 font-medium text-sm">
+                    {d.main_supply_region ?? '—'}
+                  </dd>
+                )}
+              </div>
+              <div className="flex justify-between items-center gap-4">
+                <dt className="text-gray-500 shrink-0 text-sm">Packaging</dt>
+                {editing ? (
+                  <dd>
+                    <select
+                      value={d.packaging_version}
+                      onChange={e => set('packaging_version', e.target.value)}
+                      className="text-sm font-medium border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    >
+                      {/* Keep current value selectable even if not in list (edge case) */}
+                      {!packagingVersions.some(v => v.version === d.packaging_version) && (
+                        <option value={d.packaging_version}>{d.packaging_version}</option>
+                      )}
+                      {packagingVersions.map(v => (
+                        <option key={v.version} value={v.version}>{v.version}</option>
+                      ))}
+                    </select>
+                  </dd>
+                ) : (
+                  <dd className="text-gray-900 font-medium text-sm">{d.packaging_version}</dd>
+                )}
+              </div>
               <ERow label="SPOC" value={d.customer_spoc ?? ''} editing={editing}
                 onChange={v => set('customer_spoc', v || null)} />
               <ERow label="Managed by" value={d.price_list_managed_by ?? ''} editing={editing}
@@ -301,6 +368,15 @@ export function CustomerDetail() {
           onClose={() => setComparing(null)}
         />
       )}
+
+      <ConfirmDialog
+        open={hideConfirmOpen}
+        onClose={() => setHideConfirmOpen(false)}
+        onConfirm={handleHideCustomer}
+        title="Hide Customer"
+        description="This customer and all their price lists will be hidden from all views and excluded from mass updates. You can restore them at any time from Settings → Hidden Customers."
+        confirmLabel="Hide Customer"
+      />
     </div>
   );
 }

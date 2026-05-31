@@ -6,6 +6,7 @@ import { registerPackagingHandlers } from './packaging';
 import { registerSettingsHandlers } from './settings';
 import { registerExportHandlers } from './export';
 import { registerMigrationHandlers } from './migration';
+import { registerCurrencyHandlers } from './currencies';
 
 export function registerAllIpcHandlers() {
   registerCustomerHandlers();
@@ -16,4 +17,5 @@ export function registerAllIpcHandlers() {
   registerSettingsHandlers();
   registerExportHandlers();
   registerMigrationHandlers();
+  registerCurrencyHandlers();
 }

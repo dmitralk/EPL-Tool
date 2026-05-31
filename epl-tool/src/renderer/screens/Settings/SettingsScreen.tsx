@@ -19,9 +19,6 @@ export function SettingsScreen() {
   const [units, setUnits] = useState<Unit[]>([]);
   const [newUnit, setNewUnit] = useState('');
   const [addingUnit, setAddingUnit] = useState(false);
-  const [importOpen, setImportOpen] = useState(false);
-  const [importing, setImporting] = useState(false);
-  const [importResult, setImportResult] = useState<string | null>(null);
 
   useEffect(() => {
     async function load() {
@@ -75,23 +72,6 @@ export function SettingsScreen() {
     await api.deleteUnit(id);
     setUnits(prev => prev.filter(u => u.id !== id));
     toast('Unit deleted', 'success');
-  }
-
-  async function handleImport() {
-    const filePath = await api.migrationSelectFile();
-    if (!filePath) return;
-    setImporting(true);
-    setImportResult(null);
-    const result = await api.migrationImport(filePath);
-    setImporting(false);
-    if (result.success) {
-      const c = result.counts;
-      setImportResult(`Import complete: ${c.customers} customers, ${c.products} products, ${c.standardEpl} EPL rows, ${c.packaging} packaging, ${c.priceLists} price lists.`);
-      toast('Data imported', 'success');
-    } else {
-      setImportResult(`Import failed: ${result.error}`);
-      toast('Import failed', 'error');
-    }
   }
 
   return (
@@ -216,14 +196,53 @@ export function SettingsScreen() {
         </CardContent>
       </Card>
 
+      {/* Packaging */}
+      <Card>
+        <CardHeader><CardTitle>Packaging</CardTitle></CardHeader>
+        <CardContent>
+          <p className="text-sm text-gray-600 mb-3">
+            Manage packaging versions (e.g. EUR-Standard, USD-Standard) and their line items. Each customer is assigned one version; its prices appear in their exported price list.
+          </p>
+          <Button variant="outline" onClick={() => navigate('/settings/packaging')}>
+            Manage Packaging →
+          </Button>
+        </CardContent>
+      </Card>
+
+      {/* Currencies */}
+      <Card>
+        <CardHeader><CardTitle>Currencies</CardTitle></CardHeader>
+        <CardContent>
+          <p className="text-sm text-gray-600 mb-3">
+            USD and EUR are the main currencies with full Standard EPL support. Add other currencies (e.g. GBP) for individual customer price lists.
+          </p>
+          <Button variant="outline" onClick={() => navigate('/settings/currencies')}>
+            Manage Currencies →
+          </Button>
+        </CardContent>
+      </Card>
+
+      {/* Hidden Customers */}
+      <Card>
+        <CardHeader><CardTitle>Hidden Customers</CardTitle></CardHeader>
+        <CardContent>
+          <p className="text-sm text-gray-600 mb-3">
+            Customers that have been hidden are excluded from all views and mass updates. You can restore them or permanently delete them along with their price lists.
+          </p>
+          <Button variant="outline" onClick={() => navigate('/settings/deleted-customers')}>
+            Manage Hidden Customers →
+          </Button>
+        </CardContent>
+      </Card>
+
       {/* Import */}
       <Card>
         <CardHeader><CardTitle>Import Data from Excel</CardTitle></CardHeader>
         <CardContent>
           <p className="text-sm text-gray-600 mb-3">
-            Import customers, products, standard EPL prices, packaging, and price list history from your <strong>All_Prices.xlsx</strong> file.
+            Import customers, products, standard EPL prices, packaging, and price list history from your <strong>All_Prices.xlsx</strong> file. Choose exactly what to import and preview the data before committing.
           </p>
-          <Button onClick={() => setImportOpen(true)} variant="outline" disabled={!dbOpen}>
+          <Button onClick={() => navigate('/settings/import')} variant="outline" disabled={!dbOpen}>
             Import from Excel…
           </Button>
           {!dbOpen && (
@@ -256,23 +275,6 @@ export function SettingsScreen() {
         )}
       </Dialog>
 
-      {/* Import dialog */}
-      <Dialog open={importOpen} onClose={() => { setImportOpen(false); setImportResult(null); }} title="Import from Excel">
-        <p className="text-sm text-gray-600 mb-4">
-          Select your <strong>All_Prices.xlsx</strong> file. Existing records will be updated; new ones added.
-        </p>
-        {importResult && (
-          <div className={`p-3 rounded-md text-sm mb-4 ${importResult.startsWith('Import failed') ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-800'}`}>
-            {importResult}
-          </div>
-        )}
-        <div className="flex justify-end gap-2">
-          <Button variant="outline" onClick={() => { setImportOpen(false); setImportResult(null); }}>Close</Button>
-          <Button onClick={handleImport} disabled={importing}>
-            {importing ? 'Importing…' : 'Select File & Import'}
-          </Button>
-        </div>
-      </Dialog>
     </div>
   );
 }

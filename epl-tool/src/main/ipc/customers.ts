@@ -5,8 +5,33 @@ import type { Customer } from '../../types';
 export function registerCustomerHandlers() {
   ipcMain.handle('customers:list', () => {
     return getDb()
-      .prepare('SELECT * FROM customers ORDER BY customer_short_name')
+      .prepare('SELECT * FROM customers WHERE is_deleted = 0 ORDER BY customer_short_name')
       .all() as Customer[];
+  });
+
+  ipcMain.handle('customers:list-deleted', () => {
+    return getDb()
+      .prepare('SELECT * FROM customers WHERE is_deleted = 1 ORDER BY customer_short_name')
+      .all() as Customer[];
+  });
+
+  ipcMain.handle('customers:soft-delete', (_e, customer_ref_sap: string) => {
+    getDb().prepare('UPDATE customers SET is_deleted = 1 WHERE customer_ref_sap = ?').run(customer_ref_sap);
+  });
+
+  ipcMain.handle('customers:restore', (_e, customer_ref_sap: string) => {
+    getDb().prepare('UPDATE customers SET is_deleted = 0 WHERE customer_ref_sap = ?').run(customer_ref_sap);
+  });
+
+  ipcMain.handle('customers:delete-permanent', (_e, customer_ref_sap: string) => {
+    const db = getDb();
+    db.transaction(() => {
+      const lists = db.prepare('SELECT price_list_id FROM price_lists WHERE customer_ref_sap = ?').all(customer_ref_sap) as { price_list_id: string }[];
+      const deleteEntries = db.prepare('DELETE FROM price_list_entries WHERE price_list_id = ?');
+      for (const { price_list_id } of lists) deleteEntries.run(price_list_id);
+      db.prepare('DELETE FROM price_lists WHERE customer_ref_sap = ?').run(customer_ref_sap);
+      db.prepare('DELETE FROM customers WHERE customer_ref_sap = ?').run(customer_ref_sap);
+    })();
   });
 
   ipcMain.handle('customers:get', (_e, customer_ref_sap: string) => {

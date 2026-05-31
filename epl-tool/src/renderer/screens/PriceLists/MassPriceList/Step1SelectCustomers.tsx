@@ -1,11 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { Search } from 'lucide-react';
 import { api } from '../../../lib/ipc';
 import { Button } from '../../../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../../../components/ui/card';
 import { formatDate, nextVersion } from '../../../lib/utils';
 import { useMassWizard, type MassSelectedRow } from './index';
 import type { Customer, PriceListHeader, PriceListFull } from '../../../../types';
+
+const REGIONS = ['ASIA', 'EUROPE', 'AMERICA'] as const;
 
 export function Step1SelectCustomers() {
   const navigate = useNavigate();
@@ -17,6 +20,13 @@ export function Step1SelectCustomers() {
   );
   const [loading, setLoading] = useState(true);
   const [advancing, setAdvancing] = useState(false);
+
+  // Filters
+  const [search, setSearch] = useState('');
+  const [regionFilter, setRegionFilter] = useState('');
+  const [effectiveFrom, setEffectiveFrom] = useState('');
+  const [effectiveTo, setEffectiveTo] = useState('');
+
   const selectAllRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -49,13 +59,37 @@ export function Step1SelectCustomers() {
     [customers, state.currency]
   );
 
+  const filteredCustomers = useMemo(() => {
+    return visibleCustomers.filter(c => {
+      if (search && !c.customer_short_name.toLowerCase().includes(search.toLowerCase())) return false;
+      if (regionFilter && c.main_supply_region !== regionFilter) return false;
+      if (effectiveFrom || effectiveTo) {
+        const latest = latestByCustomer.get(c.customer_ref_sap);
+        if (latest?.effective) {
+          if (effectiveFrom && latest.effective < effectiveFrom) return false;
+          if (effectiveTo && latest.effective > effectiveTo) return false;
+        }
+      }
+      return true;
+    });
+  }, [visibleCustomers, search, regionFilter, effectiveFrom, effectiveTo, latestByCustomer]);
+
   const selectableRefs = useMemo(
-    () => new Set(visibleCustomers.filter(c => latestByCustomer.has(c.customer_ref_sap)).map(c => c.customer_ref_sap)),
-    [visibleCustomers, latestByCustomer]
+    () => new Set(filteredCustomers.filter(c => latestByCustomer.has(c.customer_ref_sap)).map(c => c.customer_ref_sap)),
+    [filteredCustomers, latestByCustomer]
   );
 
   const selectedInView = [...selected].filter(r => selectableRefs.has(r));
   const allSelected = selectableRefs.size > 0 && selectedInView.length === selectableRefs.size;
+
+  const hasFilters = search || regionFilter || effectiveFrom || effectiveTo;
+
+  function clearFilters() {
+    setSearch('');
+    setRegionFilter('');
+    setEffectiveFrom('');
+    setEffectiveTo('');
+  }
 
   useEffect(() => {
     if (selectAllRef.current) {
@@ -77,6 +111,12 @@ export function Step1SelectCustomers() {
       if (next.has(ref)) next.delete(ref); else next.add(ref);
       return next;
     });
+  }
+
+  function handleCurrencySwitch(c: 'USD' | 'EUR') {
+    dispatch({ type: 'SET_CURRENCY', currency: c });
+    setSelected(new Set());
+    clearFilters();
   }
 
   async function handleNext() {
@@ -139,7 +179,7 @@ export function Step1SelectCustomers() {
             {(['USD', 'EUR'] as const).map(c => (
               <button
                 key={c}
-                onClick={() => { dispatch({ type: 'SET_CURRENCY', currency: c }); setSelected(new Set()); }}
+                onClick={() => handleCurrencySwitch(c)}
                 className={`px-4 py-1.5 text-sm font-medium transition-colors ${
                   state.currency === c
                     ? 'bg-blue-600 text-white'
@@ -153,6 +193,52 @@ export function Step1SelectCustomers() {
         </div>
       </CardHeader>
       <CardContent>
+        {/* Filter bar */}
+        <div className="flex flex-wrap gap-2 mb-3">
+          <div className="relative">
+            <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Search customer…"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              className="pl-8 pr-3 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 w-48"
+            />
+          </div>
+          <select
+            value={regionFilter}
+            onChange={e => setRegionFilter(e.target.value)}
+            className="text-sm border border-gray-300 rounded-md px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500 text-gray-700"
+          >
+            <option value="">All regions</option>
+            {REGIONS.map(r => <option key={r} value={r}>{r}</option>)}
+          </select>
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs text-gray-400 shrink-0">Effective</span>
+            <input
+              type="date"
+              value={effectiveFrom}
+              onChange={e => setEffectiveFrom(e.target.value)}
+              className="text-sm border border-gray-300 rounded-md px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500 text-gray-700"
+            />
+            <span className="text-xs text-gray-400">–</span>
+            <input
+              type="date"
+              value={effectiveTo}
+              onChange={e => setEffectiveTo(e.target.value)}
+              className="text-sm border border-gray-300 rounded-md px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500 text-gray-700"
+            />
+          </div>
+          {hasFilters && (
+            <button
+              onClick={clearFilters}
+              className="text-xs text-blue-600 hover:text-blue-800 px-1"
+            >
+              Clear filters
+            </button>
+          )}
+        </div>
+
         <div className="border border-gray-200 rounded-md overflow-hidden mb-4">
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b border-gray-200">
@@ -169,20 +255,21 @@ export function Step1SelectCustomers() {
                 </th>
                 <th className="text-left px-4 py-2.5 font-medium text-gray-600">Customer</th>
                 <th className="text-left px-4 py-2.5 font-medium text-gray-600">SAP Ref</th>
+                <th className="text-left px-4 py-2.5 font-medium text-gray-600">Supply Region</th>
                 <th className="text-left px-4 py-2.5 font-medium text-gray-600">Latest Effective</th>
                 <th className="text-left px-4 py-2.5 font-medium text-gray-600">Version</th>
                 <th className="text-left px-4 py-2.5 font-medium text-gray-600">New Version</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {visibleCustomers.length === 0 ? (
+              {filteredCustomers.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="text-center py-10 text-gray-400">
-                    No {state.currency} customers found
+                  <td colSpan={7} className="text-center py-10 text-gray-400">
+                    {hasFilters ? 'No customers match the current filters' : `No ${state.currency} customers found`}
                   </td>
                 </tr>
               ) : (
-                visibleCustomers.map(customer => {
+                filteredCustomers.map(customer => {
                   const latest = latestByCustomer.get(customer.customer_ref_sap);
                   const selectable = !!latest;
                   const isSelected = selected.has(customer.customer_ref_sap);
@@ -214,6 +301,7 @@ export function Step1SelectCustomers() {
                         )}
                       </td>
                       <td className="px-4 py-2.5 text-gray-500 font-mono text-xs">{customer.customer_ref_sap}</td>
+                      <td className="px-4 py-2.5 text-gray-600">{customer.main_supply_region ?? '—'}</td>
                       <td className="px-4 py-2.5 text-gray-600">{latest ? formatDate(latest.effective) : '—'}</td>
                       <td className="px-4 py-2.5 text-gray-600">{latest?.price_list_version ?? '—'}</td>
                       <td className="px-4 py-2.5 text-gray-400 text-xs">

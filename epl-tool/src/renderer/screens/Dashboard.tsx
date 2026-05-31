@@ -1,11 +1,10 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { FileText, Users, TrendingUp, Plus, Upload } from 'lucide-react';
+import { FileText, Users, TrendingUp, Plus } from 'lucide-react';
 import { api } from '../lib/ipc';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
-import { Dialog } from '../components/ui/dialog';
 import { useToast } from '../components/ui/toast';
 import { formatDate, priceTypeLabel } from '../lib/utils';
 import type { PriceListHeader } from '../../types';
@@ -22,9 +21,6 @@ export function Dashboard() {
   const [stats, setStats] = useState<Stats>({ total: 0, thisYear: 0, last: null });
   const [recentLists, setRecentLists] = useState<PriceListHeader[]>([]);
   const [customerCount, setCustomerCount] = useState(0);
-  const [importOpen, setImportOpen] = useState(false);
-  const [importing, setImporting] = useState(false);
-  const [importResult, setImportResult] = useState<string | null>(null);
 
   useEffect(() => {
     async function load() {
@@ -40,32 +36,6 @@ export function Dashboard() {
     load();
   }, []);
 
-  async function handleImport() {
-    const filePath = await api.migrationSelectFile();
-    if (!filePath) return;
-    setImporting(true);
-    setImportResult(null);
-    const result = await api.migrationImport(filePath);
-    setImporting(false);
-    if (result.success) {
-      const c = result.counts;
-      setImportResult(`Import complete: ${c.customers} customers, ${c.products} products, ${c.standardEpl} EPL rows, ${c.packaging} packaging rows, ${c.priceLists} price lists, ${c.priceListEntries} price entries.`);
-      // Refresh
-      const [s, lists, customers] = await Promise.all([
-        api.getPriceListStats(),
-        api.getPriceLists(),
-        api.getCustomers(),
-      ]);
-      setStats(s);
-      setRecentLists((lists as PriceListHeader[]).slice(0, 8));
-      setCustomerCount((customers as unknown[]).length);
-      toast('Data imported successfully', 'success');
-    } else {
-      setImportResult(`Import failed: ${result.error}`);
-      toast('Import failed', 'error');
-    }
-  }
-
   async function handleExport(id: string) {
     const result = await api.exportXlsx(id);
     if (result.saved) toast('Price list exported', 'success');
@@ -79,16 +49,10 @@ export function Dashboard() {
           <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
           <p className="text-gray-500 text-sm mt-0.5">Overview of your price list activity</p>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={() => setImportOpen(true)} className="gap-2">
-            <Upload size={15} />
-            Import Excel
-          </Button>
-          <Button onClick={() => navigate('/price-lists/create')} className="gap-2">
-            <Plus size={15} />
-            New Price List
-          </Button>
-        </div>
+        <Button onClick={() => navigate('/price-lists/new')} className="gap-2">
+          <Plus size={15} />
+          New Price List
+        </Button>
       </div>
 
       {/* Stats cards */}
@@ -194,25 +158,6 @@ export function Dashboard() {
         </CardContent>
       </Card>
 
-      {/* Import dialog */}
-      <Dialog open={importOpen} onClose={() => { setImportOpen(false); setImportResult(null); }} title="Import from Excel">
-        <p className="text-sm text-gray-600 mb-4">
-          Select your <strong>All_Prices.xlsx</strong> file to import customers, products, standard EPL prices, packaging, and price list history into the database.
-        </p>
-        {importResult && (
-          <div className={`p-3 rounded-md text-sm mb-4 ${importResult.startsWith('Import failed') ? 'bg-red-50 text-red-700 border border-red-200' : 'bg-green-50 text-green-800 border border-green-200'}`}>
-            {importResult}
-          </div>
-        )}
-        <div className="flex justify-end gap-2">
-          <Button variant="outline" onClick={() => { setImportOpen(false); setImportResult(null); }}>
-            Close
-          </Button>
-          <Button onClick={handleImport} disabled={importing}>
-            {importing ? 'Importing…' : 'Select File & Import'}
-          </Button>
-        </div>
-      </Dialog>
     </div>
   );
 }

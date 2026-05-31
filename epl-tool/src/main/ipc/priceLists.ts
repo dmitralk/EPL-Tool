@@ -29,7 +29,7 @@ export function registerPriceListHandlers() {
       SELECT pl.*, c.customer_short_name
       FROM price_lists pl
       LEFT JOIN customers c ON c.customer_ref_sap = pl.customer_ref_sap
-      WHERE 1=1
+      WHERE (c.is_deleted IS NULL OR c.is_deleted = 0)
     `;
     const params: string[] = [];
     if (filters?.customer_ref_sap) {
@@ -115,14 +115,22 @@ export function registerPriceListHandlers() {
 
   ipcMain.handle('price-lists:stats', () => {
     const db = getDb();
-    const total = (db.prepare('SELECT COUNT(*) as n FROM price_lists').get() as { n: number }).n;
-    const thisYear = (db.prepare(
-      "SELECT COUNT(*) as n FROM price_lists WHERE strftime('%Y', effective) = strftime('%Y', 'now')"
-    ).get() as { n: number }).n;
+    const total = (db.prepare(`
+      SELECT COUNT(*) as n FROM price_lists pl
+      LEFT JOIN customers c ON c.customer_ref_sap = pl.customer_ref_sap
+      WHERE (c.is_deleted IS NULL OR c.is_deleted = 0)
+    `).get() as { n: number }).n;
+    const thisYear = (db.prepare(`
+      SELECT COUNT(*) as n FROM price_lists pl
+      LEFT JOIN customers c ON c.customer_ref_sap = pl.customer_ref_sap
+      WHERE (c.is_deleted IS NULL OR c.is_deleted = 0)
+      AND strftime('%Y', pl.effective) = strftime('%Y', 'now')
+    `).get() as { n: number }).n;
     const last = db.prepare(`
       SELECT pl.*, c.customer_short_name
       FROM price_lists pl
       LEFT JOIN customers c ON c.customer_ref_sap = pl.customer_ref_sap
+      WHERE (c.is_deleted IS NULL OR c.is_deleted = 0)
       ORDER BY pl.created_at DESC LIMIT 1
     `).get();
     return { total, thisYear, last };
