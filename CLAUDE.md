@@ -198,6 +198,7 @@ Critical bugs that were fixed — do not revert:
 5. **isOpen() guard**: migration handler returns a friendly error if no DB is open instead of throwing raw SQLite error.
 6. **Packaging name/type spaces stripped**: `clean()` strips all ASCII spaces, so "Packaging Charge" → `"PackagingCharge"`. Fixed by using `trimOnly()` for `packaging_name` (col2) and `product_type` (col1). Same root cause as the admin email doubling bug (bug #7 below). Rule: **never use `clean()` on human-readable display names**.
 7. **Admin email display name spaces stripped**: `email_name` field passed through `clean()` → "PBP Common Mail Box" → `"PBPCommonMailBox"`, creating a new unique key on each import and doubling rows. Fixed by using `String(row[0] ?? '').trim()` (i.e. `trimOnly`) for `email_name`, plus DELETE-all + re-insert pattern for admin emails.
+8. **Customers/Products/Standard EPL/Price Lists display names stripped**: Same `clean()` bug propagated to customers (`customer_short_name`, `customer_full_name`, `country`, `customer_type`, `comment_on_business_model`, `price_list_managed_by`, `customer_spoc`), products (`product_type`, `product_name`), standard_epl (`product_type`, `product_name`, `unit`), and price_list_entries (`product_type`, `product_name`, `unit`, `comments_about_changes`). All fixed by switching these display name fields to `trimOnly()`.
 
 ### clean() and trimOnly() functions (migration.ts)
 ```typescript

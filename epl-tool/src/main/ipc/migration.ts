@@ -93,7 +93,7 @@ export function registerMigrationHandlers() {
           if (ref) {
             result.customers.count++;
             if (result.customers.samples.length < 3) {
-              result.customers.samples.push(clean(r[6]) ?? ref);
+              result.customers.samples.push(trimOnly(r[6]) ?? ref);
             }
           } else {
             result.customers.skipped++;
@@ -114,7 +114,7 @@ export function registerMigrationHandlers() {
           if (rip) {
             result.products.count++;
             if (result.products.samples.length < 3) {
-              result.products.samples.push(clean(r[3]) ?? rip);
+              result.products.samples.push(trimOnly(r[3]) ?? rip);
             }
           } else {
             result.products.skipped++;
@@ -266,11 +266,11 @@ export function registerMigrationHandlers() {
             const ref = clean(r[5]);
             if (!ref) continue;
             insertCust.run(
-              clean(r[0]), clean(r[1]), clean(r[2]), clean(r[3]),
+              clean(r[0]), trimOnly(r[1]), trimOnly(r[2]), trimOnly(r[3]),
               clean(r[4]), ref,
-              clean(r[6]) ?? ref, clean(r[7]) ?? ref,
+              trimOnly(r[6]) ?? ref, trimOnly(r[7]) ?? ref,
               clean(r[8]) ?? 'USD', clean(r[9]) ?? 'USD-Standard',
-              clean(r[10]), clean(r[11]),
+              trimOnly(r[10]), trimOnly(r[11]),
               excelDateToISO(r[12] as number), excelDateToISO(r[13] as number),
               clean(r[14]), clean(r[15]),
               clean(r[16]), clean(r[17]), clean(r[18]), clean(r[19]),
@@ -289,7 +289,7 @@ export function registerMigrationHandlers() {
           for (const r of rows.slice(1)) {
             const rip = clean(r[2]);
             if (!rip) continue;
-            insertProd.run(clean(r[0]), clean(r[1]), rip, clean(r[3]));
+            insertProd.run(clean(r[0]), trimOnly(r[1]), rip, trimOnly(r[3]));
             counts.products++;
           }
         }
@@ -306,7 +306,7 @@ export function registerMigrationHandlers() {
             if (ripUsd) {
               const price = safeFloat(r[3]);
               if (price !== null) {
-                insertEpl.run('USD', clean(r[0]), ripUsd, clean(r[2]), price, clean(r[5]) ?? '100 KG');
+                insertEpl.run('USD', trimOnly(r[0]), ripUsd, trimOnly(r[2]), price, trimOnly(r[5]) ?? '100 KG');
                 counts.standardEpl++;
               }
             }
@@ -314,7 +314,7 @@ export function registerMigrationHandlers() {
             if (ripEur) {
               const price = safeFloat(r[11]);
               if (price !== null) {
-                insertEpl.run('EUR', clean(r[8]), ripEur, clean(r[10]), price, clean(r[13]) ?? '100 KG');
+                insertEpl.run('EUR', trimOnly(r[8]), ripEur, trimOnly(r[10]), price, trimOnly(r[13]) ?? '100 KG');
                 counts.standardEpl++;
               }
             }
@@ -374,15 +374,15 @@ export function registerMigrationHandlers() {
             const effective = excelDateToISO(r[offset + 1] as number);
             const mailing_date = excelDateToISO(r[offset + 2] as number);
             const price_list_version = clean(r[offset + 4]) ?? 'V1';
-            const comments = clean(r[offset + 5]);
+            const comments = trimOnly(r[offset + 5]);
             let price_type = clean(r[offset + 6]) ?? 'Net Price';
             let discount_pct_raw = r[offset + 7];
             const price_list_id = clean(r[offset + 8]);
-            const prod_type = clean(r[offset + 9]);
-            const prod_name = clean(r[offset + 11]);
+            const prod_type = trimOnly(r[offset + 9]);
+            const prod_name = trimOnly(r[offset + 11]);
             const net_price = safeFloat(r[offset + 12]);
             const currency = clean(r[offset + 13]);
-            const unit = clean(r[offset + 14]);
+            const unit = trimOnly(r[offset + 14]);
 
             if (!customer_ref_sap || !price_list_id || net_price === null) continue;
 
