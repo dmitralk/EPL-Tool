@@ -4,9 +4,48 @@ import os from 'os';
 import path from 'path';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
+import ExcelJS from 'exceljs';
 import { getDb } from '../database';
 import { buildPriceListXlsx } from '../export/buildPriceListXlsx';
-import type { PriceListFull, Customer, PackagingRow } from '../../types';
+import type { PriceListFull, Customer, PackagingRow, CombinedEplRow } from '../../types';
+
+function fetchPackagingRows(db: ReturnType<typeof getDb>, version: string): PackagingRow[] {
+  return db.prepare('SELECT * FROM packaging WHERE packaging_version = ? ORDER BY sort_order')
+    .all(version) as PackagingRow[];
+}
+
+async function buildPackagingXlsx(version: string, rows: PackagingRow[]): Promise<Buffer> {
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet('Packaging');
+
+  ws.columns = [
+    { key: 'product_type',   width: 22 },
+    { key: 'packaging_name', width: 36 },
+    { key: 'price',          width: 14 },
+    { key: 'currency',       width: 12 },
+    { key: 'unit',           width: 14 },
+  ];
+
+  const headerRow = ws.addRow(['Type', 'Name', 'Price', 'Currency', 'Unit']);
+  headerRow.font = { bold: true };
+  headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF2F2F2' } };
+  headerRow.border = { bottom: { style: 'thin', color: { argb: 'FFCCCCCC' } } };
+
+  for (const r of rows) {
+    const row = ws.addRow([
+      r.product_type,
+      r.packaging_name,
+      r.price ?? null,
+      r.currency,
+      r.unit ?? '',
+    ]);
+    if (r.price !== null) row.getCell(3).numFmt = '#,##0.00';
+  }
+
+  ws.views = [{ state: 'frozen', xSplit: 0, ySplit: 1 }];
+
+  return wb.xlsx.writeBuffer() as Promise<Buffer>;
+}
 
 const execFileAsync = promisify(execFile);
 
@@ -174,6 +213,139 @@ export function registerExportHandlers() {
       return { success: false, error: (err as Error).message };
     }
   });
+
+  ipcMain.handle('export:standard-epl-xlsx', async () => {
+    const rows = fetchStandardEplRows();
+    const today = new Date().toISOString().slice(0, 10);
+    const { filePath, canceled } = await dialog.showSaveDialog({
+      defaultPath: `Standard-EPL-${today}.xlsx`,
+      filters: [{ name: 'Excel Workbook', extensions: ['xlsx'] }],
+    });
+    if (canceled || !filePath) return { saved: false };
+    try {
+      const buffer = await buildStandardEplXlsx(rows);
+      fs.writeFileSync(filePath, buffer);
+      return { saved: true, path: filePath };
+    } catch (err) {
+      return { saved: false, error: (err as Error).message };
+    }
+  });
+
+  ipcMain.handle('export:packaging-xlsx', async (_e, version: string) => {
+    const db = getDb();
+    const rows = fetchPackagingRows(db, version);
+    const today = new Date().toISOString().slice(0, 10);
+    const safeName = version.replace(/[/\\:*?"<>|]/g, '-');
+    const { filePath, canceled } = await dialog.showSaveDialog({
+      defaultPath: `Packaging-${safeName}-${today}.xlsx`,
+      filters: [{ name: 'Excel Workbook', extensions: ['xlsx'] }],
+    });
+    if (canceled || !filePath) return { saved: false };
+    try {
+      const buffer = await buildPackagingXlsx(version, rows);
+      fs.writeFileSync(filePath, buffer);
+      return { saved: true, path: filePath };
+    } catch (err) {
+      return { saved: false, error: (err as Error).message };
+    }
+  });
+
+  ipcMain.handle('export:packaging-mail', async (_e, version: string) => {
+    const db = getDb();
+    const rows = fetchPackagingRows(db, version);
+    const today = new Date().toISOString().slice(0, 10);
+    const safeName = version.replace(/[/\\:*?"<>|]/g, '-');
+    const filePath = path.join(os.tmpdir(), `Packaging-${safeName}-${today}.xlsx`);
+    try {
+      const buffer = await buildPackagingXlsx(version, rows);
+      fs.writeFileSync(filePath, buffer);
+      const subject = `Packaging Charges — ${version} — ${today}`;
+      if (process.platform === 'darwin') {
+        await openMailMac({ filePath, to: '', subject, body: '' });
+      } else if (process.platform === 'win32') {
+        await openMailWin({ filePath, to: '', subject, body: '' });
+      } else {
+        await shell.openExternal(`mailto:?subject=${encodeURIComponent(subject)}`);
+      }
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: (err as Error).message };
+    }
+  });
+
+  ipcMain.handle('export:standard-epl-mail', async () => {
+    const rows = fetchStandardEplRows();
+    const today = new Date().toISOString().slice(0, 10);
+    const filePath = path.join(os.tmpdir(), `Standard-EPL-${today}.xlsx`);
+    try {
+      const buffer = await buildStandardEplXlsx(rows);
+      fs.writeFileSync(filePath, buffer);
+      const subject = `Standard EPL Prices — ${today}`;
+      if (process.platform === 'darwin') {
+        await openMailMac({ filePath, to: '', subject, body: '' });
+      } else if (process.platform === 'win32') {
+        await openMailWin({ filePath, to: '', subject, body: '' });
+      } else {
+        await shell.openExternal(`mailto:?subject=${encodeURIComponent(subject)}`);
+      }
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: (err as Error).message };
+    }
+  });
+}
+
+function fetchStandardEplRows(): CombinedEplRow[] {
+  return getDb().prepare(`
+    SELECT
+      p.id, p.rip_code, p.product_type, p.product_name, p.plant,
+      usd.id as usd_id, usd.net_price as usd_price, usd.unit as usd_unit,
+      eur.id as eur_id, eur.net_price as eur_price, eur.unit as eur_unit
+    FROM products p
+    LEFT JOIN standard_epl usd ON usd.rip_code = p.rip_code AND usd.currency = 'USD'
+    LEFT JOIN standard_epl eur ON eur.rip_code = p.rip_code AND eur.currency = 'EUR'
+    ORDER BY p.product_type, p.rip_code
+  `).all() as CombinedEplRow[];
+}
+
+async function buildStandardEplXlsx(rows: CombinedEplRow[]): Promise<Buffer> {
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet('Standard EPL');
+
+  ws.columns = [
+    { key: 'rip_code',     width: 16 },
+    { key: 'product_type', width: 22 },
+    { key: 'product_name', width: 46 },
+    { key: 'usd_price',    width: 13 },
+    { key: 'usd_unit',     width: 13 },
+    { key: 'eur_price',    width: 13 },
+    { key: 'eur_unit',     width: 13 },
+  ];
+
+  const headerRow = ws.addRow(['RIP Code', 'Product Type', 'Product Name', 'USD Price', 'USD Unit', 'EUR Price', 'EUR Unit']);
+  headerRow.font = { bold: true };
+  headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF2F2F2' } };
+  headerRow.border = {
+    bottom: { style: 'thin', color: { argb: 'FFCCCCCC' } },
+  };
+
+  for (const r of rows) {
+    const row = ws.addRow([
+      r.rip_code,
+      r.product_type,
+      r.product_name,
+      r.usd_price ?? null,
+      r.usd_unit ?? '',
+      r.eur_price ?? null,
+      r.eur_unit ?? '',
+    ]);
+    if (r.usd_price !== null) row.getCell(4).numFmt = '#,##0.00';
+    if (r.eur_price !== null) row.getCell(6).numFmt = '#,##0.00';
+  }
+
+  ws.views = [{ state: 'frozen', xSplit: 0, ySplit: 1 }];
+
+  return wb.xlsx.writeBuffer() as Promise<Buffer>;
 }
 
 function escapeAppleScript(s: string): string {

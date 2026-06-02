@@ -55,6 +55,10 @@ const api = {
   openMailWithAttachment: (params: { filePath: string; to: string; subject: string; body: string }) =>
     ipcRenderer.invoke('export:open-mail-with-attachment', params),
   openMailBulk: (ids: string[], subject: string, body: string) => ipcRenderer.invoke('export:open-mail-bulk', ids, subject, body),
+  exportStandardEplXlsx: () => ipcRenderer.invoke('export:standard-epl-xlsx'),
+  exportStandardEplMail: () => ipcRenderer.invoke('export:standard-epl-mail'),
+  exportPackagingXlsx: (version: string) => ipcRenderer.invoke('export:packaging-xlsx', version),
+  exportPackagingMail: (version: string) => ipcRenderer.invoke('export:packaging-mail', version),
 
   // Settings
   getSetting: (key: string) => ipcRenderer.invoke('settings:get', key),

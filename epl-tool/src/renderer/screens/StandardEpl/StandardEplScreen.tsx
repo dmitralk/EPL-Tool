@@ -1,31 +1,57 @@
 import { useEffect, useRef, useState } from 'react';
-import { Search } from 'lucide-react';
+import { Download, Lock, Mail, Search } from 'lucide-react';
 import { api } from '../../lib/ipc';
+import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { useToast } from '../../components/ui/toast';
-import type { CombinedEplRow, Unit } from '../../../types';
+import type { CombinedEplRow, PackagingRow, PackagingVersion, Unit } from '../../../types';
 
 type EditingCell = { id: number; currency: 'USD' | 'EUR'; field: 'price' | 'unit' };
+type Tab = 'prices' | 'packaging';
 
 export function StandardEplScreen() {
   const { toast } = useToast();
+  const [tab, setTab] = useState<Tab>('prices');
+
+  // Standard prices state
   const [rows, setRows] = useState<CombinedEplRow[]>([]);
   const [units, setUnits] = useState<Unit[]>([]);
   const [search, setSearch] = useState('');
   const [editing, setEditing] = useState<EditingCell | null>(null);
   const [draftValue, setDraftValue] = useState('');
   const [saving, setSaving] = useState(false);
+  const [editingEnabled, setEditingEnabled] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Packaging state
+  const [packagingVersions, setPackagingVersions] = useState<PackagingVersion[]>([]);
+  const [selectedVersion, setSelectedVersion] = useState('');
+  const [packagingRows, setPackagingRows] = useState<PackagingRow[]>([]);
+  const [packagingLoading, setPackagingLoading] = useState(false);
 
   useEffect(() => {
     Promise.all([
       api.getStandardEplCombined(),
       api.getUnits(),
-    ]).then(([r, u]) => {
+      api.getSetting('standard_epl_editable'),
+      api.listPackagingVersions(),
+    ]).then(([r, u, editable, versions]) => {
       setRows(r as CombinedEplRow[]);
       setUnits(u as Unit[]);
+      setEditingEnabled(editable === '1');
+      const vList = versions as PackagingVersion[];
+      setPackagingVersions(vList);
+      if (vList.length > 0) setSelectedVersion(vList[0].version);
     });
   }, []);
+
+  useEffect(() => {
+    if (!selectedVersion) return;
+    setPackagingLoading(true);
+    api.getPackaging(selectedVersion)
+      .then(list => setPackagingRows(list as PackagingRow[]))
+      .finally(() => setPackagingLoading(false));
+  }, [selectedVersion]);
 
   useEffect(() => {
     if (editing?.field === 'price') inputRef.current?.select();
@@ -42,6 +68,28 @@ export function StandardEplScreen() {
   });
 
   const defaultUnit = units[0]?.name ?? '100 KG';
+
+  async function handleExport() {
+    const result = await api.exportStandardEplXlsx() as { saved: boolean; error?: string };
+    if (result.saved) toast('EPL exported', 'success');
+    else if (result.error) toast(`Export failed: ${result.error}`, 'error');
+  }
+
+  async function handleEmail() {
+    const result = await api.exportStandardEplMail() as { success: boolean; error?: string };
+    if (!result.success) toast(`Email failed: ${result.error}`, 'error');
+  }
+
+  async function handleExportPackaging() {
+    const result = await api.exportPackagingXlsx(selectedVersion) as { saved: boolean; error?: string };
+    if (result.saved) toast('Packaging exported', 'success');
+    else if (result.error) toast(`Export failed: ${result.error}`, 'error');
+  }
+
+  async function handleEmailPackaging() {
+    const result = await api.exportPackagingMail(selectedVersion) as { success: boolean; error?: string };
+    if (!result.success) toast(`Email failed: ${result.error}`, 'error');
+  }
 
   function startEdit(row: CombinedEplRow, currency: 'USD' | 'EUR', field: 'price' | 'unit') {
     const current = currency === 'USD'
@@ -117,9 +165,19 @@ export function StandardEplScreen() {
     const price = currency === 'USD' ? row.usd_price : row.eur_price;
     const unit = currency === 'USD' ? row.usd_unit : row.eur_unit;
 
+    if (!editingEnabled) {
+      return (
+        <div className="flex items-center gap-2">
+          <span className={`text-sm font-mono w-24 text-right px-2 py-0.5 ${price !== null ? 'text-gray-900' : 'text-gray-300 italic'}`}>
+            {price !== null ? price.toFixed(2) : 'no price'}
+          </span>
+          <span className="text-xs text-gray-400 px-1 py-0.5">{unit ?? defaultUnit}</span>
+        </div>
+      );
+    }
+
     return (
       <div className="flex items-center gap-2">
-        {/* Price */}
         {isEditingPrice ? (
           <input
             ref={inputRef}
@@ -142,7 +200,6 @@ export function StandardEplScreen() {
             {price !== null ? price.toFixed(2) : 'no price'}
           </button>
         )}
-        {/* Unit — select dropdown */}
         {isEditingUnit ? (
           <select
             autoFocus
@@ -173,59 +230,196 @@ export function StandardEplScreen() {
     );
   }
 
+  const selectedVersionMeta = packagingVersions.find(v => v.version === selectedVersion);
+
   return (
     <div className="p-6">
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Standard EPL</h1>
-          <p className="text-gray-500 text-sm mt-0.5">{rows.length} products — click a price or unit to edit</p>
+          <p className="text-gray-500 text-sm mt-0.5">
+            {tab === 'prices'
+              ? `${rows.length} products${editingEnabled ? ' — click a price or unit to edit' : ''}`
+              : `${packagingVersions.length} packaging version${packagingVersions.length !== 1 ? 's' : ''}`}
+          </p>
         </div>
+        {tab === 'prices' && (
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={handleExport} disabled={rows.length === 0}>
+              <Download size={14} className="mr-1.5" />
+              Export EPL to Excel
+            </Button>
+            <Button variant="outline" size="sm" onClick={handleEmail} disabled={rows.length === 0}>
+              <Mail size={14} className="mr-1.5" />
+              Email EPL
+            </Button>
+          </div>
+        )}
+        {tab === 'packaging' && (
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={handleExportPackaging} disabled={!selectedVersion || packagingRows.length === 0}>
+              <Download size={14} className="mr-1.5" />
+              Export to Excel
+            </Button>
+            <Button variant="outline" size="sm" onClick={handleEmailPackaging} disabled={!selectedVersion || packagingRows.length === 0}>
+              <Mail size={14} className="mr-1.5" />
+              Email
+            </Button>
+          </div>
+        )}
       </div>
 
-      <div className="relative max-w-xs mb-4">
-        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-        <Input
-          placeholder="Search products…"
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          className="pl-9"
-        />
+      {/* Tab switcher */}
+      <div className="flex gap-1 mb-4 border-b border-gray-200">
+        <button
+          onClick={() => setTab('prices')}
+          className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+            tab === 'prices'
+              ? 'border-blue-500 text-blue-600'
+              : 'border-transparent text-gray-500 hover:text-gray-700'
+          }`}
+        >
+          Standard Prices
+        </button>
+        <button
+          onClick={() => setTab('packaging')}
+          className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+            tab === 'packaging'
+              ? 'border-blue-500 text-blue-600'
+              : 'border-transparent text-gray-500 hover:text-gray-700'
+          }`}
+        >
+          Packaging Charges
+        </button>
       </div>
 
-      <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
-        <table className="w-full text-sm">
-          <thead className="bg-gray-50 border-b border-gray-200">
-            <tr>
-              <th className="text-left px-4 py-3 font-medium text-gray-600">RIP Code</th>
-              <th className="text-left px-4 py-3 font-medium text-gray-600">Product Type</th>
-              <th className="text-left px-4 py-3 font-medium text-gray-600">Product Name</th>
-              <th className="text-left px-4 py-3 font-medium text-gray-600">USD Price / Unit</th>
-              <th className="text-left px-4 py-3 font-medium text-gray-600">EUR Price / Unit</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {filtered.length === 0 ? (
-              <tr>
-                <td colSpan={5} className="text-center py-10 text-gray-400">No products found</td>
-              </tr>
-            ) : (
-              filtered.map(row => (
-                <tr key={row.id} className="hover:bg-gray-50 transition-colors">
-                  <td className="px-4 py-2 font-mono text-xs text-gray-700">{row.rip_code}</td>
-                  <td className="px-4 py-2 text-gray-600">{row.product_type}</td>
-                  <td className="px-4 py-2 text-gray-900">{row.product_name}</td>
-                  <td className="px-4 py-2">
-                    <PriceCell row={row} currency="USD" />
-                  </td>
-                  <td className="px-4 py-2">
-                    <PriceCell row={row} currency="EUR" />
-                  </td>
+      {tab === 'prices' && (
+        <>
+          {!editingEnabled && (
+            <div className="flex items-center gap-2 mb-4 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-500">
+              <Lock size={13} className="shrink-0" />
+              <span>Read-only — to make changes, go to <strong className="text-gray-700">Settings → Standard EPL Prices</strong></span>
+            </div>
+          )}
+
+          <div className="relative max-w-xs mb-4">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <Input
+              placeholder="Search products…"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              className="pl-9"
+            />
+          </div>
+
+          <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 border-b border-gray-200">
+                <tr>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600">RIP Code</th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600">Product Type</th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600">Product Name</th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600">USD Price / Unit</th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600">EUR Price / Unit</th>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {filtered.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="text-center py-10 text-gray-400">No products found</td>
+                  </tr>
+                ) : (
+                  filtered.map(row => (
+                    <tr key={row.id} className="hover:bg-gray-50 transition-colors">
+                      <td className="px-4 py-2 font-mono text-xs text-gray-700">{row.rip_code}</td>
+                      <td className="px-4 py-2 text-gray-600">{row.product_type}</td>
+                      <td className="px-4 py-2 text-gray-900">{row.product_name}</td>
+                      <td className="px-4 py-2">
+                        <PriceCell row={row} currency="USD" />
+                      </td>
+                      <td className="px-4 py-2">
+                        <PriceCell row={row} currency="EUR" />
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+
+      {tab === 'packaging' && (
+        <>
+          {packagingVersions.length === 0 ? (
+            <div className="text-center py-16 text-gray-400">
+              No packaging versions found. Add one in <strong className="text-gray-500">Settings → Packaging</strong>.
+            </div>
+          ) : (
+            <>
+              <div className="flex items-center gap-3 mb-4">
+                <label className="text-sm text-gray-600 shrink-0">Version:</label>
+                <select
+                  value={selectedVersion}
+                  onChange={e => setSelectedVersion(e.target.value)}
+                  className="text-sm border border-gray-300 rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                >
+                  {packagingVersions.map(v => (
+                    <option key={v.version} value={v.version}>{v.version}</option>
+                  ))}
+                </select>
+                {selectedVersionMeta && (
+                  <span className="text-xs text-gray-400">
+                    {selectedVersionMeta.row_count} rows · {selectedVersionMeta.customer_count} customer{selectedVersionMeta.customer_count !== 1 ? 's' : ''}
+                  </span>
+                )}
+              </div>
+
+              <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 border-b border-gray-200">
+                    <tr>
+                      <th className="text-left px-4 py-3 font-medium text-gray-600 w-36">Type</th>
+                      <th className="text-left px-4 py-3 font-medium text-gray-600">Name</th>
+                      <th className="text-right px-4 py-3 font-medium text-gray-600 w-32">Price</th>
+                      <th className="text-left px-4 py-3 font-medium text-gray-600 w-20">Currency</th>
+                      <th className="text-left px-4 py-3 font-medium text-gray-600 w-24">Unit</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {packagingLoading ? (
+                      <tr>
+                        <td colSpan={5} className="text-center py-10 text-gray-400">Loading…</td>
+                      </tr>
+                    ) : packagingRows.length === 0 ? (
+                      <tr>
+                        <td colSpan={5} className="text-center py-10 text-gray-400">No rows in this version</td>
+                      </tr>
+                    ) : packagingRows.map(row => (
+                      <tr key={row.id} className="hover:bg-gray-50 transition-colors">
+                        <td className="px-4 py-2 text-gray-500 text-xs">{row.product_type}</td>
+                        <td className="px-4 py-2 text-gray-900">{row.packaging_name}</td>
+                        <td className="px-4 py-2 text-right font-mono">
+                          {row.price === null
+                            ? <span className="text-gray-300 text-xs italic">label</span>
+                            : <span className="text-gray-900">{row.price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                          }
+                        </td>
+                        <td className="px-4 py-2 text-gray-600 text-xs font-mono">{row.currency}</td>
+                        <td className="px-4 py-2 text-gray-500 text-xs">{row.unit ?? '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <p className="text-xs text-gray-400 mt-3">
+                Read-only — to edit packaging, go to <strong className="text-gray-600">Settings → Packaging</strong>
+              </p>
+            </>
+          )}
+        </>
+      )}
     </div>
   );
 }

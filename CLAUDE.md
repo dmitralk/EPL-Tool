@@ -47,7 +47,7 @@ This file is read automatically by Claude Code at conversation start. It gives f
 │   │   │   │   ├── standardEpl.ts    ← includes list-combined (LEFT JOIN) and upsert
 │   │   │   │   ├── packaging.ts
 │   │   │   │   ├── settings.ts       ← DB open/create, logo, admin emails, units
-│   │   │   │   ├── export.ts         ← xlsx single/bulk, mail single/bulk
+│   │   │   │   ├── export.ts         ← xlsx single/bulk, mail single/bulk; standard EPL xlsx + mail
 │   │   │   │   └── migration.ts      ← Excel import from All_Prices.xlsx
 │   │   │   └── export/
 │   │   │       └── buildPriceListXlsx.ts ← ExcelJS builder, replicates reference format
@@ -68,7 +68,7 @@ This file is read automatically by Claude Code at conversation start. It gives f
 │   │           ├── DatabaseSelector.tsx
 │   │           ├── Dashboard.tsx               ← stats cards, recent price lists table; "+ New Price List" routes to /price-lists/new (gateway)
 │   │           ├── Settings/
-│   │           │   ├── SettingsScreen.tsx      ← DB path, logo, admin emails, units, packaging/currencies/hidden customers links, import button
+│   │           │   ├── SettingsScreen.tsx      ← DB path, logo, admin emails, units, packaging/currencies/hidden customers links, Standard EPL editing toggle, import button
 │   │           │   ├── DeletedCustomersScreen.tsx ← lists soft-deleted customers; Restore or Delete Permanently per row
 │   │           │   ├── CurrenciesScreen.tsx    ← route /settings/currencies: main currencies (USD/EUR, read-only) + other currencies (add/remove)
 │   │           │   ├── PackagingScreen.tsx     ← route /settings/packaging: version list with row/customer counts; New Version dialog (clone-from support); Delete blocked if customers assigned
@@ -95,7 +95,7 @@ This file is read automatically by Claude Code at conversation start. It gives f
 │   │           │       ├── Step3Preview.tsx    ← per-customer summary with expandable price detail rows
 │   │           │       └── Step4CreateResults.tsx  ← sequential creation, results table, bulk export/email
 │   │           ├── MasterData/MasterDataScreen.tsx   ← product CRUD (nav label: "Products")
-│   │           └── StandardEpl/StandardEplScreen.tsx ← combined USD+EUR table, click-to-edit
+│   │           └── StandardEpl/StandardEplScreen.tsx ← two tabs: “Standard Prices” (combined USD+EUR table, read-only by default, Export/Email buttons) and “Packaging Charges” (version selector dropdown, read-only table, Export/Email buttons)
 │   ├── forge.config.ts     ← IMPORTANT: contains packageAfterCopy for better-sqlite3
 │   └── package.json
 ├── All_Prices.xlsx         ← original master data file for import
@@ -118,7 +118,7 @@ packaging       -- packaging charges + pallets; groups by packaging_version; nul
 price_lists     -- price list headers; price_type IN ('Discount','Net Price','PrevPercent','PrevAbsolute'); has created_at DEFAULT datetime('now')
 price_list_entries -- one row per product per price list
 admin_emails    -- shared email addresses (PBP Costing, PBP Common)
-app_settings    -- key/value store (logo_path, db_path, email_subject_template, email_body_template)
+app_settings    -- key/value store (logo_path, db_path, email_subject_template, email_body_template, standard_epl_editable)
 units           -- configurable unit list; seeded with '100 KG', '100 L' on DB open
 currencies      -- currency list; seeded with USD (is_main=1) and EUR (is_main=1); other currencies (is_main=0) can be added for one-off price lists
 ```
@@ -160,7 +160,7 @@ products:list, products:create, products:update, products:delete
 standard-epl:list, standard-epl:list-combined, standard-epl:update-price, standard-epl:upsert
 packaging:list, packaging:update-price, packaging:list-versions, packaging:create-version, packaging:delete-version, packaging:add-row, packaging:update-row, packaging:delete-row
 price-lists:list, price-lists:get, price-lists:create, price-lists:delete, price-lists:stats
-export:xlsx, export:xlsx-bulk, export:open-mail-with-attachment, export:open-mail-bulk
+export:xlsx, export:xlsx-bulk, export:open-mail-with-attachment, export:open-mail-bulk, export:standard-epl-xlsx, export:standard-epl-mail, export:packaging-xlsx, export:packaging-mail
 settings:get, settings:set, settings:get-admin-emails, settings:update-admin-email
 settings:get-units, settings:create-unit, settings:delete-unit, settings:select-logo
 currencies:list, currencies:create, currencies:delete
@@ -402,6 +402,66 @@ When adding a new `price_type` value, update this function and the DB CHECK cons
 
 ### Standard units (Settings + StandardEplScreen)
 Units stored in `units` table; seeded on DB open. Settings screen has a "Standard Units" card for add/remove. StandardEplScreen uses a `<select>` dropdown (not text input) for unit editing.
+
+### Standard EPL read-only mode
+
+The Standard EPL tab is **read-only by default** to prevent accidental price changes. The setting is stored as `standard_epl_editable` in `app_settings` (`'1'` = editable, `'0'` / absent = read-only).
+
+**StandardEplScreen behaviour:**
+- Reads `standard_epl_editable` on mount alongside rows and units.
+- When read-only: price and unit cells render as plain `<span>` elements (no hover, no pointer cursor, no click handler). A subtle gray banner below the header reads "Read-only — to make changes, go to **Settings → Standard EPL Prices**" with a lock icon.
+- When editable: existing click-to-edit behaviour is unchanged.
+- The subtitle changes from "N products — click a price or unit to edit" to just "N products" in read-only mode.
+
+**Settings → Standard EPL Prices card** (`SettingsScreen.tsx`):
+- Toggle button: "Enable editing" (outline) when read-only; "Editing enabled — click to disable" (filled) when editable, with an amber reminder "Remember to disable when done".
+- Calls `api.setSetting('standard_epl_editable', '1'/'0')` on click; persists across sessions.
+- New databases open in read-only mode by default (key absent → treated as `'0'`).
+
+### Standard EPL export
+
+**StandardEplScreen tab layout**: the screen has two underlined tabs — "Standard Prices" and "Packaging Charges". Export/Email buttons in the top-right header swap based on the active tab. The lock banner and search bar are Standard Prices tab only.
+
+#### Standard Prices tab export
+
+Two independent action buttons (top-right, always visible, disabled only when no rows loaded):
+
+- **"Export EPL to Excel"** — calls `export:standard-epl-xlsx`; shows native save dialog; default filename `Standard-EPL-YYYY-MM-DD.xlsx`. Toast on success/error.
+- **"Email EPL"** — calls `export:standard-epl-mail`; saves to `os.tmpdir()` automatically (no dialog); opens Outlook / Mail.app draft with the file attached, subject `"Standard EPL Prices — YYYY-MM-DD"`, To field empty for the user to fill in. Toast on error.
+
+Both buttons work independently — email does not require a prior export to disk.
+
+**`export:standard-epl-xlsx` and `export:standard-epl-mail` handlers** (in `export.ts`):
+
+```
+fetchStandardEplRows()  — same LEFT JOIN as standard-epl:list-combined; runs directly against DB (no IPC round-trip)
+buildStandardEplXlsx()  — ExcelJS table: columns RIP Code / Product Type / Product Name / USD Price / USD Unit / EUR Price / EUR Unit
+                          Bold header row, light gray fill (#F2F2F2), thin bottom border, frozen row 1
+                          Column widths: 16 / 22 / 46 / 13 / 13 / 13 / 13
+                          Price cells use #,##0.00 number format; null prices → empty cell
+                          No logo, no customer header — internal use only
+```
+
+The email handler passes `to: ''` so the draft opens with an empty To field (internal recipient varies each time).
+
+#### Packaging Charges tab
+
+Read-only table of packaging rows for the selected version. Version selector dropdown at top (defaults to first version); rows reload on version change. Null-price rows (section labels) displayed as italic grey "label" text — same display as Settings → Packaging editor but without edit/delete controls. A small note at the bottom links users to Settings → Packaging for edits.
+
+Two export buttons (top-right, disabled when no version selected or no rows):
+
+- **"Export to Excel"** — calls `export:packaging-xlsx`; shows native save dialog; default filename `Packaging-{version}-YYYY-MM-DD.xlsx` (version sanitized for filesystem: `[/\\:*?"<>|]` → `-`).
+- **"Email"** — calls `export:packaging-mail`; saves to `os.tmpdir()`, opens mail draft, subject `"Packaging Charges — {version} — YYYY-MM-DD"`, To blank.
+
+**`export:packaging-xlsx` and `export:packaging-mail` handlers** (in `export.ts`):
+
+```
+fetchPackagingRows(db, version)  — SELECT * FROM packaging WHERE packaging_version = ? ORDER BY sort_order
+buildPackagingXlsx(version, rows) — ExcelJS table: columns Type / Name / Price / Currency / Unit
+                                    Bold header row, light gray fill, thin bottom border, frozen row 1
+                                    Column widths: 22 / 36 / 14 / 12 / 14
+                                    Price cells use #,##0.00 numFmt; null prices → empty cell
+```
 
 ### products:update cascade
 When a product's `product_name` or `product_type` is updated, the handler also updates matching rows in `standard_epl`. When a product is deleted, its `standard_epl` rows are deleted first (no FK cascade in SQLite without `ON DELETE CASCADE` — handled manually).

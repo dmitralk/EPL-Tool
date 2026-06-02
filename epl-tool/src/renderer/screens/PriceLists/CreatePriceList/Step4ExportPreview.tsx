@@ -182,7 +182,7 @@ export function Step4ExportPreview() {
           <Button variant="ghost" onClick={() => navigate('/price-lists')}>
             View All Price Lists
           </Button>
-          <Button variant="outline" onClick={() => navigate('/price-lists/create')}>
+          <Button variant="outline" onClick={() => navigate('/price-lists/new')}>
             Create Another
           </Button>
         </div>
