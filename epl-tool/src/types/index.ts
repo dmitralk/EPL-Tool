@@ -34,12 +34,24 @@ export interface Product {
 
 export interface StandardEplRow {
   id: number;
+  version_id: number;
   currency: 'USD' | 'EUR';
   product_type: string;
   rip_code: string;
   product_name: string;
   net_price: number;
   unit: string;
+}
+
+export interface StandardEplVersion {
+  version_id: number;
+  version_name: string;
+  status: 'draft' | 'published';
+  effective_from: string | null;
+  notes: string | null;
+  created_at: string;
+  published_at: string | null;
+  row_count?: number;
 }
 
 export interface PackagingRow {

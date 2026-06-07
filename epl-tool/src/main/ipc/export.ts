@@ -5,7 +5,7 @@ import path from 'path';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import ExcelJS from 'exceljs';
-import { getDb } from '../database';
+import { getDb, getLatestPublishedEplVersionId } from '../database';
 import { buildPriceListXlsx } from '../export/buildPriceListXlsx';
 import type { PriceListFull, Customer, PackagingRow, CombinedEplRow } from '../../types';
 
@@ -214,11 +214,16 @@ export function registerExportHandlers() {
     }
   });
 
-  ipcMain.handle('export:standard-epl-xlsx', async () => {
-    const rows = fetchStandardEplRows();
+  ipcMain.handle('export:standard-epl-xlsx', async (_e, versionId?: number) => {
+    const db = getDb();
+    const vid = versionId ?? getLatestPublishedEplVersionId();
+    const versionRow = db.prepare('SELECT version_name FROM standard_epl_versions WHERE version_id = ?')
+      .get(vid) as { version_name: string } | undefined;
+    const rows = fetchStandardEplRows(vid);
     const today = new Date().toISOString().slice(0, 10);
+    const safeName = (versionRow?.version_name ?? String(vid)).replace(/[/\\:*?"<>|]/g, '-');
     const { filePath, canceled } = await dialog.showSaveDialog({
-      defaultPath: `Standard-EPL-${today}.xlsx`,
+      defaultPath: `Standard-EPL-${safeName}-${today}.xlsx`,
       filters: [{ name: 'Excel Workbook', extensions: ['xlsx'] }],
     });
     if (canceled || !filePath) return { saved: false };
@@ -273,14 +278,19 @@ export function registerExportHandlers() {
     }
   });
 
-  ipcMain.handle('export:standard-epl-mail', async () => {
-    const rows = fetchStandardEplRows();
+  ipcMain.handle('export:standard-epl-mail', async (_e, versionId?: number) => {
+    const db = getDb();
+    const vid = versionId ?? getLatestPublishedEplVersionId();
+    const versionRow = db.prepare('SELECT version_name FROM standard_epl_versions WHERE version_id = ?')
+      .get(vid) as { version_name: string } | undefined;
+    const rows = fetchStandardEplRows(vid);
     const today = new Date().toISOString().slice(0, 10);
-    const filePath = path.join(os.tmpdir(), `Standard-EPL-${today}.xlsx`);
+    const safeName = (versionRow?.version_name ?? String(vid)).replace(/[/\\:*?"<>|]/g, '-');
+    const filePath = path.join(os.tmpdir(), `Standard-EPL-${safeName}-${today}.xlsx`);
     try {
       const buffer = await buildStandardEplXlsx(rows);
       fs.writeFileSync(filePath, buffer);
-      const subject = `Standard EPL Prices — ${today}`;
+      const subject = `Standard EPL Prices — ${versionRow?.version_name ?? String(vid)} — ${today}`;
       if (process.platform === 'darwin') {
         await openMailMac({ filePath, to: '', subject, body: '' });
       } else if (process.platform === 'win32') {
@@ -295,17 +305,18 @@ export function registerExportHandlers() {
   });
 }
 
-function fetchStandardEplRows(): CombinedEplRow[] {
+function fetchStandardEplRows(versionId: number): CombinedEplRow[] {
   return getDb().prepare(`
     SELECT
       p.id, p.rip_code, p.product_type, p.product_name, p.plant,
       usd.id as usd_id, usd.net_price as usd_price, usd.unit as usd_unit,
       eur.id as eur_id, eur.net_price as eur_price, eur.unit as eur_unit
     FROM products p
-    LEFT JOIN standard_epl usd ON usd.rip_code = p.rip_code AND usd.currency = 'USD'
-    LEFT JOIN standard_epl eur ON eur.rip_code = p.rip_code AND eur.currency = 'EUR'
+    LEFT JOIN standard_epl usd ON usd.rip_code = p.rip_code AND usd.currency = 'USD' AND usd.version_id = ?
+    LEFT JOIN standard_epl eur ON eur.rip_code = p.rip_code AND eur.currency = 'EUR' AND eur.version_id = ?
+    WHERE usd.id IS NOT NULL OR eur.id IS NOT NULL
     ORDER BY p.product_type, p.rip_code
-  `).all() as CombinedEplRow[];
+  `).all(versionId, versionId) as CombinedEplRow[];
 }
 
 async function buildStandardEplXlsx(rows: CombinedEplRow[]): Promise<Buffer> {

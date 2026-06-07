@@ -29,12 +29,23 @@ CREATE TABLE IF NOT EXISTS products (
   rip_code TEXT NOT NULL UNIQUE, product_name TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS standard_epl_versions (
+  version_id     INTEGER PRIMARY KEY,
+  version_name   TEXT NOT NULL,
+  status         TEXT NOT NULL CHECK (status IN ('draft','published')),
+  effective_from DATE,
+  notes          TEXT,
+  created_at     DATETIME DEFAULT (datetime('now')),
+  published_at   DATETIME
+);
+
 CREATE TABLE IF NOT EXISTS standard_epl (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
+  version_id INTEGER NOT NULL REFERENCES standard_epl_versions(version_id),
   currency TEXT NOT NULL CHECK (currency IN ('USD','EUR')),
   product_type TEXT NOT NULL, rip_code TEXT NOT NULL,
   product_name TEXT NOT NULL, net_price REAL NOT NULL, unit TEXT NOT NULL,
-  UNIQUE (currency, rip_code)
+  UNIQUE (version_id, currency, rip_code)
 );
 
 CREATE TABLE IF NOT EXISTS packaging (
@@ -86,6 +97,8 @@ CREATE INDEX IF NOT EXISTS idx_standard_epl_currency ON standard_epl(currency);
 const SEED_SQL = `
 INSERT OR IGNORE INTO units (name) VALUES ('100 KG'), ('100 L');
 INSERT OR IGNORE INTO currencies (code, is_main) VALUES ('USD', 1), ('EUR', 1);
+INSERT OR IGNORE INTO standard_epl_versions (version_id, version_name, status, effective_from, published_at)
+  VALUES (1, 'Initial', 'published', date('now'), datetime('now'));
 `;
 
 export function openDatabase(filePath: string): void {
@@ -207,6 +220,35 @@ function migrateIfNeeded(db: Database.Database): void {
     `);
     db.pragma('foreign_keys = ON');
   }
+
+  // Migration 6: Add version_id to standard_epl and create standard_epl_versions.
+  // Detection: standard_epl DDL lacks version_id.
+  // Uses legacy_alter_table=ON for safety (no other tables FK into standard_epl, but consistent pattern).
+  const eplRow = db.prepare(
+    `SELECT sql FROM sqlite_master WHERE type='table' AND name='standard_epl'`
+  ).get() as { sql: string } | undefined;
+
+  if (eplRow && !eplRow.sql.includes('version_id')) {
+    db.pragma('foreign_keys = OFF');
+    db.pragma('legacy_alter_table = ON');
+    db.exec(`
+      ALTER TABLE standard_epl RENAME TO _standard_epl_old;
+      CREATE TABLE standard_epl (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        version_id INTEGER NOT NULL REFERENCES standard_epl_versions(version_id),
+        currency TEXT NOT NULL CHECK (currency IN ('USD','EUR')),
+        product_type TEXT NOT NULL, rip_code TEXT NOT NULL,
+        product_name TEXT NOT NULL, net_price REAL NOT NULL, unit TEXT NOT NULL,
+        UNIQUE (version_id, currency, rip_code)
+      );
+      INSERT INTO standard_epl (id, version_id, currency, product_type, rip_code, product_name, net_price, unit)
+        SELECT id, 1, currency, product_type, rip_code, product_name, net_price, unit FROM _standard_epl_old;
+      DROP TABLE _standard_epl_old;
+      CREATE INDEX IF NOT EXISTS idx_standard_epl_currency ON standard_epl(currency);
+    `);
+    db.pragma('legacy_alter_table = OFF');
+    db.pragma('foreign_keys = ON');
+  }
 }
 
 export function getDb(): Database.Database {
@@ -223,4 +265,13 @@ export function closeDatabase(): void {
 
 export function isOpen(): boolean {
   return db !== null;
+}
+
+export function getLatestPublishedEplVersionId(): number {
+  if (!db) return 1;
+  const row = db.prepare(
+    `SELECT version_id FROM standard_epl_versions WHERE status='published'
+     ORDER BY published_at DESC, version_id DESC LIMIT 1`
+  ).get() as { version_id: number } | undefined;
+  return row?.version_id ?? 1;
 }

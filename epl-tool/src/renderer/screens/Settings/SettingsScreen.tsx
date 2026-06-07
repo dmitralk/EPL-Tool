@@ -19,24 +19,21 @@ export function SettingsScreen() {
   const [units, setUnits] = useState<Unit[]>([]);
   const [newUnit, setNewUnit] = useState('');
   const [addingUnit, setAddingUnit] = useState(false);
-  const [eplEditable, setEplEditable] = useState(false);
 
   useEffect(() => {
     async function load() {
-      const [open, path, logo, emails, unitList, eplEditableSetting] = await Promise.all([
+      const [open, path, logo, emails, unitList] = await Promise.all([
         api.dbIsOpen(),
         api.dbGetPath(),
         api.getSetting('logo_path'),
         api.getAdminEmails(),
         api.getUnits(),
-        api.getSetting('standard_epl_editable'),
       ]);
       setDbOpen(Boolean(open));
       setDbPath(path);
       setLogoPath(logo);
       setAdminEmails(emails as AdminEmail[]);
       setUnits(unitList as Unit[]);
-      setEplEditable(eplEditableSetting === '1');
     }
     load();
   }, []);
@@ -71,12 +68,7 @@ export function SettingsScreen() {
     }
   }
 
-  async function handleToggleEplEditable() {
-    const next = !eplEditable;
-    await api.setSetting('standard_epl_editable', next ? '1' : '0');
-    setEplEditable(next);
-    toast(next ? 'Standard EPL editing enabled' : 'Standard EPL editing disabled', 'success');
-  }
+
 
   async function handleDeleteUnit(id: number) {
     await api.deleteUnit(id);
@@ -242,27 +234,6 @@ export function SettingsScreen() {
           <Button variant="outline" onClick={() => navigate('/settings/deleted-customers')}>
             Manage Hidden Customers →
           </Button>
-        </CardContent>
-      </Card>
-
-      {/* Standard EPL */}
-      <Card>
-        <CardHeader><CardTitle>Standard EPL Prices</CardTitle></CardHeader>
-        <CardContent>
-          <p className="text-sm text-gray-600 mb-3">
-            The Standard EPL tab is read-only by default to prevent accidental changes. Enable editing only when you need to update base prices.
-          </p>
-          <div className="flex items-center gap-3">
-            <Button
-              variant={eplEditable ? 'default' : 'outline'}
-              onClick={handleToggleEplEditable}
-            >
-              {eplEditable ? 'Editing enabled — click to disable' : 'Enable editing'}
-            </Button>
-            {eplEditable && (
-              <span className="text-xs text-amber-600">Remember to disable when done</span>
-            )}
-          </div>
         </CardContent>
       </Card>
 

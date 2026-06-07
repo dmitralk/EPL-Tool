@@ -44,7 +44,7 @@ This file is read automatically by Claude Code at conversation start. It gives f
 │   │   │   │   ├── customers.ts
 │   │   │   │   ├── products.ts       ← cascades name/type sync to standard_epl on update
 │   │   │   │   ├── priceLists.ts
-│   │   │   │   ├── standardEpl.ts    ← includes list-combined (LEFT JOIN) and upsert
+│   │   │   │   ├── standardEpl.ts    ← versioned EPL: list-versions, create-draft, publish-draft, delete-draft, delete-row, list-combined, upsert
 │   │   │   │   ├── packaging.ts
 │   │   │   │   ├── settings.ts       ← DB open/create, logo, admin emails, units
 │   │   │   │   ├── export.ts         ← xlsx single/bulk, mail single/bulk; standard EPL xlsx + mail
@@ -95,7 +95,9 @@ This file is read automatically by Claude Code at conversation start. It gives f
 │   │           │       ├── Step3Preview.tsx    ← per-customer summary with expandable price detail rows
 │   │           │       └── Step4CreateResults.tsx  ← sequential creation, results table, bulk export/email
 │   │           ├── MasterData/MasterDataScreen.tsx   ← product CRUD (nav label: "Products")
-│   │           └── StandardEpl/StandardEplScreen.tsx ← two tabs: “Standard Prices” (combined USD+EUR table, read-only by default, Export/Email buttons) and “Packaging Charges” (version selector dropdown, read-only table, Export/Email buttons)
+│   │           └── StandardEpl/
+│   │               ├── StandardEplScreen.tsx ← two tabs: “Standard Prices” (version selector, draft management, combined USD+EUR table, Export/Email buttons) and “Packaging Charges” (version selector, read-only table, Export/Email buttons)
+│   │               └── StandardEplComparisonPanel.tsx ← side-by-side diff of two EPL versions (Changed / Added / Removed sections)
 │   ├── forge.config.ts     ← IMPORTANT: contains packageAfterCopy for better-sqlite3
 │   └── package.json
 ├── All_Prices.xlsx         ← original master data file for import
@@ -109,18 +111,20 @@ This file is read automatically by Claude Code at conversation start. It gives f
 ## Database schema (SQLite, WAL mode)
 
 ```sql
-customers       -- customer masterdata; currency TEXT NOT NULL (no CHECK — any currency code allowed);
-                -- main_supply_region IN ('ASIA','EUROPE','AMERICA') (nullable);
-                -- is_deleted INTEGER NOT NULL DEFAULT 0 (soft-delete flag)
-products        -- product catalogue; rip_code UNIQUE
-standard_epl    -- standard prices; UNIQUE(currency, rip_code); USD and EUR rows only (CHECK enforced)
-packaging       -- packaging charges + pallets; groups by packaging_version; null price = label/section header row (excluded from export output)
-price_lists     -- price list headers; price_type IN ('Discount','Net Price','PrevPercent','PrevAbsolute'); has created_at DEFAULT datetime('now')
-price_list_entries -- one row per product per price list
-admin_emails    -- shared email addresses (PBP Costing, PBP Common)
-app_settings    -- key/value store (logo_path, db_path, email_subject_template, email_body_template, standard_epl_editable)
-units           -- configurable unit list; seeded with '100 KG', '100 L' on DB open
-currencies      -- currency list; seeded with USD (is_main=1) and EUR (is_main=1); other currencies (is_main=0) can be added for one-off price lists
+customers            -- customer masterdata; currency TEXT NOT NULL (no CHECK — any currency code allowed);
+                     -- main_supply_region IN ('ASIA','EUROPE','AMERICA') (nullable);
+                     -- is_deleted INTEGER NOT NULL DEFAULT 0 (soft-delete flag)
+products             -- product catalogue; rip_code UNIQUE
+standard_epl_versions -- EPL version history; status IN ('draft','published'); one draft at most; seeded with version_id=1 'Initial' published
+standard_epl         -- standard prices; UNIQUE(version_id, currency, rip_code); version_id FK → standard_epl_versions; USD and EUR rows only (CHECK enforced)
+packaging            -- packaging charges + pallets; groups by packaging_version; null price = label/section header row (excluded from export output)
+price_lists          -- price list headers; price_type IN ('Discount','Net Price','PrevPercent','PrevAbsolute'); has created_at DEFAULT datetime('now')
+price_list_entries   -- one row per product per price list
+admin_emails         -- shared email addresses (PBP Costing, PBP Common)
+app_settings         -- key/value store (logo_path, db_path, email_subject_template, email_body_template)
+                     -- note: standard_epl_editable key may exist in older DBs but is no longer used by the UI (replaced by draft/publish model)
+units                -- configurable unit list; seeded with '100 KG', '100 L' on DB open
+currencies           -- currency list; seeded with USD (is_main=1) and EUR (is_main=1); other currencies (is_main=0) can be added for one-off price lists
 ```
 
 Pragmas set on every open: `journal_mode=WAL`, `foreign_keys=ON`, `synchronous=NORMAL`.
@@ -138,6 +142,8 @@ Schema runs `CREATE TABLE IF NOT EXISTS` so opening an existing DB is safe. Unit
 **Migration 4** — Adds `is_deleted INTEGER NOT NULL DEFAULT 0` to `customers` for soft-delete. Simple `ALTER TABLE ADD COLUMN`; existing rows default to `0` (active). Detection: checks `sqlite_master` for `is_deleted` in the customers DDL.
 
 **Migration 5** — Relaxes `customers.currency` CHECK constraint from `IN ('USD','EUR')` to no constraint (any currency code allowed). Uses rename/recreate pattern with `PRAGMA foreign_keys = OFF` (no `legacy_alter_table` needed here — no other tables have FK references to `customers`). Detection: checks for the old two-value constraint string in the `customers` DDL.
+
+**Migration 6** — Adds `standard_epl_versions` table and `version_id` column to `standard_epl`; changes UNIQUE constraint from `(currency, rip_code)` to `(version_id, currency, rip_code)`. Detection: checks `sqlite_master` for `version_id` in the `standard_epl` DDL; skips if already migrated. Uses rename/recreate pattern with `PRAGMA foreign_keys = OFF` + **`PRAGMA legacy_alter_table = ON`** (consistent with Migrations 1/2/5 even though no other table FKs into `standard_epl`). Seeds `standard_epl_versions` row with `version_id=1, version_name='Initial', status='published'` via SEED_SQL (runs before `migrateIfNeeded`), so the migration can safely assign all existing rows `version_id=1`. After migration, exports and price-list creation use `getLatestPublishedEplVersionId()` helper (exported from `database.ts`) to resolve the current active version.
 
 **Indexes:** Three performance indexes are created: `idx_price_lists_customer` (for customer filter), `idx_price_list_entries_pl` (for entry lookups), `idx_standard_epl_currency` (for currency filter).
 
@@ -157,7 +163,8 @@ db:select-file, db:open, db:create, db:get-path, db:is-open
 customers:list, customers:get, customers:create, customers:update, customers:delete
 customers:soft-delete, customers:restore, customers:list-deleted, customers:delete-permanent
 products:list, products:create, products:update, products:delete
-standard-epl:list, standard-epl:list-combined, standard-epl:update-price, standard-epl:upsert
+standard-epl:list-versions, standard-epl:list, standard-epl:list-combined, standard-epl:update-price, standard-epl:upsert
+standard-epl:create-draft, standard-epl:publish-draft, standard-epl:delete-draft, standard-epl:update-draft-meta, standard-epl:delete-row
 packaging:list, packaging:update-price, packaging:list-versions, packaging:create-version, packaging:delete-version, packaging:add-row, packaging:update-row, packaging:delete-row
 price-lists:list, price-lists:get, price-lists:create, price-lists:delete, price-lists:stats
 export:xlsx, export:xlsx-bulk, export:open-mail-with-attachment, export:open-mail-bulk, export:standard-epl-xlsx, export:standard-epl-mail, export:packaging-xlsx, export:packaging-mail
@@ -403,20 +410,45 @@ When adding a new `price_type` value, update this function and the DB CHECK cons
 ### Standard units (Settings + StandardEplScreen)
 Units stored in `units` table; seeded on DB open. Settings screen has a "Standard Units" card for add/remove. StandardEplScreen uses a `<select>` dropdown (not text input) for unit editing.
 
-### Standard EPL read-only mode
+### Standard EPL versioning (draft/publish model)
 
-The Standard EPL tab is **read-only by default** to prevent accidental price changes. The setting is stored as `standard_epl_editable` in `app_settings` (`'1'` = editable, `'0'` / absent = read-only).
+The Standard EPL uses a **draft/publish versioning model** — all published versions are permanently read-only; the only editable surface is the current draft (at most one at a time).
 
-**StandardEplScreen behaviour:**
-- Reads `standard_epl_editable` on mount alongside rows and units.
-- When read-only: price and unit cells render as plain `<span>` elements (no hover, no pointer cursor, no click handler). A subtle gray banner below the header reads "Read-only — to make changes, go to **Settings → Standard EPL Prices**" with a lock icon.
-- When editable: existing click-to-edit behaviour is unchanged.
-- The subtitle changes from "N products — click a price or unit to edit" to just "N products" in read-only mode.
+**Mental model:**
+- Always one **latest published version** (the active baseline, used by all price list creation and exports by default)
+- At most one **draft** being prepared (cloned from a published version)
+- Publishing a draft creates a new immutable published version; old versions are retained for history and comparison
+- Replaced the former `standard_epl_editable` Settings toggle — that approach is gone
 
-**Settings → Standard EPL Prices card** (`SettingsScreen.tsx`):
-- Toggle button: "Enable editing" (outline) when read-only; "Editing enabled — click to disable" (filled) when editable, with an amber reminder "Remember to disable when done".
-- Calls `api.setSetting('standard_epl_editable', '1'/'0')` on click; persists across sessions.
-- New databases open in read-only mode by default (key absent → treated as `'0'`).
+**StandardEplScreen (`StandardEplScreen.tsx`):**
+- **Version selector dropdown** — lists all published versions + draft (if any); shows latest published by default; each version has a status badge (● Active green, ◐ Draft amber, ○ Older gray)
+- **Draft management bar** (amber banner, visible only when draft is selected) — shows draft name + notes; "Publish" button opens the publish modal; "Discard Draft" shows a confirm dialog
+- **"New Version" button** (shown only when no draft exists) — dialog: version name input, clone-from published version selector, optional notes textarea
+- **Read-only banner** — displayed when viewing a published version; message differs based on whether a draft already exists
+- **Add Product button** (draft only) — dialog with searchable product list, USD price, USD unit, EUR price, EUR unit inputs; calls `standard-epl:upsert` for each currency with a price
+- **Delete row button** per product row (draft only, hover-reveal trash icon) — calls `standard-epl:delete-row`; product disappears entirely because `list-combined` filters out products with no price entries for the selected version (`WHERE usd.id IS NOT NULL OR eur.id IS NOT NULL`)
+- **Price/unit editing** — click-to-edit only when draft is selected; `PriceCell` is called as a plain function `{PriceCell({ row, currency })}` (not JSX `<PriceCell .../>`); this is intentional to avoid React unmount/remount on every re-render (see React pattern note below)
+- **Compare versions** toggle — inline version A/B selectors and `StandardEplComparisonPanel` rendered below the table
+
+**React pattern — `PriceCell` as function call:**
+`PriceCell` is defined as a nested function inside `StandardEplScreen`. If used as a JSX element `<PriceCell .../>`, React treats each re-render as a new component type (different function reference) and unmounts/remounts it — destroying focus and firing stale `onBlur` with the original price. Calling it as `{PriceCell({ row, currency })}` inlines its output into the parent virtual DOM: no separate lifecycle, no unmount, edits save correctly. Do not revert to JSX element syntax.
+
+**IPC channel details:**
+- `standard-epl:list-versions` — returns all versions ordered: draft first, then published DESC by `published_at`; includes `row_count` subquery
+- `standard-epl:list-combined` — accepts optional `versionId`; defaults to latest published; `WHERE usd.id IS NOT NULL OR eur.id IS NOT NULL` ensures only products with at least one price entry for the version appear
+- `standard-epl:update-price` — validates row belongs to a draft before updating; errors on published version
+- `standard-epl:upsert` — validates draft status; uses `ON CONFLICT (version_id, currency, rip_code) DO UPDATE SET`
+- `standard-epl:create-draft` — checks no existing draft; inserts version row; clones all standard_epl rows from sourceVersionId
+- `standard-epl:publish-draft` — requires `effectiveFrom`; sets status/published_at/effective_from/notes/name
+- `standard-epl:delete-draft` — transaction: deletes all standard_epl rows then version row
+- `standard-epl:delete-row` — deletes all rows for `(versionId, ripCode)` (both USD and EUR); draft only
+- `getLatestPublishedEplVersionId()` — exported helper from `database.ts`; resolves current active version for export handlers and migration import
+
+**Comparison panel (`StandardEplComparisonPanel.tsx`):**
+- Props: `versionIdA`, `versionIdB`, `versions`, `onClose`
+- Fetches `getStandardEplCombined(versionIdA)` and `getStandardEplCombined(versionIdB)`
+- Sections: Changed / Added (in B not A) / Removed (in A not B); columns: RIP, Product, USD A, USD B, USD Δ%, EUR A, EUR B, EUR Δ%
+- Color-coded deltas: red for price increase, green for decrease
 
 ### Standard EPL export
 
@@ -426,20 +458,22 @@ The Standard EPL tab is **read-only by default** to prevent accidental price cha
 
 Two independent action buttons (top-right, always visible, disabled only when no rows loaded):
 
-- **"Export EPL to Excel"** — calls `export:standard-epl-xlsx`; shows native save dialog; default filename `Standard-EPL-YYYY-MM-DD.xlsx`. Toast on success/error.
-- **"Email EPL"** — calls `export:standard-epl-mail`; saves to `os.tmpdir()` automatically (no dialog); opens Outlook / Mail.app draft with the file attached, subject `"Standard EPL Prices — YYYY-MM-DD"`, To field empty for the user to fill in. Toast on error.
+- **"Export EPL to Excel"** — calls `export:standard-epl-xlsx`; shows native save dialog; default filename `Standard-EPL-{version_name}-YYYY-MM-DD.xlsx`. Toast on success/error.
+- **"Email EPL"** — calls `export:standard-epl-mail`; saves to `os.tmpdir()` automatically (no dialog); opens Outlook / Mail.app draft with the file attached, subject `"Standard EPL Prices — {version_name} — YYYY-MM-DD"`, To field empty. Toast on error.
 
-Both buttons work independently — email does not require a prior export to disk.
+Both buttons pass `selectedVersionId` so the export always reflects the currently viewed version (draft or any published). Both work independently — email does not require a prior export to disk.
 
 **`export:standard-epl-xlsx` and `export:standard-epl-mail` handlers** (in `export.ts`):
 
 ```
-fetchStandardEplRows()  — same LEFT JOIN as standard-epl:list-combined; runs directly against DB (no IPC round-trip)
-buildStandardEplXlsx()  — ExcelJS table: columns RIP Code / Product Type / Product Name / USD Price / USD Unit / EUR Price / EUR Unit
-                          Bold header row, light gray fill (#F2F2F2), thin bottom border, frozen row 1
-                          Column widths: 16 / 22 / 46 / 13 / 13 / 13 / 13
-                          Price cells use #,##0.00 number format; null prices → empty cell
-                          No logo, no customer header — internal use only
+fetchStandardEplRows(versionId)  — LEFT JOIN standard_epl for USD and EUR filtered by version_id;
+                                   WHERE usd.id IS NOT NULL OR eur.id IS NOT NULL (same guard as list-combined)
+                                   Runs directly against DB (no IPC round-trip); defaults to getLatestPublishedEplVersionId()
+buildStandardEplXlsx()           — ExcelJS table: columns RIP Code / Product Type / Product Name / USD Price / USD Unit / EUR Price / EUR Unit
+                                   Bold header row, light gray fill (#F2F2F2), thin bottom border, frozen row 1
+                                   Column widths: 16 / 22 / 46 / 13 / 13 / 13 / 13
+                                   Price cells use #,##0.00 number format; null prices → empty cell
+                                   No logo, no customer header — internal use only
 ```
 
 The email handler passes `to: ''` so the draft opens with an empty To field (internal recipient varies each time).
@@ -536,6 +570,8 @@ Both are updated together when a DB is opened or created. The `userData` file pe
 3. **Import** — "Import Selected (N)" calls `migration:import-excel(filePath, options)` where `options` is the `ImportOptions` object built from the checkboxes. Results appear inline on each card (green "✓ N imported" or red "Failed").
 
 **Import order** (within a single call, only selected entities run): `admin_emails` → `customers` → `products` → `standard_epl` → `packaging` → `price_lists` + `price_list_entries`. All operations are `INSERT OR REPLACE` (idempotent) except packaging which `DELETE`s first.
+
+**Standard EPL import targets the latest published version** — the import handler calls `getLatestPublishedEplVersionId()` and upserts all EPL rows into that version (not a draft). This is intentional: import is a privileged admin operation that writes directly to the active baseline. If a draft exists, it is not affected by the import.
 
 **Types** (`src/types/index.ts`): `SheetPreview` (per-entity scan result), `ImportPreview` (all six sheets), `ImportOptions` (six booleans).
 

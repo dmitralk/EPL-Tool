@@ -26,10 +26,16 @@ const api = {
   deleteProduct: (id: number) => ipcRenderer.invoke('products:delete', id),
 
   // Standard EPL
-  getStandardEpl: (currency?: 'USD' | 'EUR') => ipcRenderer.invoke('standard-epl:list', currency),
-  getStandardEplCombined: () => ipcRenderer.invoke('standard-epl:list-combined'),
+  getStandardEpl: (currency?: 'USD' | 'EUR', versionId?: number) => ipcRenderer.invoke('standard-epl:list', currency, versionId),
+  getStandardEplCombined: (versionId?: number) => ipcRenderer.invoke('standard-epl:list-combined', versionId),
   updateStandardEplPrice: (id: number, price: number) => ipcRenderer.invoke('standard-epl:update-price', id, price),
   upsertStandardEpl: (data: unknown) => ipcRenderer.invoke('standard-epl:upsert', data),
+  listStandardEplVersions: () => ipcRenderer.invoke('standard-epl:list-versions'),
+  createStandardEplDraft: (params: unknown) => ipcRenderer.invoke('standard-epl:create-draft', params),
+  publishStandardEplDraft: (params: unknown) => ipcRenderer.invoke('standard-epl:publish-draft', params),
+  deleteStandardEplDraft: () => ipcRenderer.invoke('standard-epl:delete-draft'),
+  updateStandardEplDraftMeta: (params: unknown) => ipcRenderer.invoke('standard-epl:update-draft-meta', params),
+  deleteStandardEplRow: (params: unknown) => ipcRenderer.invoke('standard-epl:delete-row', params),
 
   // Packaging
   getPackaging: (version?: string) => ipcRenderer.invoke('packaging:list', version),
@@ -55,8 +61,8 @@ const api = {
   openMailWithAttachment: (params: { filePath: string; to: string; subject: string; body: string }) =>
     ipcRenderer.invoke('export:open-mail-with-attachment', params),
   openMailBulk: (ids: string[], subject: string, body: string) => ipcRenderer.invoke('export:open-mail-bulk', ids, subject, body),
-  exportStandardEplXlsx: () => ipcRenderer.invoke('export:standard-epl-xlsx'),
-  exportStandardEplMail: () => ipcRenderer.invoke('export:standard-epl-mail'),
+  exportStandardEplXlsx: (versionId?: number) => ipcRenderer.invoke('export:standard-epl-xlsx', versionId),
+  exportStandardEplMail: (versionId?: number) => ipcRenderer.invoke('export:standard-epl-mail', versionId),
   exportPackagingXlsx: (version: string) => ipcRenderer.invoke('export:packaging-xlsx', version),
   exportPackagingMail: (version: string) => ipcRenderer.invoke('export:packaging-mail', version),
 

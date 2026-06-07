@@ -300,13 +300,27 @@ export function registerMigrationHandlers() {
         const eplSheet = getSheet('Standard EPL');
         if (eplSheet) {
           const rows = XLSX.utils.sheet_to_json<unknown[]>(eplSheet, { header: 1 }) as unknown[][];
-          const insertEpl = db.prepare('INSERT OR REPLACE INTO standard_epl (currency, product_type, rip_code, product_name, net_price, unit) VALUES (?,?,?,?,?,?)');
+          // Target the latest published version (import is a privileged admin operation)
+          const versionRow = db.prepare(
+            `SELECT version_id FROM standard_epl_versions WHERE status='published'
+             ORDER BY published_at DESC, version_id DESC LIMIT 1`
+          ).get() as { version_id: number } | undefined;
+          const versionId = versionRow?.version_id ?? 1;
+          const insertEpl = db.prepare(`
+            INSERT INTO standard_epl (version_id, currency, product_type, rip_code, product_name, net_price, unit)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT (version_id, currency, rip_code) DO UPDATE SET
+              net_price = excluded.net_price,
+              unit = excluded.unit,
+              product_name = excluded.product_name,
+              product_type = excluded.product_type
+          `);
           for (const r of rows.slice(1)) {
             const ripUsd = clean(r[1]);
             if (ripUsd) {
               const price = safeFloat(r[3]);
               if (price !== null) {
-                insertEpl.run('USD', trimOnly(r[0]), ripUsd, trimOnly(r[2]), price, trimOnly(r[5]) ?? '100 KG');
+                insertEpl.run(versionId, 'USD', trimOnly(r[0]), ripUsd, trimOnly(r[2]), price, trimOnly(r[5]) ?? '100 KG');
                 counts.standardEpl++;
               }
             }
@@ -314,7 +328,7 @@ export function registerMigrationHandlers() {
             if (ripEur) {
               const price = safeFloat(r[11]);
               if (price !== null) {
-                insertEpl.run('EUR', trimOnly(r[8]), ripEur, trimOnly(r[10]), price, trimOnly(r[13]) ?? '100 KG');
+                insertEpl.run(versionId, 'EUR', trimOnly(r[8]), ripEur, trimOnly(r[10]), price, trimOnly(r[13]) ?? '100 KG');
                 counts.standardEpl++;
               }
             }
