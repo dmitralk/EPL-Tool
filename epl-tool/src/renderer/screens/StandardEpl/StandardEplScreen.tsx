@@ -558,6 +558,43 @@ export function StandardEplScreen() {
             </div>
           )}
 
+          {/* Comparison panel */}
+          {showCompare && (
+            <div className="mb-4">
+              <div className="flex items-center gap-3 mb-3">
+                <span className="text-sm text-gray-600">Compare:</span>
+                <select value={compareA ?? ''} onChange={e => setCompareA(Number(e.target.value))}
+                  className="text-sm border border-gray-300 rounded px-2 py-1 bg-white">
+                  {allVersionsForCompare.map(v => (
+                    <option key={v.version_id} value={v.version_id}>
+                      {v.status === 'draft' ? `Draft: ${v.version_name}` : v.version_name}
+                    </option>
+                  ))}
+                </select>
+                <span className="text-gray-400">→</span>
+                <select value={compareB ?? ''} onChange={e => setCompareB(Number(e.target.value))}
+                  className="text-sm border border-gray-300 rounded px-2 py-1 bg-white">
+                  {allVersionsForCompare.map(v => (
+                    <option key={v.version_id} value={v.version_id}>
+                      {v.status === 'draft' ? `Draft: ${v.version_name}` : v.version_name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              {compareA !== null && compareB !== null && compareA !== compareB && (
+                <StandardEplComparisonPanel
+                  versionIdA={compareA}
+                  versionIdB={compareB}
+                  versions={versions}
+                  onClose={() => setShowCompare(false)}
+                />
+              )}
+              {compareA === compareB && (
+                <p className="text-sm text-amber-600">Select two different versions to compare.</p>
+              )}
+            </div>
+          )}
+
           {/* Search + Add Product */}
           <div className="flex items-center gap-3 mb-4">
             <div className="relative flex-1 max-w-xs">
@@ -618,42 +655,6 @@ export function StandardEplScreen() {
             </table>
           </div>
 
-          {/* Comparison panel */}
-          {showCompare && (
-            <div className="mt-4">
-              <div className="flex items-center gap-3 mb-3">
-                <span className="text-sm text-gray-600">Compare:</span>
-                <select value={compareA ?? ''} onChange={e => setCompareA(Number(e.target.value))}
-                  className="text-sm border border-gray-300 rounded px-2 py-1 bg-white">
-                  {allVersionsForCompare.map(v => (
-                    <option key={v.version_id} value={v.version_id}>
-                      {v.status === 'draft' ? `Draft: ${v.version_name}` : v.version_name}
-                    </option>
-                  ))}
-                </select>
-                <span className="text-gray-400">→</span>
-                <select value={compareB ?? ''} onChange={e => setCompareB(Number(e.target.value))}
-                  className="text-sm border border-gray-300 rounded px-2 py-1 bg-white">
-                  {allVersionsForCompare.map(v => (
-                    <option key={v.version_id} value={v.version_id}>
-                      {v.status === 'draft' ? `Draft: ${v.version_name}` : v.version_name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              {compareA !== null && compareB !== null && compareA !== compareB && (
-                <StandardEplComparisonPanel
-                  versionIdA={compareA}
-                  versionIdB={compareB}
-                  versions={versions}
-                  onClose={() => setShowCompare(false)}
-                />
-              )}
-              {compareA === compareB && (
-                <p className="text-sm text-amber-600">Select two different versions to compare.</p>
-              )}
-            </div>
-          )}
         </>
       )}
 
