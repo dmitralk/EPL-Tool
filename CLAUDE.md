@@ -428,7 +428,7 @@ The Standard EPL uses a **draft/publish versioning model** — all published ver
 - **Add Product button** (draft only) — dialog with searchable product list, USD price, USD unit, EUR price, EUR unit inputs; calls `standard-epl:upsert` for each currency with a price
 - **Delete row button** per product row (draft only, hover-reveal trash icon) — calls `standard-epl:delete-row`; product disappears entirely because `list-combined` filters out products with no price entries for the selected version (`WHERE usd.id IS NOT NULL OR eur.id IS NOT NULL`)
 - **Price/unit editing** — click-to-edit only when draft is selected; `PriceCell` is called as a plain function `{PriceCell({ row, currency })}` (not JSX `<PriceCell .../>`); this is intentional to avoid React unmount/remount on every re-render (see React pattern note below)
-- **Compare versions** toggle — inline version A/B selectors and `StandardEplComparisonPanel` rendered below the table
+- **Compare versions** toggle — inline version A/B selectors and `StandardEplComparisonPanel` rendered **above the product table** (between the version banners and the search bar), so the panel is immediately visible without scrolling
 
 **React pattern — `PriceCell` as function call:**
 `PriceCell` is defined as a nested function inside `StandardEplScreen`. If used as a JSX element `<PriceCell .../>`, React treats each re-render as a new component type (different function reference) and unmounts/remounts it — destroying focus and firing stale `onBlur` with the original price. Calling it as `{PriceCell({ row, currency })}` inlines its output into the parent virtual DOM: no separate lifecycle, no unmount, edits save correctly. Do not revert to JSX element syntax.
@@ -447,7 +447,8 @@ The Standard EPL uses a **draft/publish versioning model** — all published ver
 **Comparison panel (`StandardEplComparisonPanel.tsx`):**
 - Props: `versionIdA`, `versionIdB`, `versions`, `onClose`
 - Fetches `getStandardEplCombined(versionIdA)` and `getStandardEplCombined(versionIdB)`
-- Sections: Changed / Added (in B not A) / Removed (in A not B); columns: RIP, Product, USD A, USD B, USD Δ%, EUR A, EUR B, EUR Δ%
+- Sections: Changed / Added (in B not A) / Removed (in A not B); columns: RIP, Product, USD A, USD B, USD Δ, EUR A, EUR B, EUR Δ
+- Each Δ cell shows two lines: absolute delta on top (e.g. `+12.50`), percentage below in dimmed text (e.g. `+2.3%`)
 - Color-coded deltas: red for price increase, green for decrease
 
 ### Standard EPL export
