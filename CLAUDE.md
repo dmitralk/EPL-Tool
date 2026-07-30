@@ -206,7 +206,7 @@ Read-only analytical surface (route `/analysis`, nav between Customers and Produ
 
 **Other controls:** comparison EPL version selector (any published or draft; default active published); latest-only / all-versions toggle (default latest-only — one row-set per customer's most recent list; off shows all versions with a "latest" badge); product multi-select popover (checkbox list of distinct products in the data, filters by `rip_code`); free-text search (customer/product/rip/type); "Clear filters".
 
-**Diff cell** reuses the shared `absDelta`/`pctDelta`/`fmtNum` helpers (in `utils.ts`, also used by `StandardEplComparisonPanel`) — two-line cell, red for premium over EPL / green for below, `≈` prefix in All mode.
+**Cell layout** — **Net Price**: USD/EUR modes show `net currency` on one line; All mode (converted rows) shows the estimated `≈ USD` on top in normal size with the native `value currency` beneath in small grey. **Diff**: two-line cell with the **percentage on top** (larger) and the **absolute delta beneath** (small, dimmed), reusing the shared `absDelta`/`pctDelta`/`fmtNum` helpers (in `utils.ts`, also used by `StandardEplComparisonPanel`) — red for premium over EPL / green for below, `≈` prefix on the absolute in All mode.
 
 **Export** — `analysis:export-xlsx` is generic: the renderer computes the exact display grid (currency conversion + filters live there) and sends `{ headers, rows, numericCols, mode }`; the main process writes it via ExcelJS (bold header, gray fill, frozen row 1, `#,##0.00` on numeric cols, auto width). Filename `Price-Analysis-{mode}-YYYY-MM-DD.xlsx`.
 
