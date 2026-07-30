@@ -60,7 +60,7 @@ This file is read automatically by Claude Code at conversation start. It gives f
 │   │       ├── App.tsx     ← React Router, DbGuard, all routes
 │   │       ├── lib/
 │   │       │   ├── ipc.ts  ← typed wrapper: `export const api = window.api`
-│   │       │   └── utils.ts  ← cn, formatDate, formatCurrency, todayISO, nextVersion, priceTypeLabel
+│   │       │   └── utils.ts  ← cn, formatDate, formatCurrency, todayISO, nextVersion, priceTypeLabel, fmtNum/absDelta/pctDelta (shared delta helpers)
 │   │       ├── components/
 │   │       │   ├── ui/     ← button, input, select, dialog, card, badge, toast, etc.
 │   │       │   └── layout/ ← AppShell.tsx, Sidebar.tsx
@@ -94,7 +94,8 @@ This file is read automatically by Claude Code at conversation start. It gives f
 │   │           │       ├── Step2ConfigureChange.tsx ← method + overrides + dates/comments + live preview
 │   │           │       ├── Step3Preview.tsx    ← per-customer summary with expandable price detail rows
 │   │           │       └── Step4CreateResults.tsx  ← sequential creation, results table, bulk export/email
-│   │           ├── MasterData/MasterDataScreen.tsx   ← product CRUD (nav label: "Products")
+│   │           ├── Analysis/AnalysisScreen.tsx       ← route /analysis (nav between Customers and Products): read-only price analysis table (all products × all active customers); USD|EUR|All currency toggle; compare vs any EPL version incl. draft; latest-only/all-versions toggle; product multi-select + search; FX rate editor (All mode); Excel export
+│           ├── MasterData/MasterDataScreen.tsx   ← product CRUD (nav label: "Products")
 │   │           └── StandardEpl/
 │   │               ├── StandardEplScreen.tsx ← two tabs: “Standard Prices” (version selector, draft management, combined USD+EUR table, Export/Email buttons) and “Packaging Charges” (version selector, read-only table, Export/Email buttons)
 │   │               └── StandardEplComparisonPanel.tsx ← side-by-side diff of two EPL versions (Changed / Added / Removed sections)
@@ -125,11 +126,12 @@ app_settings         -- key/value store (logo_path, db_path, email_subject_templ
                      -- note: standard_epl_editable key may exist in older DBs but is no longer used by the UI (replaced by draft/publish model)
 units                -- configurable unit list; seeded with '100 KG', '100 L' on DB open
 currencies           -- currency list; seeded with USD (is_main=1) and EUR (is_main=1); other currencies (is_main=0) can be added for one-off price lists
+fx_rates             -- display-only FX rates for the Analysis "All" mode; PK currency_code, rate_to_usd (USD per 1 unit); seeded USD=1, EUR=1.08, GBP=1.27; editable on the Analysis screen; NEVER used for actual pricing/stored data
 ```
 
 Pragmas set on every open: `journal_mode=WAL`, `foreign_keys=ON`, `synchronous=NORMAL`.
 
-Schema runs `CREATE TABLE IF NOT EXISTS` so opening an existing DB is safe. Units table is seeded with `INSERT OR IGNORE`.
+Schema runs `CREATE TABLE IF NOT EXISTS` so opening an existing DB is safe. Units, currencies, and `fx_rates` are seeded with `INSERT OR IGNORE` (so `fx_rates` needs no numbered migration — it appears automatically on next DB open).
 
 **DB migration (`migrateIfNeeded` in database.ts)** — runs on every `openDatabase` call after schema init. Contains two sequential migrations:
 
@@ -171,6 +173,7 @@ export:xlsx, export:xlsx-bulk, export:open-mail-with-attachment, export:open-mai
 settings:get, settings:set, settings:get-admin-emails, settings:update-admin-email
 settings:get-units, settings:create-unit, settings:delete-unit, settings:select-logo
 currencies:list, currencies:create, currencies:delete
+analysis:list-rows, fx:list, fx:set, analysis:export-xlsx
 migration:select-file, migration:preview-excel, migration:import-excel
 ```
 
@@ -188,6 +191,26 @@ migration:select-file, migration:preview-excel, migration:import-excel
 - Top 10 rows frozen, gridlines hidden: `ws.views = [{ state: 'frozen', xSplit: 0, ySplit: 10, showGridLines: false }]`
 - Contact row uses admin email selected by `LIKE '%Common%' OR LIKE '%common%'` — picks the "PBP Common" shared inbox
 - Price cells use `#,##0.00` number format (Excel formats, not renderer-side strings)
+
+### Price Analysis view (Analysis/AnalysisScreen.tsx + ipc/analysis.ts)
+
+Read-only analytical surface (route `/analysis`, nav between Customers and Products). No mutations except `fx:set`. One flat table: every price list entry across all **active** customers (`customers.is_deleted = 0`), joined with the standard EPL price (USD + EUR) for a chosen comparison version.
+
+**Data flow:** `analysis:list-rows(comparisonVersionId?)` runs one JOIN (`price_list_entries → price_lists → customers`, LEFT JOIN `standard_epl` for USD and EUR at the version, default `getLatestPublishedEplVersionId()`) and returns `AnalysisRow[]`. Each row's `is_latest` flag is computed in the handler (latest price list per customer by `effective` desc, `created_at` tiebreak; null effective sorts oldest). The renderer loads once per comparison version and does all filtering/computation client-side (re-query only on version change).
+
+**Currency modes (toggle USD | EUR | All):**
+- **USD / EUR** — table filtered to that currency; diff computed natively (`net_price − same-currency EPL`). Rigorous, no FX involved.
+- **All** — every currency shown; non-USD net prices converted to USD via editable `fx_rates` (USD per 1 unit) and compared against the **USD EPL** as a single yardstick. This is a deliberate product decision by the user (see design note below): the converted diff **blends FX with the independently-set USD/EUR pricing** and is a bird's-eye scan, not exact. Converted values are marked `≈`; an amber banner states the caveat. GBP/other currencies get a diff in All mode (via USD EPL) that they cannot get in a native tab.
+
+**FX rates** live in the `fx_rates` table, edited inline via the "FX rates" popover (All mode only), one input per non-USD currency present in the data. `fx:set` upserts (`ON CONFLICT DO UPDATE`); rates are **display-only, never written to price lists**. `fx:list` returns all rows.
+
+**Other controls:** comparison EPL version selector (any published or draft; default active published); latest-only / all-versions toggle (default latest-only — one row-set per customer's most recent list; off shows all versions with a "latest" badge); product multi-select popover (checkbox list of distinct products in the data, filters by `rip_code`); free-text search (customer/product/rip/type); "Clear filters".
+
+**Diff cell** reuses the shared `absDelta`/`pctDelta`/`fmtNum` helpers (in `utils.ts`, also used by `StandardEplComparisonPanel`) — two-line cell, red for premium over EPL / green for below, `≈` prefix in All mode.
+
+**Export** — `analysis:export-xlsx` is generic: the renderer computes the exact display grid (currency conversion + filters live there) and sends `{ headers, rows, numericCols, mode }`; the main process writes it via ExcelJS (bold header, gray fill, frozen row 1, `#,##0.00` on numeric cols, auto width). Filename `Price-Analysis-{mode}-YYYY-MM-DD.xlsx`.
+
+**Profitability-ready:** `AnalysisRow` carries optional `cost`/`margin` fields reserved for the future cost feature (which will need its own cost table); no cost columns are rendered yet.
 
 ### Migration (migration.ts)
 

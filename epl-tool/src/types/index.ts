@@ -191,3 +191,37 @@ export interface PackagingVersion {
   row_count: number;
   customer_count: number;
 }
+
+export interface FxRate {
+  currency_code: string;
+  rate_to_usd: number;
+}
+
+// One row per (price list entry) across all active customers, joined with the
+// standard EPL price (USD + EUR) for the chosen comparison version.
+// Read-only analytical shape — see Analysis screen.
+export interface AnalysisRow {
+  price_list_id: string;
+  price_list_version: string;
+  effective: string | null;
+  mailing_date: string | null;
+  price_type: string;
+  discount_percent: number | null;
+  created_at: string | null;
+  customer_ref_sap: string;
+  customer_short_name: string;
+  customer_full_name: string;
+  main_supply_region: 'ASIA' | 'EUROPE' | 'AMERICA' | null;
+  rip_code: string;
+  product_type: string;
+  product_name: string;
+  net_price: number;
+  currency: string;
+  unit: string;
+  epl_usd_price: number | null;
+  epl_eur_price: number | null;
+  is_latest: boolean;
+  // Reserved for the future profitability feature (cost + margin columns).
+  cost?: number | null;
+  margin?: number | null;
+}

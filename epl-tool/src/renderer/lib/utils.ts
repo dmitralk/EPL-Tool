@@ -29,6 +29,25 @@ export function nextVersion(last: string | null | undefined): string {
   return 'V1';
 }
 
+// Shared delta/formatting helpers used by the EPL version comparison panel and
+// the Price Analysis screen so both render deltas identically.
+export function fmtNum(v: number | null): string {
+  if (v === null || v === undefined) return '—';
+  return v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+export function absDelta(a: number | null, b: number | null): string {
+  if (a === null || b === null) return '—';
+  const d = b - a;
+  return (d >= 0 ? '+' : '') + d.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+export function pctDelta(a: number | null, b: number | null): string {
+  if (a === null || b === null || a === 0) return '—';
+  const d = ((b - a) / a) * 100;
+  return (d >= 0 ? '+' : '') + d.toFixed(1) + '%';
+}
+
 export function priceTypeLabel(priceType: string, discountPercent: number | null): string {
   if (priceType === 'Discount') return `${discountPercent}% disc.`;
   if (priceType === 'PrevPercent') {

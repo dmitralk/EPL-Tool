@@ -81,6 +81,12 @@ const api = {
   createCurrency: (code: string) => ipcRenderer.invoke('currencies:create', code),
   deleteCurrency: (id: number) => ipcRenderer.invoke('currencies:delete', id),
 
+  // Analysis
+  getAnalysisRows: (comparisonVersionId?: number) => ipcRenderer.invoke('analysis:list-rows', comparisonVersionId),
+  getFxRates: () => ipcRenderer.invoke('fx:list'),
+  setFxRate: (code: string, rate: number) => ipcRenderer.invoke('fx:set', code, rate),
+  exportAnalysisXlsx: (payload: unknown) => ipcRenderer.invoke('analysis:export-xlsx', payload),
+
   // Migration
   migrationSelectFile: () => ipcRenderer.invoke('migration:select-file'),
   migrationPreview: (filePath: string) => ipcRenderer.invoke('migration:preview-excel', filePath),

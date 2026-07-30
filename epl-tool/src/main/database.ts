@@ -89,6 +89,11 @@ CREATE TABLE IF NOT EXISTS units (
   name TEXT NOT NULL UNIQUE
 );
 
+CREATE TABLE IF NOT EXISTS fx_rates (
+  currency_code TEXT PRIMARY KEY,
+  rate_to_usd REAL NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_price_lists_customer ON price_lists(customer_ref_sap);
 CREATE INDEX IF NOT EXISTS idx_price_list_entries_pl ON price_list_entries(price_list_id);
 CREATE INDEX IF NOT EXISTS idx_standard_epl_currency ON standard_epl(currency);
@@ -97,6 +102,7 @@ CREATE INDEX IF NOT EXISTS idx_standard_epl_currency ON standard_epl(currency);
 const SEED_SQL = `
 INSERT OR IGNORE INTO units (name) VALUES ('100 KG'), ('100 L');
 INSERT OR IGNORE INTO currencies (code, is_main) VALUES ('USD', 1), ('EUR', 1);
+INSERT OR IGNORE INTO fx_rates (currency_code, rate_to_usd) VALUES ('USD', 1), ('EUR', 1.08), ('GBP', 1.27);
 INSERT OR IGNORE INTO standard_epl_versions (version_id, version_name, status, effective_from, published_at)
   VALUES (1, 'Initial', 'published', date('now'), datetime('now'));
 `;

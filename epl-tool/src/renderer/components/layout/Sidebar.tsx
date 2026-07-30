@@ -1,5 +1,5 @@
 import { NavLink, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, FileText, Users, Settings, Database, Package, BookOpen } from 'lucide-react';
+import { LayoutDashboard, FileText, Users, Settings, Database, Package, BookOpen, BarChart3 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { api } from '../../lib/ipc';
 
@@ -7,6 +7,7 @@ const navItems = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
   { to: '/price-lists', label: 'Price Lists', icon: FileText },
   { to: '/customers', label: 'Customers', icon: Users },
+  { to: '/analysis', label: 'Analysis', icon: BarChart3 },
   { to: '/master-data', label: 'Products', icon: Package },
   { to: '/standard-epl', label: 'Standard EPL', icon: BookOpen },
 ];

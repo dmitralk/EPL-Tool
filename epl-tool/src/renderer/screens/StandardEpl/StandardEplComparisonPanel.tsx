@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { X } from 'lucide-react';
 import { api } from '../../lib/ipc';
 import { Button } from '../../components/ui/button';
+import { absDelta, pctDelta, fmtNum as fmt } from '../../lib/utils';
 import type { CombinedEplRow, StandardEplVersion } from '../../../types';
 
 interface DiffRow {
@@ -13,23 +14,6 @@ interface DiffRow {
   eur_a: number | null;
   eur_b: number | null;
   status: 'changed' | 'added' | 'removed';
-}
-
-function pctDelta(a: number | null, b: number | null): string {
-  if (a === null || b === null || a === 0) return '—';
-  const d = ((b - a) / a) * 100;
-  return (d >= 0 ? '+' : '') + d.toFixed(1) + '%';
-}
-
-function absDelta(a: number | null, b: number | null): string {
-  if (a === null || b === null) return '—';
-  const d = b - a;
-  return (d >= 0 ? '+' : '') + d.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-
-function fmt(v: number | null): string {
-  if (v === null) return '—';
-  return v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 interface Props {

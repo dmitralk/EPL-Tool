@@ -18,6 +18,7 @@ import { PackagingVersionScreen } from './screens/Settings/PackagingVersionScree
 import { CustomersScreen } from './screens/Customers/CustomersScreen';
 import { CustomerDetail } from './screens/Customers/CustomerDetail';
 import { MasterDataScreen } from './screens/MasterData/MasterDataScreen';
+import { AnalysisScreen } from './screens/Analysis/AnalysisScreen';
 import { StandardEplScreen } from './screens/StandardEpl/StandardEplScreen';
 import { ToastProvider } from './components/ui/toast';
 
@@ -59,6 +60,7 @@ export function App() {
             <Route path="price-lists/:id" element={<PriceListDetail />} />
             <Route path="customers" element={<CustomersScreen />} />
             <Route path="customers/:ref" element={<CustomerDetail />} />
+            <Route path="analysis" element={<AnalysisScreen />} />
             <Route path="master-data" element={<MasterDataScreen />} />
             <Route path="standard-epl" element={<StandardEplScreen />} />
             <Route path="settings" element={<SettingsScreen />} />

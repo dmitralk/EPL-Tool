@@ -7,6 +7,7 @@ import { registerSettingsHandlers } from './settings';
 import { registerExportHandlers } from './export';
 import { registerMigrationHandlers } from './migration';
 import { registerCurrencyHandlers } from './currencies';
+import { registerAnalysisHandlers } from './analysis';
 
 export function registerAllIpcHandlers() {
   registerCustomerHandlers();
@@ -18,4 +19,5 @@ export function registerAllIpcHandlers() {
   registerExportHandlers();
   registerMigrationHandlers();
   registerCurrencyHandlers();
+  registerAnalysisHandlers();
 }
