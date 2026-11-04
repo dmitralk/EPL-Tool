@@ -1,6 +1,12 @@
+import fs from 'fs';
+import path from 'path';
 import Database from 'better-sqlite3';
+import { createBackup, isHealthy } from './backup';
+import type { DbOpenError } from '../types';
 
 let db: Database.Database | null = null;
+let currentPath: string | null = null;
+let lastOpenError: DbOpenError | null = null;
 
 const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS customers (
@@ -107,11 +113,44 @@ INSERT OR IGNORE INTO standard_epl_versions (version_id, version_name, status, e
   VALUES (1, 'Initial', 'published', date('now'), datetime('now'));
 `;
 
-export function openDatabase(filePath: string): void {
-  db = new Database(filePath);
-  db.pragma('journal_mode = WAL');
+export function openDatabase(filePath: string, opts: { skipBackup?: boolean; create?: boolean } = {}): void {
+  if (currentPath && path.resolve(currentPath) === path.resolve(filePath)) closeDatabase();
+  const existed = fs.existsSync(filePath) && fs.statSync(filePath).size > 0;
+  let next: Database.Database | null = null;
+  try {
+    // Without fileMustExist a not-yet-synced SharePoint file would be silently replaced by an empty DB.
+    next = new Database(filePath, { fileMustExist: !opts.create });
+    // Rollback journal keeps the .db self-contained; WAL's separate -wal file breaks under OneDrive/SharePoint sync.
+    next.pragma('journal_mode = DELETE');
+    if (!isHealthy(next)) throw new Error('Database integrity check failed (PRAGMA quick_check).');
+  } catch (err) {
+    try { next?.close(); } catch { /* ignore */ }
+    closeDatabase();
+    const message = (err as Error).message;
+    lastOpenError = {
+      path: filePath,
+      message,
+      corrupt: /integrity check|malformed|not a database|corrupt/i.test(message),
+    };
+    throw err;
+  }
+
+  closeDatabase();
+  db = next;
+  currentPath = filePath;
+  lastOpenError = null;
+
   db.pragma('foreign_keys = ON');
-  db.pragma('synchronous = NORMAL');
+  db.pragma('synchronous = FULL');
+
+  if (existed && !opts.skipBackup) {
+    try {
+      createBackup(db, filePath);
+    } catch {
+      // status is recorded by createBackup and surfaced in Settings; never block opening
+    }
+  }
+
   db.exec(SCHEMA_SQL);
   db.exec(SEED_SQL);
   migrateIfNeeded(db);
@@ -266,7 +305,16 @@ export function closeDatabase(): void {
   if (db) {
     db.close();
     db = null;
+    currentPath = null;
   }
+}
+
+export function getCurrentDbPath(): string | null {
+  return currentPath;
+}
+
+export function getLastOpenError(): DbOpenError | null {
+  return lastOpenError;
 }
 
 export function isOpen(): boolean {

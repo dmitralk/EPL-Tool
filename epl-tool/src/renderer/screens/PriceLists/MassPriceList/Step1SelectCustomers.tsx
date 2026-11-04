@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search } from 'lucide-react';
 import { api } from '../../../lib/ipc';
 import { Button } from '../../../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../../../components/ui/card';
+import { SearchableSelect } from '../../../components/ui/searchable-select';
 import { formatDate, nextVersion } from '../../../lib/utils';
 import { useMassWizard, type MassSelectedRow } from './index';
 import type { Customer, PriceListHeader, PriceListFull } from '../../../../types';
@@ -22,7 +22,7 @@ export function Step1SelectCustomers() {
   const [advancing, setAdvancing] = useState(false);
 
   // Filters
-  const [search, setSearch] = useState('');
+  const [customerFilter, setCustomerFilter] = useState<string[]>([]);
   const [regionFilter, setRegionFilter] = useState('');
   const [effectiveFrom, setEffectiveFrom] = useState('');
   const [effectiveTo, setEffectiveTo] = useState('');
@@ -61,7 +61,7 @@ export function Step1SelectCustomers() {
 
   const filteredCustomers = useMemo(() => {
     return visibleCustomers.filter(c => {
-      if (search && !c.customer_short_name.toLowerCase().includes(search.toLowerCase())) return false;
+      if (customerFilter.length && !customerFilter.includes(c.customer_ref_sap)) return false;
       if (regionFilter && c.main_supply_region !== regionFilter) return false;
       if (effectiveFrom || effectiveTo) {
         const latest = latestByCustomer.get(c.customer_ref_sap);
@@ -72,7 +72,7 @@ export function Step1SelectCustomers() {
       }
       return true;
     });
-  }, [visibleCustomers, search, regionFilter, effectiveFrom, effectiveTo, latestByCustomer]);
+  }, [visibleCustomers, customerFilter, regionFilter, effectiveFrom, effectiveTo, latestByCustomer]);
 
   const selectableRefs = useMemo(
     () => new Set(filteredCustomers.filter(c => latestByCustomer.has(c.customer_ref_sap)).map(c => c.customer_ref_sap)),
@@ -82,10 +82,10 @@ export function Step1SelectCustomers() {
   const selectedInView = [...selected].filter(r => selectableRefs.has(r));
   const allSelected = selectableRefs.size > 0 && selectedInView.length === selectableRefs.size;
 
-  const hasFilters = search || regionFilter || effectiveFrom || effectiveTo;
+  const hasFilters = customerFilter.length > 0 || regionFilter || effectiveFrom || effectiveTo;
 
   function clearFilters() {
-    setSearch('');
+    setCustomerFilter([]);
     setRegionFilter('');
     setEffectiveFrom('');
     setEffectiveTo('');
@@ -195,16 +195,21 @@ export function Step1SelectCustomers() {
       <CardContent>
         {/* Filter bar */}
         <div className="flex flex-wrap gap-2 mb-3">
-          <div className="relative">
-            <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Search customer…"
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              className="pl-8 pr-3 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 w-48"
-            />
-          </div>
+          <SearchableSelect
+            multiple
+            values={customerFilter}
+            onChange={setCustomerFilter}
+            options={visibleCustomers.map(c => ({
+              value: c.customer_ref_sap,
+              label: c.customer_short_name,
+              sublabel: c.customer_ref_sap,
+              keywords: c.customer_full_name,
+            }))}
+            placeholder="All customers"
+            pluralLabel="customers"
+            searchPlaceholder="Search customer name or SAP code…"
+            className="w-72"
+          />
           <select
             value={regionFilter}
             onChange={e => setRegionFilter(e.target.value)}

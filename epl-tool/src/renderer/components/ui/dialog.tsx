@@ -12,23 +12,42 @@ interface DialogProps {
 
 export function Dialog({ open, onClose, title, children, className }: DialogProps) {
   const ref = useRef<HTMLDialogElement>(null);
+  const pressStartedOutside = useRef(false);
+  // Once the user has clicked or typed inside, only explicit buttons (×, Cancel, actions) close the dialog.
+  const dirty = useRef(false);
 
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
-    if (open) el.showModal();
-    else el.close();
+    if (open) {
+      dirty.current = false;
+      el.showModal();
+    } else {
+      el.close();
+    }
   }, [open]);
 
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
-    const handler = () => onClose();
-    el.addEventListener('close', handler);
-    return () => el.removeEventListener('close', handler);
+    const handleClose = () => onClose();
+    const handleCancel = (e: Event) => { if (dirty.current) e.preventDefault(); };
+    el.addEventListener('close', handleClose);
+    el.addEventListener('cancel', handleCancel);
+    return () => {
+      el.removeEventListener('close', handleClose);
+      el.removeEventListener('cancel', handleCancel);
+    };
   }, [onClose]);
 
   if (!open) return null;
+
+  // Backdrop clicks target the <dialog> itself, so also check the pointer is outside its box.
+  function isOutside(e: React.MouseEvent<HTMLDialogElement>): boolean {
+    if (e.target !== e.currentTarget) return false;
+    const r = e.currentTarget.getBoundingClientRect();
+    return e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom;
+  }
 
   return (
     <dialog
@@ -38,7 +57,17 @@ export function Dialog({ open, onClose, title, children, className }: DialogProp
         'max-w-lg w-full open:flex open:flex-col',
         className,
       )}
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      onMouseDown={(e) => {
+        pressStartedOutside.current = isOutside(e);
+        if (!pressStartedOutside.current) dirty.current = true;
+      }}
+      onClick={(e) => {
+        // A drag that starts inside (scrollbar, text selection) and ends outside must not close.
+        const shouldClose = pressStartedOutside.current && isOutside(e) && !dirty.current;
+        pressStartedOutside.current = false;
+        if (shouldClose) onClose();
+      }}
+      onInput={() => { dirty.current = true; }}
     >
       <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200">
         <h2 className="text-base font-semibold text-gray-900">{title}</h2>

@@ -6,7 +6,8 @@ import { Button } from '../../../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../../../components/ui/card';
 import { Badge } from '../../../components/ui/badge';
 import { useToast } from '../../../components/ui/toast';
-import { formatDate, priceTypeLabel } from '../../../lib/utils';
+import { EmailComposeDialog } from '../../../components/EmailComposeDialog';
+import { formatDate, priceTypeLabel, ipcErrorMessage } from '../../../lib/utils';
 import { useWizard } from './index';
 import type { PriceListFull } from '../../../../types';
 
@@ -17,6 +18,7 @@ export function Step4ExportPreview() {
   const [saving, setSaving] = useState(true);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [exportedPath, setExportedPath] = useState<string | null>(null);
+  const [composeOpen, setComposeOpen] = useState(false);
 
   useEffect(() => {
     async function save() {
@@ -35,8 +37,8 @@ export function Step4ExportPreview() {
         dispatch({ type: 'SET_SAVED_ID', id: (result as PriceListFull).price_list_id });
         toast('Price list saved', 'success');
       } catch (e) {
-        setSaveError((e as Error).message);
-        toast('Failed to save price list', 'error');
+        setSaveError(ipcErrorMessage(e));
+        toast('Price list was not saved', 'error');
       } finally {
         setSaving(false);
       }
@@ -55,26 +57,6 @@ export function Step4ExportPreview() {
     }
   }
 
-  async function handleMailClient() {
-    if (!exportedPath) {
-      toast('Export the file first, then open the mail client', 'error');
-      return;
-    }
-    const customer = state.customer!;
-    const to = [customer.email_to_customer, customer.email_internal_copy, customer.email_pbp_copy, customer.email_pbp_common]
-      .filter(Boolean).join(';');
-    const subject = `Price List — ${customer.customer_short_name} — ${state.price_list_version}`;
-    const body = `Dear Customer,\n\nPlease find attached the updated price list for ${customer.customer_full_name}.\n\nEffective: ${state.effective}\nVersion: ${state.price_list_version}\n\nBest regards,`;
-    const result = await api.openMailWithAttachment({ filePath: exportedPath, to, subject, body });
-    if (!result.success) {
-      const isPermission = String(result.error).includes('-1743') || String(result.error).includes('Not authorized');
-      const msg = isPermission
-        ? 'Mail access denied. Go to System Settings → Privacy & Security → Automation → EPL Tool and enable Mail.'
-        : `Could not open mail client: ${result.error}`;
-      toast(msg, 'error');
-    }
-  }
-
   if (saving) {
     return (
       <Card>
@@ -89,10 +71,15 @@ export function Step4ExportPreview() {
     return (
       <Card>
         <CardContent className="py-10 text-center">
-          <p className="text-red-600 mb-4">Failed to save: {saveError}</p>
-          <Button variant="outline" onClick={() => dispatch({ type: 'SET_STEP', step: 3 })}>
-            ← Back
-          </Button>
+          <p className="text-red-600 mb-4 max-w-xl mx-auto">Price list was not saved. {saveError}</p>
+          <div className="flex justify-center gap-2">
+            <Button variant="outline" onClick={() => dispatch({ type: 'SET_STEP', step: 1 })}>
+              ← Change date / version
+            </Button>
+            <Button variant="outline" onClick={() => dispatch({ type: 'SET_STEP', step: 3 })}>
+              ← Back to products
+            </Button>
+          </div>
         </CardContent>
       </Card>
     );
@@ -161,21 +148,28 @@ export function Step4ExportPreview() {
             {exportedPath ? 'Export Again' : 'Export to Excel'}
           </Button>
           <Button
-            onClick={handleMailClient}
+            onClick={() => setComposeOpen(true)}
             variant="outline"
             className="flex-1 gap-2"
-            disabled={!exportedPath}
-            title={!exportedPath ? 'Export the file first' : ''}
+            disabled={!state.savedPriceListId}
           >
             <Mail size={16} />
-            Open Mail Client
+            Email
           </Button>
         </div>
 
         {exportedPath && (
-          <div className="p-3 bg-green-50 border border-green-200 rounded-md text-sm text-green-800 mb-4">
-            File saved. Click "Open Mail Client" to compose an email with the attachment.
+          <div className="p-3 bg-green-50 border border-green-200 rounded-md text-sm text-green-800 mb-4 break-all">
+            File saved: {exportedPath}
           </div>
+        )}
+
+        {state.savedPriceListId && (
+          <EmailComposeDialog
+            open={composeOpen}
+            onClose={() => setComposeOpen(false)}
+            priceListIds={[state.savedPriceListId]}
+          />
         )}
 
         <div className="flex justify-between">

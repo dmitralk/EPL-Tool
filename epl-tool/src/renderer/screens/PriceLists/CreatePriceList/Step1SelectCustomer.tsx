@@ -2,11 +2,11 @@ import { useEffect, useState } from 'react';
 import { api } from '../../../lib/ipc';
 import { Button } from '../../../components/ui/button';
 import { Input, Label } from '../../../components/ui/input';
-import { Select } from '../../../components/ui/select';
+import { SearchableSelect } from '../../../components/ui/searchable-select';
 import { Card, CardContent, CardHeader, CardTitle } from '../../../components/ui/card';
-import { todayISO, nextVersion } from '../../../lib/utils';
+import { todayISO, nextVersion, formatDate } from '../../../lib/utils';
 import { useWizard } from './index';
-import type { Customer, PriceListFull } from '../../../../types';
+import type { Customer, PriceListFull, PriceListHeader } from '../../../../types';
 
 export function Step1SelectCustomer() {
   const { state, dispatch } = useWizard();
@@ -62,8 +62,19 @@ export function Step1SelectCustomer() {
     return Object.keys(e).length === 0;
   }
 
-  function handleNext() {
-    if (validate()) dispatch({ type: 'SET_STEP', step: 2 });
+  async function handleNext() {
+    if (!validate()) return;
+    const existing = await api.getPriceLists({ customer_ref_sap: state.customer!.customer_ref_sap }) as PriceListHeader[];
+    const version = state.price_list_version.trim().toUpperCase();
+    const clash = existing.find(pl => pl.effective === state.effective && (pl.price_list_version ?? '').trim().toUpperCase() === version);
+    if (clash) {
+      setErrors({
+        duplicate: `A price list with application date ${formatDate(state.effective)} and version ${clash.price_list_version} already exists for this customer. ` +
+          'Please choose another date or version, or delete the existing price list.',
+      });
+      return;
+    }
+    dispatch({ type: 'SET_STEP', step: 2 });
   }
 
   return (
@@ -73,17 +84,18 @@ export function Step1SelectCustomer() {
         <div className="space-y-4">
           <div>
             <Label>Customer *</Label>
-            <Select
-              value={state.customer?.customer_ref_sap ?? ''}
-              onChange={e => handleCustomerChange(e.target.value)}
+            <SearchableSelect
+              values={state.customer ? [state.customer.customer_ref_sap] : []}
+              onChange={v => { if (v[0]) handleCustomerChange(v[0]); }}
+              options={customers.map(c => ({
+                value: c.customer_ref_sap,
+                label: c.customer_short_name,
+                sublabel: `${c.customer_ref_sap} · ${c.currency}`,
+                keywords: c.customer_full_name,
+              }))}
               placeholder="Select customer…"
-            >
-              {customers.map(c => (
-                <option key={c.customer_ref_sap} value={c.customer_ref_sap}>
-                  {c.customer_short_name} ({c.customer_ref_sap}) — {c.currency}
-                </option>
-              ))}
-            </Select>
+              searchPlaceholder="Search customer name or SAP code…"
+            />
             {errors.customer && <p className="text-red-500 text-xs mt-1">{errors.customer}</p>}
           </div>
 
@@ -155,6 +167,12 @@ export function Step1SelectCustomer() {
               placeholder="Optional"
             />
           </div>
+
+          {errors.duplicate && (
+            <div className="p-3 bg-red-50 border border-red-200 rounded-md text-sm text-red-700">
+              {errors.duplicate}
+            </div>
+          )}
 
           <div className="flex justify-end pt-2">
             <Button onClick={handleNext}>Next →</Button>

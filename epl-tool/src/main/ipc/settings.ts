@@ -63,7 +63,7 @@ export function registerSettingsHandlers() {
     if (result.canceled || !result.filePath) return { ok: false, error: 'Cancelled' };
 
     try {
-      openDatabase(result.filePath);
+      openDatabase(result.filePath, { create: true });
       getDb().prepare('INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)').run('db_path', result.filePath);
       saveDbPath(result.filePath);
       return { ok: true, path: result.filePath };

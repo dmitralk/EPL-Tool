@@ -1,49 +1,50 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search } from 'lucide-react';
 import { api } from '../../lib/ipc';
 import { Button } from '../../components/ui/button';
-import { Input } from '../../components/ui/input';
+import { SearchableSelect } from '../../components/ui/searchable-select';
 import { Badge } from '../../components/ui/badge';
 import type { Customer } from '../../../types';
 
 export function CustomersScreen() {
   const navigate = useNavigate();
   const [customers, setCustomers] = useState<Customer[]>([]);
-  const [search, setSearch] = useState('');
+  const [filterCustomers, setFilterCustomers] = useState<string[]>([]);
 
   useEffect(() => {
     api.getCustomers().then(c => setCustomers(c as Customer[]));
   }, []);
 
-  const filtered = customers.filter(c => {
-    if (!search) return true;
-    const s = search.toLowerCase();
-    return (
-      c.customer_short_name.toLowerCase().includes(s) ||
-      c.customer_full_name.toLowerCase().includes(s) ||
-      c.customer_ref_sap.toLowerCase().includes(s)
-    );
-  });
+  const filtered = filterCustomers.length === 0
+    ? customers
+    : customers.filter(c => filterCustomers.includes(c.customer_ref_sap));
 
   return (
     <div className="p-6">
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Customers</h1>
-          <p className="text-gray-500 text-sm mt-0.5">{customers.length} total</p>
+          <p className="text-gray-500 text-sm mt-0.5">
+            {filterCustomers.length ? `${filtered.length} of ${customers.length}` : `${customers.length} total`}
+          </p>
         </div>
       </div>
 
-      <div className="relative max-w-xs mb-4">
-        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-        <Input
-          placeholder="Search customers…"
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          className="pl-9"
-        />
-      </div>
+      <SearchableSelect
+        multiple
+        values={filterCustomers}
+        onChange={setFilterCustomers}
+        options={customers.map(c => ({
+          value: c.customer_ref_sap,
+          label: c.customer_short_name,
+          sublabel: c.customer_ref_sap,
+          keywords: c.customer_full_name,
+        }))}
+        placeholder="All customers"
+        pluralLabel="customers"
+        searchPlaceholder="Search customer name or SAP code…"
+        className="w-96 mb-4"
+      />
 
       <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
         <table className="w-full text-sm">

@@ -8,6 +8,8 @@ import { registerExportHandlers } from './export';
 import { registerMigrationHandlers } from './migration';
 import { registerCurrencyHandlers } from './currencies';
 import { registerAnalysisHandlers } from './analysis';
+import { registerEmailHandlers } from './emails';
+import { registerBackupHandlers } from './backup';
 
 export function registerAllIpcHandlers() {
   registerCustomerHandlers();
@@ -20,4 +22,6 @@ export function registerAllIpcHandlers() {
   registerMigrationHandlers();
   registerCurrencyHandlers();
   registerAnalysisHandlers();
+  registerEmailHandlers();
+  registerBackupHandlers();
 }

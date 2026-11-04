@@ -33,21 +33,26 @@ This file is read automatically by Claude Code at conversation start. It gives f
 ## Project root layout
 
 ```
-/Users/yadmitrieva/EPL Tool/
+<repo root>/                ← GitHub: dmitralk/EPL-Tool (macOS dev: /Users/yadmitrieva/EPL Tool, Windows dev: SharePoint-synced folder)
 ├── epl-tool/               ← the Electron app (all code here)
 │   ├── src/
 │   │   ├── main/           ← Electron main process
 │   │   │   ├── index.ts    ← window creation, app lifecycle
-│   │   │   ├── database.ts ← better-sqlite3 connection, schema DDL, WAL/FK pragmas
+│   │   │   ├── database.ts ← better-sqlite3 connection, schema DDL, journal/FK pragmas, integrity check + startup backup
+│   │   │   ├── backup.ts   ← backup create/list/prune/verify helpers (EPL-Backups folder next to the DB)
 │   │   │   ├── ipc/        ← all IPC handlers (entity:action naming)
 │   │   │   │   ├── index.ts          ← registers all handlers
 │   │   │   │   ├── customers.ts
 │   │   │   │   ├── products.ts       ← cascades name/type sync to standard_epl on update
-│   │   │   │   ├── priceLists.ts
+│   │   │   │   ├── priceLists.ts     ← create (duplicate guard), delete (customer last-list fallback)
 │   │   │   │   ├── standardEpl.ts    ← versioned EPL: list-versions, create-draft, publish-draft, delete-draft, delete-row, list-combined, upsert
 │   │   │   │   ├── packaging.ts
+│   │   │   │   ├── currencies.ts
 │   │   │   │   ├── settings.ts       ← DB open/create, logo, admin emails, units
 │   │   │   │   ├── export.ts         ← xlsx single/bulk, mail single/bulk; standard EPL xlsx + mail
+│   │   │   │   ├── analysis.ts       ← analysis:list-rows, fx rates, analysis:export-xlsx
+│   │   │   │   ├── emails.ts         ← email management (index/replace/remove addresses across customers)
+│   │   │   │   ├── backup.ts         ← backup:* channels + db:last-open-error
 │   │   │   │   └── migration.ts      ← Excel import from All_Prices.xlsx
 │   │   │   └── export/
 │   │   │       └── buildPriceListXlsx.ts ← ExcelJS builder, replicates reference format
@@ -60,42 +65,45 @@ This file is read automatically by Claude Code at conversation start. It gives f
 │   │       ├── App.tsx     ← React Router, DbGuard, all routes
 │   │       ├── lib/
 │   │       │   ├── ipc.ts  ← typed wrapper: `export const api = window.api`
-│   │       │   └── utils.ts  ← cn, formatDate, formatCurrency, todayISO, nextVersion, priceTypeLabel, fmtNum/absDelta/pctDelta (shared delta helpers)
+│   │       │   └── utils.ts  ← cn, ipcErrorMessage, formatDate, formatCurrency, todayISO, nextVersion, priceTypeLabel, fmtNum/absDelta/pctDelta (shared delta helpers)
 │   │       ├── components/
-│   │       │   ├── ui/     ← button, input, select, dialog, card, badge, toast, etc.
-│   │       │   └── layout/ ← AppShell.tsx, Sidebar.tsx
+│   │       │   ├── ui/     ← button, input, select, dialog, card, badge, toast, searchable-select (slicer-style dropdown)
+│   │       │   ├── layout/ ← AppShell.tsx, Sidebar.tsx
+│   │       │   ├── BackupPanel.tsx        ← backup list / back up now / open folder / restore (Settings + damaged-DB screen)
+│   │       │   └── EmailComposeDialog.tsx ← shared subject/body compose step used by every Email button
 │   │       └── screens/
-│   │           ├── DatabaseSelector.tsx
+│   │           ├── DatabaseSelector.tsx        ← route /setup: open/create DB; shows restore UI when the DB failed its integrity check
 │   │           ├── Dashboard.tsx               ← stats cards, recent price lists table; "+ New Price List" routes to /price-lists/new (gateway)
 │   │           ├── Settings/
-│   │           │   ├── SettingsScreen.tsx      ← DB path, logo, admin emails, units, packaging/currencies/hidden customers links, Standard EPL editing toggle, import button
+│   │           │   ├── SettingsScreen.tsx      ← DB path, Backups card, logo, admin emails, units, packaging/currencies/hidden customers links, import button
 │   │           │   ├── DeletedCustomersScreen.tsx ← lists soft-deleted customers; Restore or Delete Permanently per row
 │   │           │   ├── CurrenciesScreen.tsx    ← route /settings/currencies: main currencies (USD/EUR, read-only) + other currencies (add/remove)
 │   │           │   ├── PackagingScreen.tsx     ← route /settings/packaging: version list with row/customer counts; New Version dialog (clone-from support); Delete blocked if customers assigned
 │   │           │   ├── PackagingVersionScreen.tsx ← route /settings/packaging/:version: per-row inline editor (type, name, price, currency, unit, sort); Add Row dialog; label rows (null price) shown as italic "label"
 │   │           │   └── ImportScreen.tsx        ← dedicated import screen (route /settings/import): file picker, per-entity preview cards with checkboxes, selective import, results
 │   │           ├── Customers/
-│   │           │   ├── CustomersScreen.tsx     ← list with search (shows only active customers)
+│   │           │   ├── CustomersScreen.tsx     ← active customers; searchable multi-select customer filter (name / SAP / full name)
 │   │           │   ├── CustomerDetail.tsx      ← inline editing, price list table, Hide Customer button; Packaging field is a dropdown (fetches packaging:list-versions)
 │   │           │   └── ComparisonPanel.tsx     ← side-by-side price list diff
+│   │           ├── Emails/EmailsScreen.tsx     ← route /emails (nav after Customers): one row per address with its customers; bulk edit/replace/remove
 │   │           ├── PriceLists/
-│   │           │   ├── PriceListsScreen.tsx    ← list with latest-only toggle, bulk export, bulk email compose dialog, compare button
-│   │           │   ├── PriceListDetail.tsx
+│   │           │   ├── PriceListsScreen.tsx    ← searchable multi-select customer filter, latest-only toggle, bulk export, bulk Email (N), compare button
+│   │           │   ├── PriceListDetail.tsx     ← Export XLSX, Email, Delete (type-version-to-confirm)
 │   │           │   ├── NewPriceListGateway.tsx ← choice screen: Single Customer vs Mass Update (route /price-lists/new)
 │   │           │   ├── CreatePriceList/        ← single-customer 4-step wizard (route /price-lists/create)
 │   │           │   │   ├── index.tsx           ← WizardContext + reducer
-│   │           │   │   ├── Step1SelectCustomer.tsx  ← fetches prev price list on customer select
+│   │           │   │   ├── Step1SelectCustomer.tsx  ← searchable single-select customer; fetches prev price list; duplicate date/version check on Next
 │   │           │   │   ├── Step2ConfigurePricing.tsx ← 4 pricing methods (see below)
 │   │           │   │   ├── Step3ReviewProducts.tsx  ← add/remove products, inline price edit
-│   │           │   │   └── Step4ExportPreview.tsx
+│   │           │   │   └── Step4ExportPreview.tsx   ← saves on mount; Export to Excel + Email
 │   │           │   └── MassPriceList/          ← mass update 4-step wizard (route /price-lists/create/mass)
 │   │           │       ├── index.tsx           ← MassWizardContext + reducer + shared computeLines()
-│   │           │       ├── Step1SelectCustomers.tsx ← currency toggle, filter bar (name/region/date), customer table, loads entries on Next
+│   │           │       ├── Step1SelectCustomers.tsx ← currency toggle, filter bar (customer multi-select/region/date), customer table, loads entries on Next
 │   │           │       ├── Step2ConfigureChange.tsx ← method + overrides + dates/comments + live preview
 │   │           │       ├── Step3Preview.tsx    ← per-customer summary with expandable price detail rows
-│   │           │       └── Step4CreateResults.tsx  ← sequential creation, results table, bulk export/email
-│   │           ├── Analysis/AnalysisScreen.tsx       ← route /analysis (nav between Customers and Products): read-only price analysis table (all products × all active customers); USD|EUR|All currency toggle; compare vs any EPL version incl. draft; latest-only/all-versions toggle; product multi-select + search; FX rate editor (All mode); Excel export
-│           ├── MasterData/MasterDataScreen.tsx   ← product CRUD (nav label: "Products")
+│   │           │       └── Step4CreateResults.tsx  ← sequential creation, results table, Export All + Email (N)
+│   │           ├── Analysis/AnalysisScreen.tsx       ← route /analysis: read-only price analysis table; USD|EUR|All (default All); column picker; compare vs any EPL version; FX editor; Excel export of visible columns
+│   │           ├── MasterData/MasterDataScreen.tsx   ← product CRUD (nav label: "Products")
 │   │           └── StandardEpl/
 │   │               ├── StandardEplScreen.tsx ← two tabs: “Standard Prices” (version selector, draft management, combined USD+EUR table, Export/Email buttons) and “Packaging Charges” (version selector, read-only table, Export/Email buttons)
 │   │               └── StandardEplComparisonPanel.tsx ← side-by-side diff of two EPL versions (Changed / Added / Removed sections)
@@ -103,13 +111,15 @@ This file is read automatically by Claude Code at conversation start. It gives f
 │   └── package.json
 ├── All_Prices.xlsx         ← original master data file for import
 ├── All_PricesTest.xlsx     ← test dataset
-├── Logo.png                ← company logo for exports
+├── EPL-Database.db         ← sample/test database (see Known issues: data files in the repo)
+├── .gitignore              ← ignores EPL-Backups/ and SQLite temp files
+├── README.md               ← user-facing guide
 └── CLAUDE.md               ← this file
 ```
 
 ---
 
-## Database schema (SQLite, WAL mode)
+## Database schema (SQLite, rollback journal)
 
 ```sql
 customers            -- customer masterdata; currency TEXT NOT NULL (no CHECK — any currency code allowed);
@@ -129,11 +139,15 @@ currencies           -- currency list; seeded with USD (is_main=1) and EUR (is_m
 fx_rates             -- display-only FX rates for the Analysis "All" mode; PK currency_code, rate_to_usd (USD per 1 unit); seeded USD=1, EUR=1.08, GBP=1.27; editable on the Analysis screen; NEVER used for actual pricing/stored data
 ```
 
-Pragmas set on every open: `journal_mode=WAL`, `foreign_keys=ON`, `synchronous=NORMAL`.
+Pragmas set on every open: `journal_mode=DELETE`, `foreign_keys=ON`, `synchronous=FULL`. **Do not switch back to WAL**: the separate `-wal` file gets synced out of step with the `.db` by OneDrive/SharePoint, which caused past corruption. Existing WAL databases are converted automatically on open.
+
+**Open sequence (`openDatabase`)**: open with `fileMustExist` (only `db:create` passes `create: true`, so a not-yet-synced SharePoint file is never replaced by an empty DB) → `journal_mode=DELETE` → `PRAGMA quick_check` (fail → close, record `lastOpenError` with `corrupt: true`, throw; renderer shows restore UI on `/setup`) → close previous connection → startup backup (existing files only, never blocks open) → schema/seed/migrations.
+
+**Backups (`main/backup.ts`, `ipc/backup.ts`, `components/BackupPanel.tsx`)**: stored in `EPL-Backups/` next to the DB file (so SharePoint DB → SharePoint backups, local → local). Name `{dbname}_YYYY-MM-DD_HH-mm-ss.db`; created with `VACUUM INTO` to a `.partial` file, verified with `quick_check` read-only, then renamed. 20 most recent kept (sorted by the timestamp in the name — Windows `copyFile` preserves mtime). Restore: verifies backup → closes DB → raw copy of current file as `..._pre-restore.db` → copy backup over DB (via `.restoring` temp + rename, stale `-wal/-shm/-journal` removed) → reopen with `skipBackup`. `backup:restore` only accepts files inside the target DB's `EPL-Backups` folder matching the name pattern. UI: Settings → Backups card, and the `/setup` screen when the DB is damaged. Channels: `db:last-open-error`, `backup:list`, `backup:create`, `backup:open-folder`, `backup:restore`.
 
 Schema runs `CREATE TABLE IF NOT EXISTS` so opening an existing DB is safe. Units, currencies, and `fx_rates` are seeded with `INSERT OR IGNORE` (so `fx_rates` needs no numbered migration — it appears automatically on next DB open).
 
-**DB migration (`migrateIfNeeded` in database.ts)** — runs on every `openDatabase` call after schema init. Contains two sequential migrations:
+**DB migration (`migrateIfNeeded` in database.ts)** — runs on every `openDatabase` call after schema init. Contains six sequential migrations:
 
 **Migration 1** — Widens the `price_type` CHECK constraint on `price_lists` to include `'PrevPercent'` and `'PrevAbsolute'`. Detection: checks `sqlite_master` for the old two-value constraint string; skips if already migrated. Uses `PRAGMA foreign_keys = OFF` and **`PRAGMA legacy_alter_table = ON`** before renaming `price_lists → _price_lists_old`, then creates new table, copies data, drops old. The `legacy_alter_table` pragma is critical: without it, SQLite 3.26.0+ automatically rewrites FK references in child tables during rename — so `price_list_entries.FOREIGN KEY → price_lists` silently becomes `→ _price_lists_old`, which breaks all subsequent inserts once `_price_lists_old` is dropped.
 
@@ -151,7 +165,11 @@ Schema runs `CREATE TABLE IF NOT EXISTS` so opening an existing DB is safe. Unit
 
 **`price_lists.created_at`** — automatically set on insert via `DEFAULT (datetime('now'))`. `price-lists:list` orders by `created_at DESC`, so `lists[0]` is always the most recent. This is how Step 1 of the wizard finds the customer's latest price list to pre-populate products.
 
+**price-lists:create** — **duplicate guard first**: throws a user-facing error if a list already exists for the same customer with the same `effective` date and version (version compared trimmed + case-insensitive) or the same generated `price_list_id` (`{ref}{effective}{mailing}{version}`). Message: *"A price list with application date … and version … already exists for this customer. Please choose another date or version, or delete the existing price list."* The single wizard also checks this on Step 1 "Next". Renderer strips Electron's `Error invoking remote method '…': Error:` prefix with `ipcErrorMessage()` (utils.ts) — use it wherever IPC errors are shown.
+
 **price-lists:create side effect** — after saving the price list and entries, it also updates `customers.last_price_list_version`, `last_price_list_id`, `effective`, `mailing_date` for the customer. This keeps the customers table in sync with the latest list without a separate query.
+
+**price-lists:delete** — one transaction: deletes entries + header; if the customer's `last_price_list_id` pointed at the deleted list, those four customer fields fall back to the customer's latest remaining list (`ORDER BY effective IS NULL, effective DESC, created_at DESC` — same "latest" rule as Price Lists "Latest only" and Analysis) or are cleared to NULL if none remain. UI: Delete link on the Price Lists table (simple confirm) and Delete button on PriceListDetail (must type the version to enable "Delete permanently").
 
 ---
 
@@ -161,7 +179,8 @@ All channels follow `entity:action`. The preload (`src/preload/index.ts`) expose
 
 **Channel list (grouped):**
 ```
-db:select-file, db:open, db:create, db:get-path, db:is-open
+db:select-file, db:open, db:create, db:get-path, db:is-open, db:last-open-error
+backup:list, backup:create, backup:open-folder, backup:restore
 customers:list, customers:get, customers:create, customers:update, customers:delete
 customers:soft-delete, customers:restore, customers:list-deleted, customers:delete-permanent
 products:list, products:create, products:update, products:delete
@@ -174,6 +193,7 @@ settings:get, settings:set, settings:get-admin-emails, settings:update-admin-ema
 settings:get-units, settings:create-unit, settings:delete-unit, settings:select-logo
 currencies:list, currencies:create, currencies:delete
 analysis:list-rows, fx:list, fx:set, analysis:export-xlsx
+emails:list, emails:set-assignments, emails:replace, emails:remove
 migration:select-file, migration:preview-excel, migration:import-excel
 ```
 
@@ -194,7 +214,7 @@ migration:select-file, migration:preview-excel, migration:import-excel
 
 ### Price Analysis view (Analysis/AnalysisScreen.tsx + ipc/analysis.ts)
 
-Read-only analytical surface (route `/analysis`, nav between Customers and Products). No mutations except `fx:set`. One flat table: every price list entry across all **active** customers (`customers.is_deleted = 0`), joined with the standard EPL price (USD + EUR) for a chosen comparison version.
+Read-only analytical surface (route `/analysis`, nav after Emails). No mutations except `fx:set`. One flat table: every price list entry across all **active** customers (`customers.is_deleted = 0`), joined with the standard EPL price (USD + EUR) for a chosen comparison version. Default currency mode is **All**.
 
 **Data flow:** `analysis:list-rows(comparisonVersionId?)` runs one JOIN (`price_list_entries → price_lists → customers`, LEFT JOIN `standard_epl` for USD and EUR at the version, default `getLatestPublishedEplVersionId()`) and returns `AnalysisRow[]`. Each row's `is_latest` flag is computed in the handler (latest price list per customer by `effective` desc, `created_at` tiebreak; null effective sorts oldest). The renderer loads once per comparison version and does all filtering/computation client-side (re-query only on version change).
 
@@ -208,9 +228,20 @@ Read-only analytical surface (route `/analysis`, nav between Customers and Produ
 
 **Cell layout** — **Net Price**: USD/EUR modes show `net currency` on one line; All mode (converted rows) shows the estimated `≈ USD` on top in normal size with the native `value currency` beneath in small grey. **Diff**: two-line cell with the **percentage on top** (larger) and the **absolute delta beneath** (small, dimmed), reusing the shared `absDelta`/`pctDelta`/`fmtNum` helpers (in `utils.ts`, also used by `StandardEplComparisonPanel`) — red for premium over EPL / green for below, `≈` prefix on the absolute in All mode.
 
-**Export** — `analysis:export-xlsx` is generic: the renderer computes the exact display grid (currency conversion + filters live there) and sends `{ headers, rows, numericCols, mode }`; the main process writes it via ExcelJS (bold header, gray fill, frozen row 1, `#,##0.00` on numeric cols, auto width). Filename `Price-Analysis-{mode}-YYYY-MM-DD.xlsx`.
+**Columns + picker** — columns are defined in the `COLUMNS` array (`key`, `label`, `defaultVisible`, `locked`): Customer (locked), Customer SAP Code (hidden), Customer Type, Customer Type SAP (hidden), Country, Supply Region, Version, Effective, Mailing Date (hidden), Product Type, Product (locked), Unit, Terms, Net Price, EPL, Diff. The "Columns" popover toggles visibility; state persists in `localStorage` key `analysis.visibleColumns` (merged with defaults, so newly added columns get their default). `AnalysisRow` carries `customer_type`, `customer_ref_type_sap`, `country`, `effective`, `mailing_date` from the `analysis:list-rows` query.
+
+**Export** — `analysis:export-xlsx` is generic: the renderer computes the exact display grid (currency conversion + filters live there) and sends `{ headers, rows, numericCols, dateCols, mode }`; only **visible** columns are exported (one table column can map to several export columns, e.g. Product → Product + RIP, Diff → Diff + Diff %). The main process writes it via ExcelJS (bold header, gray fill, frozen row 1, `#,##0.00` on numeric cols, ISO strings in `dateCols` converted to real Excel dates `yyyy-mm-dd` at UTC midnight, auto width). Filename `Price-Analysis-{mode}-YYYY-MM-DD.xlsx`.
 
 **Profitability-ready:** `AnalysisRow` carries optional `cost`/`margin` fields reserved for the future cost feature (which will need its own cost table); no cost columns are rendered yet.
+
+### Email management (Emails/EmailsScreen.tsx + ipc/emails.ts)
+
+Route `/emails` (nav after Customers). No schema change: `customers.email_to_customer` / `email_internal_copy` remain the source of truth (`;`-separated strings), so export/mail/import/customer form are untouched. `emails:list` parses both fields across **all** customers (incl. hidden) and groups by address (case-insensitive) → `EmailUsage[]` with per-customer `to`/`internal` flags. Writes are token-level in one transaction and only rewrite fields containing the address:
+- `emails:set-assignments(email, changes)` — add/remove an address per customer and field (Edit / Add Email dialog; active customers only, hidden left unchanged)
+- `emails:replace(old, new)` — swap everywhere, de-duplicating if `new` already present (merge)
+- `emails:remove(email)` — remove from all customers
+
+PBP admin emails (`admin_emails`) are shown read-only with an "All customers" tag and link to Settings.
 
 ### Migration (migration.ts)
 
@@ -258,10 +289,10 @@ function trimOnly(v: unknown): string | null {
 
 ### Price list creation wizard (CreatePriceList/)
 4-step flow with shared `WizardContext` reducer:
-1. **Step 1** — customer + dates; on customer select, async fetches their latest price list entries → `previousEntries` in wizard state
+1. **Step 1** — customer (searchable single-select: name / SAP / full name) + dates + version; on customer select, async fetches their latest price list entries → `previousEntries` in wizard state. "Next" blocks with a red message if the customer already has a list with the same effective date + version.
 2. **Step 2** — pricing method selector (4 options, see below); computes product lines from `previousEntries`. If no previous list, starts empty.
 3. **Step 3** — review/edit prices, remove products, add products from EPL catalogue via dialog
-4. **Step 4** — auto-saves price list to DB on mount (no user action needed); export button triggers native save dialog; mail button only enabled after export
+4. **Step 4** — auto-saves price list to DB on mount (no user action needed); "Export to Excel" (save dialog) and "Email" (compose dialog) are independent. On save failure: message + "Change date / version" (Step 1) and "Back to products" (Step 3).
 
 **Step 2 pricing methods** — `WizardState.price_type` stores one of four values:
 
@@ -299,9 +330,9 @@ ripOverrides:  Override[];  // level 3 — per rip_code
 
 **Step 3 behaviour for all methods**: `isNetPrice` is `true` for every method except `'Discount'` (prices are freely editable). When adding a new product from the EPL catalogue in Step 3, `'Discount'` mode applies the discount to the EPL price; all other modes use the raw EPL price as a starting point. The Step 3 subtitle notes how many granular overrides were applied (e.g. "with 3 granular overrides").
 
-**Step 4 sequential dependency**: DB save → export to file → open mail client. Each step is gated on the previous one completing successfully.
+**Step 4**: see step list above.
 
-**Single price list email** (Step 4) uses a hardcoded subject/body, not the saved template from bulk email settings. Template: subject = `"Price List — {shortName} — {version}"`, body = fixed greeting text. This is intentional (quick one-off) but is inconsistent with bulk email — something to unify if needed later.
+**Single price list email** (Step 4) uses the same `EmailComposeDialog` and saved template as every other Email button (see "Email compose dialog" below).
 
 ### Mass Price Update wizard (MassPriceList/)
 
@@ -333,13 +364,13 @@ export function computeLines(
 | `'Discount'` | % Discount from Standard EPL | `epl_price × (1 − pct/100)` |
 | `'Net Price'` | Carry Forward (no change) | copies prices unchanged; delta overrides still applied |
 
-**Step 1 — Select Customers**: Currency toggle (USD/EUR) at top; switches `SET_CURRENCY`, clears selection, and resets all filters. Filter bar below the header: text search (by customer name), supply region dropdown (All / ASIA / EUROPE / AMERICA), and effective date range (From / To, applied to the customer's latest effective date). A "Clear filters" link appears when any filter is active. Customers without any price list in the selected currency are greyed out/non-selectable but still visible. The select-all checkbox and "N customers selected" count reflect only the currently filtered visible rows. On Next: calls `api.getPriceList()` in parallel for all selected customers to load their latest entries into `selectedRows`, then advances to Step 2. Back navigates to `/price-lists/new`.
+**Step 1 — Select Customers**: Currency toggle (USD/EUR) at top; switches `SET_CURRENCY`, clears selection, and resets all filters. Filter bar below the header: customer multi-select (`SearchableSelect multiple`, options limited to the selected currency — it **filters the table**, it does not select rows), supply region dropdown (All / ASIA / EUROPE / AMERICA), and effective date range (From / To, applied to the customer's latest effective date). A "Clear filters" link appears when any filter is active. Customers without any price list in the selected currency are greyed out/non-selectable but still visible. The select-all checkbox and "N customers selected" count reflect only the currently filtered visible rows. On Next: calls `api.getPriceList()` in parallel for all selected customers to load their latest entries into `selectedRows`, then advances to Step 2. Back navigates to `/price-lists/new`.
 
 **Step 2 — Configure Change**: Four method cards. Base value input hidden for "Net Price" (shows info banner instead). Same override system as single wizard: Product Type Overrides + Product (RIP) Overrides. Dates (effective, mailing) and comments fields. Live preview table shows first selected customer's computed prices via `computeLines()`. Summary: "N customers · N total products · currency". Validation: effective/mailing required; base value required for non-carry-forward; discount 0–99.99; all override valueStr must be numeric.
 
 **Step 3 — Preview**: Summary bar (method badge, effective, mailing date, currency, comments). Per-customer table: customer name, base version, new version (blue), product count. Rows are clickable to expand, showing up to 20 products with previous → new price columns.
 
-**Step 4 — Create Results**: On mount, loads Standard EPL for the selected currency, then sequentially creates each price list (to avoid DB contention) via `computeLines()` + `api.createPriceList()`. Stored to DB as: `price_type` set to the method value; "Net Price" carry-forward stored as `price_type: 'Net Price'` with `discount_percent: null`; all others store the base value in `discount_percent`. Results table shows status per customer (pending → spinner → ok/error). After all saved: "Export All" and "Email All" buttons using saved email templates (`email_subject_template`, `email_body_template`).
+**Step 4 — Create Results**: On mount, loads Standard EPL for the selected currency, then sequentially creates each price list (to avoid DB contention) via `computeLines()` + `api.createPriceList()`. Stored to DB as: `price_type` set to the method value; "Net Price" carry-forward stored as `price_type: 'Net Price'` with `discount_percent: null`; all others store the base value in `discount_percent`. Results table shows status per customer (pending → spinner → ok / "Not saved: <full message>", e.g. the duplicate date/version message; other customers still get created). After all saved: "Export All" and "Email (N)" buttons; Email opens the shared `EmailComposeDialog`.
 
 **Version numbering**: each customer's new version is auto-incremented from their latest price list version, same logic as single wizard (`nextVersion()` in `utils.ts`). Version is determined per-customer in Step 1 and stored in `selectedRows`.
 
@@ -365,7 +396,7 @@ Customers can be hidden from the customer card using the **Hide** button (EyeOff
 ### Customer masterdata fields
 
 `customers` table has additional fields beyond the import schema:
-- `main_supply_region` — `TEXT CHECK (main_supply_region IN ('ASIA','EUROPE','AMERICA'))`, nullable. Editable via a dropdown in the CustomerDetail Details card. Displayed as "Supply Region" column in Mass Price Update Step 1.
+- `main_supply_region` — `TEXT CHECK (main_supply_region IN ('ASIA','EUROPE','AMERICA'))`, nullable. Editable via a dropdown in the CustomerDetail Details card. Displayed as "Supply Region" in Mass Price Update Step 1 and on the Analysis tab.
 - `is_deleted` — `INTEGER NOT NULL DEFAULT 0`. Managed via soft-delete flow; never edited directly.
 - `currency` — `TEXT NOT NULL`, no CHECK constraint (removed in Migration 5). Any code from the `currencies` table can be used. Dropdown in CustomerDetail loads options from `currencies:list` at runtime.
 
@@ -410,16 +441,24 @@ Managed via the existing `packaging` table — no schema changes required. The t
 **Customer Packaging field** (`CustomerDetail.tsx`) — upgraded from free-text `ERow` to a dropdown that fetches `packaging:list-versions` on mount. If the customer's current `packaging_version` is not found in the list (edge case), it is still shown as a selectable option to prevent the select from jumping to a different value silently.
 
 ### PriceListsScreen.tsx — list view
-Default view shows **one row per customer** — the price list with the latest `effective` date ("Latest only" mode). A toggle button in the filter bar switches to "View all" to show every price list, then back. The subtitle reflects the mode: `N customers` (latest only) or `N of Total price lists` (all). Null `effective` dates are treated as oldest so a dated list always wins. Switching the toggle clears the current selection to avoid stale state. Filtering by customer or search text is applied first; the latest-only reduction runs after.
+Default view shows **one row per customer** — the price list with the latest `effective` date ("Latest only" mode). A toggle button in the filter bar switches to "View all" to show every price list, then back. The subtitle reflects the mode: `N customers` (latest only) or `N of Total price lists` (all). Null `effective` dates are treated as oldest so a dated list always wins. Switching the toggle clears the current selection to avoid stale state. The customer filter (`SearchableSelect multiple`, empty = all customers; changing it clears the selection) is applied first; the latest-only reduction runs after.
+
+### SearchableSelect (components/ui/searchable-select.tsx)
+Power BI slicer-style dropdown: trigger button + popover with an autofocused search box (matches `label`, `sublabel`, and hidden `keywords`), ↑/↓/Enter/Esc keyboard support. Props: `values: string[]`, `onChange(values)`, `options: { value, label, sublabel?, keywords? }[]`, `placeholder`, `multiple?`, `pluralLabel?`. **Multiple** mode: checkboxes, "Select all (matching)", Clear/Done footer, × to clear; empty selection means "all". **Single** mode: click/Enter picks and closes, no clear. Used by: Price Lists, Customers, mass wizard Step 1 (multiple, as filters) and single wizard Step 1 (single). Customers are shown as short name with SAP code (and currency in the wizard) as `sublabel`, full name as `keywords`.
+
+Note: the plain `ui/select.tsx` always applies `w-full`; since `cn()` is plain `clsx` (no tailwind-merge), a width class passed in does **not** override it — wrap it in a sized container instead.
+
+### Dialog close behaviour (components/ui/dialog.tsx)
+All modal windows use the shared native-`<dialog>` `Dialog`. Backdrop close only when **both** mousedown and click are outside the dialog box (a drag that starts inside — scrollbar, text selection — and ends on the backdrop must not close; the browser fires that click on the `<dialog>` itself). Once the user has clicked or typed inside (`dirty`), backdrop clicks and Esc (`cancel` event prevented) are ignored — only ×, Cancel or the action buttons close it. `dirty` resets each time the dialog opens.
 
 **Compare button** — always visible in the filter bar. Enabled (blue) when exactly 2 rows are checked; disabled (grey, "Select 2 to compare") otherwise. Clicking it sets `comparing: { idA, idB }` state and renders a `<ComparisonPanel>` below the table (same component used in CustomerDetail). The page auto-scrolls to the panel on open. Panel has its own "Close" button.
 
-### Bulk email compose dialog (PriceListsScreen.tsx)
-Clicking "Email (N)" opens a compose dialog with Subject + Body fields. Supports `{customer}`, `{customer_full}`, `{version}`, `{effective}` placeholders (substituted per customer at send time). Template auto-saved to `app_settings` (`email_subject_template`, `email_body_template`) on send, and reloaded from settings on next open.
+### Email compose dialog (components/EmailComposeDialog.tsx)
+Used by **all four** Email buttons: Price Lists bulk "Email (N)", PriceListDetail "Email", single wizard Step 4 "Email", mass wizard Step 4 "Email (N)". Props: `open`, `onClose`, `priceListIds`. Subject + Body fields support `{customer}`, `{customer_full}`, `{version}`, `{effective}` placeholders (substituted per customer at send time). Template auto-saved to `app_settings` (`email_subject_template`, `email_body_template`) on send, and reloaded on every open. Send calls `export:open-mail-bulk` (works for 1 or N ids).
 
-**Email recipients** (both single and bulk): combines `email_to_customer`, `email_internal_copy`, `email_pbp_copy`, `email_pbp_common` from the customer record, filters out null/empty, joins with `;`. All four addresses can be present simultaneously.
+**Email recipients** (all Email buttons): combines `email_to_customer`, `email_internal_copy`, `email_pbp_copy`, `email_pbp_common` from the customer record, filters out null/empty, joins with `;`. All four addresses can be present simultaneously. Note: the PBP addresses come from the customer's own columns, not from `admin_emails` (see Known issues).
 
-**Bulk flow**: user selects N price lists → clicks "Email (N)" → compose dialog → "Send" → for each selected list: exports xlsx to a chosen folder, opens a mail draft. The folder picker appears once before the loop starts.
+**Flow**: Email button → compose dialog → "Send" → folder picker (once) → for each price list: exports xlsx to the folder, opens a mail draft with it attached. `export:open-mail-with-attachment` still exists in main/preload but is no longer used by the renderer.
 
 ### priceTypeLabel (utils.ts)
 Shared helper used by all badge display locations (PriceListsScreen, CustomerDetail, Dashboard, PriceListDetail, Step4ExportPreview). Returns a short human-readable label for any `price_type` + `discount_percent` combination:
@@ -542,11 +581,22 @@ npm run make         # build distributable installers (Squirrel .exe + ZIP for W
 ```
 
 **When to use which command:**
-- `npm start` — sufficient for renderer-only changes (`src/renderer/`); Vite HMR picks them up instantly.
-- `npm run package` — required for any change in `src/main/` (IPC handlers, database, export logic, `index.ts`). Use for local testing; produces an unpacked app in `out/`.
+- `npm start` — dev mode. Renderer changes (`src/renderer/`) hot-reload instantly. Changes in `src/main/` or `src/preload/` (IPC handlers, database, export logic) are rebuilt but need a main-process restart: type `rs` in the `npm start` terminal (or restart it).
+- `npm run package` — produces an unpacked app in `out/` for local testing of the packaged build.
 - `npm run make` — produces the release artifacts: Squirrel Windows installer (`.exe`) and a ZIP. Run this before creating a GitHub release. Windows builds are also produced automatically via GitHub Actions on push to `main`.
 
-Always run one of these after every code change — renderer HMR only works in `npm start` dev mode, not in the packaged app.
+A packaged app does not pick up source changes — rebuild it after every change you want to test there.
+
+**Type check / lint**: `npx tsc --noEmit -p .` and `npx eslint <files>` from `epl-tool/`. Pre-existing tsc errors (not blocking Vite builds): `export.ts` lines ~47/~359 (`Promise<Buffer>` casts) and `Step2ConfigurePricing.tsx` / `Step3ReviewProducts.tsx` (currency `string` passed where `'USD' | 'EUR'` expected). ESLint config lacks the `react-hooks` plugin, so existing `eslint-disable react-hooks/...` comments report "rule not found".
+
+### Corporate network (TotalEnergies Windows machines)
+Direct access to GitHub/npm/Electron downloads is blocked and HTTPS is SSL-inspected. Working setup (session env vars, run in `epl-tool/` before `npm ci` / `npm start`):
+```powershell
+$env:HTTP_PROXY='http://cloudproxy-emea.corp.local:8080'; $env:HTTPS_PROXY=$env:HTTP_PROXY
+$env:NODE_OPTIONS='--use-system-ca'          # trust the corporate root CA (Node 22+)
+$env:ELECTRON_GET_USE_PROXY='1'; $env:GLOBAL_AGENT_HTTPS_PROXY=$env:HTTP_PROXY   # Electron binary download
+```
+Git uses the same proxy via the repo-local config (`git config --local http.proxy http://cloudproxy-emea.corp.local:8080`).
 
 ### forge.config.ts — native module packaging
 
@@ -572,7 +622,9 @@ Both are updated together when a DB is opened or created. The `userData` file pe
 
 ## GitHub Actions (Windows build)
 
-`.github/workflows/build-windows.yml` — triggers on push to `main` when `epl-tool/**` files change, or manually. Runs on `windows-latest`, runs `npm ci` + `npm run make`, uploads artifact `EPL-Tool-Windows` (30-day retention).
+`.github/workflows/build-windows.yml` — triggers on push to `main` when `epl-tool/**` files change, on any `v*` tag push, or manually. Runs on `windows-latest`, runs `npm ci` + `npm run make`, uploads artifact `EPL-Tool-Windows` (30-day retention). On a `v*` tag it also publishes a **GitHub Release** (`gh release create`, `GITHUB_TOKEN` with `contents: write`) with the Squirrel `.exe` and the ZIP attached; release notes come from the annotated tag message (`--notes-from-tag`).
+
+**Release procedure**: bump `epl-tool/package.json` (`npm version X.Y.Z --no-git-tag-version`), commit, then `git tag -a vX.Y.Z -F notes.txt` (notes = tag message) and `git push origin main vX.Y.Z`.
 
 ---
 
@@ -605,5 +657,14 @@ Both are updated together when a DB is opened or created. The `userData` file pe
 
 - **Two tables (products + standard_epl)**: standard_epl has currency-specific rows (same rip_code appears twice for USD and EUR). Merging into one table would require price_usd/price_eur columns, which breaks partial pricing and different currencies.
 - **Electron over web stack**: Corporate IT cannot provision servers. Web stack (Python + PostgreSQL + Entra ID) was evaluated and deferred until IT can provide infrastructure.
-- **SQLite over PostgreSQL**: Single user, file on SharePoint. WAL mode handles network latency adequately.
+- **SQLite over PostgreSQL**: Single user, file on SharePoint. Rollback-journal mode (not WAL) so the synced `.db` is always self-contained; automatic backups in `EPL-Backups/`.
 - **Email via mail client**: No SMTP credentials available; AppleScript/Outlook COM opens a draft the user reviews before sending.
+- **Email addresses stay as `;`-separated strings on `customers`**: the Emails screen indexes and bulk-edits them instead of normalising into tables, so export/mail/import/customer form need no changes.
+
+---
+
+## Known issues / open items
+
+- **PBP emails in drafts**: the customer page displays PBP copy/common from `admin_emails` (Settings), but drafts use each customer's own `email_pbp_copy` / `email_pbp_common` columns. Changing an admin email in Settings does not change existing customers' drafts. Candidate fix: build recipients from `admin_emails` in `export:open-mail-bulk`.
+- **Data files in the repo**: `EPL-Database.db`, `EPL-Database BackUp.db`, `All_Prices.xlsx`, `All_PricesTest.xlsx` are tracked in git and contain customer names, emails and prices. If the repo is public, make it private or untrack them (history keeps old copies unless rewritten).
+- **Pre-existing type/lint errors**: see Build commands → Type check / lint.

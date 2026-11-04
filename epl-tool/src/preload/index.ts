@@ -7,6 +7,13 @@ const api = {
   dbCreate: () => ipcRenderer.invoke('db:create'),
   dbGetPath: () => ipcRenderer.invoke('db:get-path'),
   dbIsOpen: () => ipcRenderer.invoke('db:is-open'),
+  dbLastOpenError: () => ipcRenderer.invoke('db:last-open-error'),
+
+  // Backups
+  listBackups: () => ipcRenderer.invoke('backup:list'),
+  createBackup: () => ipcRenderer.invoke('backup:create'),
+  openBackupFolder: () => ipcRenderer.invoke('backup:open-folder'),
+  restoreBackup: (backupPath: string) => ipcRenderer.invoke('backup:restore', backupPath),
 
   // Customers
   getCustomers: () => ipcRenderer.invoke('customers:list'),
@@ -86,6 +93,12 @@ const api = {
   getFxRates: () => ipcRenderer.invoke('fx:list'),
   setFxRate: (code: string, rate: number) => ipcRenderer.invoke('fx:set', code, rate),
   exportAnalysisXlsx: (payload: unknown) => ipcRenderer.invoke('analysis:export-xlsx', payload),
+
+  // Email management
+  listEmails: () => ipcRenderer.invoke('emails:list'),
+  setEmailAssignments: (email: string, changes: unknown) => ipcRenderer.invoke('emails:set-assignments', email, changes),
+  replaceEmail: (oldEmail: string, newEmail: string) => ipcRenderer.invoke('emails:replace', oldEmail, newEmail),
+  removeEmail: (email: string) => ipcRenderer.invoke('emails:remove', email),
 
   // Migration
   migrationSelectFile: () => ipcRenderer.invoke('migration:select-file'),

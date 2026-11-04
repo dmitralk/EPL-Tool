@@ -6,6 +6,7 @@ import { Button } from '../../components/ui/button';
 import { Input, Label } from '../../components/ui/input';
 import { useToast } from '../../components/ui/toast';
 import { Dialog } from '../../components/ui/dialog';
+import { BackupPanel } from '../../components/BackupPanel';
 import type { AdminEmail, Unit } from '../../../types';
 
 export function SettingsScreen() {
@@ -102,6 +103,16 @@ export function SettingsScreen() {
           </p>
         </CardContent>
       </Card>
+
+      {/* Backups */}
+      {dbOpen && (
+        <Card>
+          <CardHeader><CardTitle>Backups</CardTitle></CardHeader>
+          <CardContent>
+            <BackupPanel canCreate onRestored={() => window.location.reload()} />
+          </CardContent>
+        </Card>
+      )}
 
       {/* Logo */}
       <Card>

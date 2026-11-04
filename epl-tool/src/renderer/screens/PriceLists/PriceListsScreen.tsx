@@ -1,62 +1,42 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Search, FileDown, Mail, ArrowLeftRight } from 'lucide-react';
+import { Plus, FileDown, Mail, ArrowLeftRight } from 'lucide-react';
 import { api } from '../../lib/ipc';
 import { Button } from '../../components/ui/button';
-import { Input } from '../../components/ui/input';
-import { Select } from '../../components/ui/select';
+import { SearchableSelect } from '../../components/ui/searchable-select';
 import { Badge } from '../../components/ui/badge';
-import { ConfirmDialog, Dialog } from '../../components/ui/dialog';
+import { ConfirmDialog } from '../../components/ui/dialog';
 import { useToast } from '../../components/ui/toast';
+import { EmailComposeDialog } from '../../components/EmailComposeDialog';
 import { formatDate, priceTypeLabel } from '../../lib/utils';
 import { ComparisonPanel } from '../Customers/ComparisonPanel';
 import type { PriceListHeader, Customer } from '../../../types';
-
-const DEFAULT_SUBJECT = 'Price List — {customer} — {version}';
-const DEFAULT_BODY = `Dear Customer,\n\nPlease find attached the updated price list for {customer_full}.\n\nEffective: {effective}\nVersion: {version}\n\nBest regards,`;
 
 export function PriceListsScreen() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const [lists, setLists] = useState<PriceListHeader[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
-  const [filterCustomer, setFilterCustomer] = useState('');
-  const [search, setSearch] = useState('');
+  const [filterCustomers, setFilterCustomers] = useState<string[]>([]);
   const [showLatestOnly, setShowLatestOnly] = useState(true);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkWorking, setBulkWorking] = useState(false);
   const [composeOpen, setComposeOpen] = useState(false);
-  const [emailSubject, setEmailSubject] = useState(DEFAULT_SUBJECT);
-  const [emailBody, setEmailBody] = useState(DEFAULT_BODY);
   const [comparing, setComparing] = useState<{ idA: string; idB: string } | null>(null);
   const selectAllRef = useRef<HTMLInputElement>(null);
   const comparisonRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     async function load() {
-      const [l, c, savedSubject, savedBody] = await Promise.all([
-        api.getPriceLists(),
-        api.getCustomers(),
-        api.getSetting('email_subject_template'),
-        api.getSetting('email_body_template'),
-      ]);
+      const [l, c] = await Promise.all([api.getPriceLists(), api.getCustomers()]);
       setLists(l as PriceListHeader[]);
       setCustomers(c as Customer[]);
-      if (savedSubject) setEmailSubject(savedSubject);
-      if (savedBody) setEmailBody(savedBody);
     }
     load();
   }, []);
 
-  const searched = lists.filter(pl => {
-    if (filterCustomer && pl.customer_ref_sap !== filterCustomer) return false;
-    if (search) {
-      const s = search.toLowerCase();
-      if (!pl.customer_short_name?.toLowerCase().includes(s) && !pl.price_list_id.toLowerCase().includes(s)) return false;
-    }
-    return true;
-  });
+  const searched = lists.filter(pl => filterCustomers.length === 0 || filterCustomers.includes(pl.customer_ref_sap));
 
   const filtered = showLatestOnly ? (() => {
     const latestByCustomer = new Map<string, PriceListHeader>();
@@ -135,30 +115,6 @@ export function PriceListsScreen() {
     }
   }, [comparing]);
 
-  async function handleSendEmails() {
-    setComposeOpen(false);
-    setBulkWorking(true);
-    await Promise.all([
-      api.setSetting('email_subject_template', emailSubject),
-      api.setSetting('email_body_template', emailBody),
-    ]);
-    const result = await api.openMailBulk([...selected], emailSubject, emailBody);
-    setBulkWorking(false);
-    if ((result as any).canceled) return;
-    const r = (result as any).results as { id: string; filename?: string; error?: string }[];
-    const ok = r.filter(x => !x.error).length;
-    const fail = r.filter(x => x.error).length;
-    if (fail === 0) {
-      toast(`Opened ${ok} email${ok !== 1 ? 's' : ''} with attachments`, 'success');
-    } else {
-      const isPermission = r.some(x => x.error && (x.error.includes('-1743') || x.error.includes('Not authorized')));
-      const msg = isPermission
-        ? 'Mail access denied. Go to System Settings → Privacy & Security → Automation → EPL Tool and enable Mail.'
-        : `${ok} emails opened, ${fail} failed`;
-      toast(msg, 'error');
-    }
-  }
-
   return (
     <div className="p-6">
       <div className="flex items-center justify-between mb-6">
@@ -176,27 +132,16 @@ export function PriceListsScreen() {
 
       {/* Filters */}
       <div className="flex gap-3 mb-4">
-        <div className="relative flex-1 max-w-xs">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-          <Input
-            placeholder="Search customer or ID…"
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            className="pl-9"
-          />
-        </div>
-        <Select
-          value={filterCustomer}
-          onChange={e => setFilterCustomer(e.target.value)}
-          className="w-48"
+        <SearchableSelect
+          multiple
+          values={filterCustomers}
+          onChange={v => { setFilterCustomers(v); setSelected(new Set()); }}
+          options={customers.map(c => ({ value: c.customer_ref_sap, label: c.customer_short_name, sublabel: c.customer_ref_sap }))}
           placeholder="All customers"
-        >
-          {customers.map(c => (
-            <option key={c.customer_ref_sap} value={c.customer_ref_sap}>
-              {c.customer_short_name}
-            </option>
-          ))}
-        </Select>
+          pluralLabel="customers"
+          searchPlaceholder="Search customer name or SAP code…"
+          className="w-96"
+        />
         <div className="ml-auto flex items-center gap-2">
           <Button
             variant="outline"
@@ -358,41 +303,11 @@ export function PriceListsScreen() {
         </div>
       )}
 
-      <Dialog
+      <EmailComposeDialog
         open={composeOpen}
         onClose={() => setComposeOpen(false)}
-        title={`Email ${selected.size} Price List${selected.size !== 1 ? 's' : ''}`}
-      >
-        <p className="text-xs text-gray-500 mb-3">
-          Available placeholders: <code className="bg-gray-100 px-1 rounded">{'{customer}'}</code> <code className="bg-gray-100 px-1 rounded">{'{customer_full}'}</code> <code className="bg-gray-100 px-1 rounded">{'{version}'}</code> <code className="bg-gray-100 px-1 rounded">{'{effective}'}</code>
-        </p>
-        <div className="space-y-3 mb-4">
-          <div>
-            <label className="text-xs font-medium text-gray-600 mb-1 block">Subject</label>
-            <input
-              className="w-full text-sm border border-gray-300 rounded px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500"
-              value={emailSubject}
-              onChange={e => setEmailSubject(e.target.value)}
-            />
-          </div>
-          <div>
-            <label className="text-xs font-medium text-gray-600 mb-1 block">Body</label>
-            <textarea
-              className="w-full text-sm border border-gray-300 rounded px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500 resize-y font-mono"
-              rows={8}
-              value={emailBody}
-              onChange={e => setEmailBody(e.target.value)}
-            />
-          </div>
-        </div>
-        <p className="text-xs text-gray-400 mb-4">Template is saved automatically when you send.</p>
-        <div className="flex justify-end gap-2">
-          <Button variant="outline" onClick={() => setComposeOpen(false)}>Cancel</Button>
-          <Button onClick={handleSendEmails} className="gap-1.5">
-            <Mail size={13} /> Send {selected.size} Email{selected.size !== 1 ? 's' : ''}
-          </Button>
-        </div>
-      </Dialog>
+        priceListIds={[...selected]}
+      />
     </div>
   );
 }

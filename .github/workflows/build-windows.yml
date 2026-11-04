@@ -4,12 +4,16 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
+    # Path filters are not applied to tag pushes, so every v* tag builds and releases.
+    tags: ['v*']
     paths:
       - 'epl-tool/**'
 
 jobs:
   build-windows:
     runs-on: windows-latest
+    permissions:
+      contents: write
 
     defaults:
       run:
@@ -41,3 +45,17 @@ jobs:
             epl-tool/out/make/zip/win32/**
           if-no-files-found: warn
           retention-days: 30
+
+      - name: Publish GitHub release
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # checkout stores the tag as lightweight; re-fetch it so --notes-from-tag sees the annotation
+          git fetch --force origin "refs/tags/$GITHUB_REF_NAME:refs/tags/$GITHUB_REF_NAME"
+          gh release create "$GITHUB_REF_NAME" \
+            out/make/squirrel.windows/*/*.exe \
+            out/make/zip/win32/*/*.zip \
+            --title "EPL Tool $GITHUB_REF_NAME" \
+            --notes-from-tag

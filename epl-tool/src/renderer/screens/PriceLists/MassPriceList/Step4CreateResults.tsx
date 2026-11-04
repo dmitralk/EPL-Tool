@@ -5,7 +5,9 @@ import { api } from '../../../lib/ipc';
 import { Button } from '../../../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../../../components/ui/card';
 import { useToast } from '../../../components/ui/toast';
+import { EmailComposeDialog } from '../../../components/EmailComposeDialog';
 import { useMassWizard, computeLines } from './index';
+import { ipcErrorMessage } from '../../../lib/utils';
 import type { StandardEplRow, CreatePriceListInput } from '../../../../types';
 
 interface RowResult {
@@ -16,9 +18,6 @@ interface RowResult {
   status: 'pending' | 'ok' | 'error';
   error?: string;
 }
-
-const DEFAULT_SUBJECT = 'Price List — {customer} — {version}';
-const DEFAULT_BODY = `Dear Customer,\n\nPlease find attached the updated price list for {customer_full}.\n\nEffective: {effective}\nVersion: {version}\n\nBest regards,`;
 
 export function Step4CreateResults() {
   const navigate = useNavigate();
@@ -35,6 +34,7 @@ export function Step4CreateResults() {
   );
   const [saving, setSaving] = useState(true);
   const [bulkWorking, setBulkWorking] = useState(false);
+  const [composeOpen, setComposeOpen] = useState(false);
   const [eplRows, setEplRows] = useState<StandardEplRow[]>([]);
   const eplLoaded = useRef(false);
 
@@ -78,7 +78,7 @@ export function Step4CreateResults() {
         } catch (e) {
           setResults(prev => prev.map(r =>
             r.customerRef === row.customer.customer_ref_sap
-              ? { ...r, status: 'error', error: (e as Error).message }
+              ? { ...r, status: 'error', error: ipcErrorMessage(e) }
               : r
           ));
         }
@@ -108,30 +108,6 @@ export function Step4CreateResults() {
     const fail = r.filter(x => x.error).length;
     if (fail === 0) toast(`Exported ${ok} file${ok !== 1 ? 's' : ''} to ${(result as any).folder}`, 'success');
     else toast(`${ok} exported, ${fail} failed`, 'error');
-  }
-
-  async function handleBulkEmail() {
-    if (createdIds.length === 0) return;
-    const savedSubject = await api.getSetting('email_subject_template');
-    const savedBody    = await api.getSetting('email_body_template');
-    setBulkWorking(true);
-    const result = await api.openMailBulk(
-      createdIds,
-      savedSubject || DEFAULT_SUBJECT,
-      savedBody || DEFAULT_BODY,
-    );
-    setBulkWorking(false);
-    if ((result as any).canceled) return;
-    const r = (result as any).results as { id: string; error?: string }[];
-    const ok = r.filter(x => !x.error).length;
-    const fail = r.filter(x => x.error).length;
-    if (fail === 0) toast(`Opened ${ok} email${ok !== 1 ? 's' : ''} with attachments`, 'success');
-    else {
-      const isPermission = r.some(x => x.error && (x.error.includes('-1743') || x.error.includes('Not authorized')));
-      toast(isPermission
-        ? 'Mail access denied. Go to System Settings → Privacy & Security → Automation → EPL Tool and enable Mail.'
-        : `${ok} emails opened, ${fail} failed`, 'error');
-    }
   }
 
   return (
@@ -185,8 +161,8 @@ export function Step4CreateResults() {
                       </span>
                     )}
                     {r.status === 'error' && (
-                      <span className="text-red-600 text-xs" title={r.error}>
-                        Failed: {r.error?.slice(0, 60)}
+                      <span className="text-red-600 text-xs">
+                        Not saved: {r.error}
                       </span>
                     )}
                   </td>
@@ -215,12 +191,18 @@ export function Step4CreateResults() {
               <FileDown size={15} />
               {bulkWorking ? 'Working…' : `Export All (${okCount})`}
             </Button>
-            <Button onClick={handleBulkEmail} variant="outline" disabled={bulkWorking} className="flex-1 gap-2">
+            <Button onClick={() => setComposeOpen(true)} variant="outline" disabled={bulkWorking} className="flex-1 gap-2">
               <Mail size={15} />
-              {bulkWorking ? 'Working…' : `Email All (${okCount})`}
+              {`Email (${okCount})`}
             </Button>
           </div>
         )}
+
+        <EmailComposeDialog
+          open={composeOpen}
+          onClose={() => setComposeOpen(false)}
+          priceListIds={createdIds}
+        />
 
         {!saving && (
           <div className="flex justify-between">

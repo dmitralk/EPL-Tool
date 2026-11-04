@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, FileDown, Mail } from 'lucide-react';
+import { ArrowLeft, FileDown, Mail, Trash2 } from 'lucide-react';
 import { api } from '../../lib/ipc';
 import { Button } from '../../components/ui/button';
 import { Badge } from '../../components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
+import { Dialog } from '../../components/ui/dialog';
 import { useToast } from '../../components/ui/toast';
+import { EmailComposeDialog } from '../../components/EmailComposeDialog';
 import { formatDate, formatCurrency, priceTypeLabel } from '../../lib/utils';
 import type { PriceListFull, Customer } from '../../../types';
 
@@ -15,7 +17,10 @@ export function PriceListDetail() {
   const { toast } = useToast();
   const [priceList, setPriceList] = useState<PriceListFull | null>(null);
   const [customer, setCustomer] = useState<Customer | null>(null);
-  const [exportedPath, setExportedPath] = useState<string | null>(null);
+  const [composeOpen, setComposeOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -31,35 +36,28 @@ export function PriceListDetail() {
   async function handleExport() {
     if (!id) return;
     const result = await api.exportXlsx(id);
-    if (result.saved && result.path) {
-      setExportedPath(result.path as string);
+    if (result.saved) {
       toast('Exported successfully', 'success');
     } else if (result.error) {
       toast(`Export failed: ${result.error}`, 'error');
     }
   }
 
-  async function handleMailClient() {
-    if (!customer || !priceList) return;
-    if (!exportedPath) {
-      toast('Export the file first, then open the mail client', 'error');
-      return;
-    }
-    const to = [
-      customer.email_to_customer,
-      customer.email_internal_copy,
-      customer.email_pbp_copy,
-      customer.email_pbp_common,
-    ].filter(Boolean).join(';');
-    const subject = `Price List — ${customer.customer_short_name} — ${priceList.price_list_version}`;
-    const body = `Dear Customer,\n\nPlease find attached the updated price list for ${customer.customer_full_name}.\n\nEffective: ${priceList.effective}\nVersion: ${priceList.price_list_version}\n\nBest regards,`;
-    const result = await api.openMailWithAttachment({ filePath: exportedPath, to, subject, body });
-    if (!result.success) {
-      const isPermission = String(result.error).includes('-1743') || String(result.error).includes('Not authorized');
-      const msg = isPermission
-        ? 'Mail access denied. Go to System Settings → Privacy & Security → Automation → EPL Tool and enable Mail.'
-        : `Could not open mail client: ${result.error}`;
-      toast(msg, 'error');
+  function openDelete() {
+    setDeleteConfirmText('');
+    setDeleteOpen(true);
+  }
+
+  async function handleDelete() {
+    if (!priceList) return;
+    setDeleting(true);
+    try {
+      await api.deletePriceList(priceList.price_list_id);
+      toast(`Price list ${priceList.price_list_version} deleted`, 'info');
+      navigate('/price-lists', { replace: true });
+    } catch (err) {
+      toast(`Delete failed: ${(err as Error).message}`, 'error');
+      setDeleting(false);
     }
   }
 
@@ -87,16 +85,65 @@ export function PriceListDetail() {
           Export XLSX
         </Button>
         <Button
-          onClick={handleMailClient}
+          onClick={() => setComposeOpen(true)}
           variant="outline"
           className="gap-2"
-          disabled={!customer || !exportedPath}
-          title={!exportedPath ? 'Export the file first' : ''}
+          disabled={!customer}
         >
           <Mail size={15} />
-          Open Mail Client
+          Email
+        </Button>
+        <Button
+          onClick={openDelete}
+          variant="ghost"
+          className="gap-2 text-red-600 hover:bg-red-50"
+        >
+          <Trash2 size={15} />
+          Delete
         </Button>
       </div>
+
+      <EmailComposeDialog
+        open={composeOpen}
+        onClose={() => setComposeOpen(false)}
+        priceListIds={[priceList.price_list_id]}
+      />
+
+      <Dialog open={deleteOpen} onClose={() => setDeleteOpen(false)} title="Delete Price List">
+        <div className="space-y-3">
+          <p className="text-sm text-gray-700">
+            You are about to permanently delete{' '}
+            <strong>{priceList.customer_short_name ?? priceList.customer_ref_sap} — {priceList.price_list_version}</strong>{' '}
+            (effective {formatDate(priceList.effective)}) and its {priceList.entries.length} product price{priceList.entries.length !== 1 ? 's' : ''}.
+          </p>
+          <p className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-md px-3 py-2">
+            This cannot be undone from the app. Restoring would require a database backup (Settings → Backups).
+          </p>
+          <div>
+            <label className="text-xs text-gray-600 mb-1 block">
+              Type <strong className="font-mono">{priceList.price_list_version}</strong> to confirm
+            </label>
+            <input
+              autoFocus
+              value={deleteConfirmText}
+              onChange={e => setDeleteConfirmText(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter' && deleteConfirmText.trim() === priceList.price_list_version && !deleting) handleDelete(); }}
+              className="w-full text-sm border border-gray-300 rounded px-3 py-1.5 font-mono focus:outline-none focus:ring-1 focus:ring-red-500"
+            />
+          </div>
+        </div>
+        <div className="flex justify-end gap-2 mt-4">
+          <Button variant="outline" onClick={() => setDeleteOpen(false)} disabled={deleting}>Cancel</Button>
+          <Button
+            variant="destructive"
+            onClick={handleDelete}
+            disabled={deleting || deleteConfirmText.trim() !== priceList.price_list_version}
+            className="gap-1.5"
+          >
+            <Trash2 size={13} /> {deleting ? 'Deleting…' : 'Delete permanently'}
+          </Button>
+        </div>
+      </Dialog>
 
       {/* Metadata */}
       <div className="grid grid-cols-2 gap-4 mb-6">

@@ -106,6 +106,52 @@ export interface AdminEmail {
   email: string;
 }
 
+// One address found in customers' To / Internal email fields, with every customer using it.
+export interface EmailUsage {
+  email: string;
+  customers: EmailCustomerLink[];
+}
+
+export interface EmailCustomerLink {
+  customer_ref_sap: string;
+  customer_short_name: string;
+  is_deleted: boolean;
+  to: boolean;        // present in email_to_customer
+  internal: boolean;  // present in email_internal_copy
+}
+
+export interface EmailAssignmentChange {
+  customer_ref_sap: string;
+  to: boolean;
+  internal: boolean;
+}
+
+export interface BackupInfo {
+  name: string;
+  path: string;
+  size: number;
+  created_at: string;
+  pre_restore: boolean;  // raw copy taken just before a restore
+}
+
+export interface BackupStatus {
+  at: string;
+  path?: string;
+  error?: string;
+}
+
+export interface BackupListResult {
+  folder: string | null;
+  backups: BackupInfo[];
+  last: BackupStatus | null;
+}
+
+export interface DbOpenError {
+  path: string;
+  message: string;
+  corrupt: boolean;
+}
+
 export interface CreatePriceListInput {
   customer_ref_sap: string;
   sap_plant: string;
@@ -212,6 +258,9 @@ export interface AnalysisRow {
   customer_short_name: string;
   customer_full_name: string;
   main_supply_region: 'ASIA' | 'EUROPE' | 'AMERICA' | null;
+  customer_type: string | null;
+  customer_ref_type_sap: string | null;
+  country: string | null;
   rip_code: string;
   product_type: string;
   product_name: string;

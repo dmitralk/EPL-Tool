@@ -19,6 +19,7 @@ import { CustomersScreen } from './screens/Customers/CustomersScreen';
 import { CustomerDetail } from './screens/Customers/CustomerDetail';
 import { MasterDataScreen } from './screens/MasterData/MasterDataScreen';
 import { AnalysisScreen } from './screens/Analysis/AnalysisScreen';
+import { EmailsScreen } from './screens/Emails/EmailsScreen';
 import { StandardEplScreen } from './screens/StandardEpl/StandardEplScreen';
 import { ToastProvider } from './components/ui/toast';
 
@@ -60,6 +61,7 @@ export function App() {
             <Route path="price-lists/:id" element={<PriceListDetail />} />
             <Route path="customers" element={<CustomersScreen />} />
             <Route path="customers/:ref" element={<CustomerDetail />} />
+            <Route path="emails" element={<EmailsScreen />} />
             <Route path="analysis" element={<AnalysisScreen />} />
             <Route path="master-data" element={<MasterDataScreen />} />
             <Route path="standard-epl" element={<StandardEplScreen />} />

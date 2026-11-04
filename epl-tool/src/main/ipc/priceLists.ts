@@ -56,6 +56,19 @@ export function registerPriceListHandlers() {
     const db = getDb();
     const price_list_id = buildPriceListId(data);
 
+    const duplicate = db.prepare(`
+      SELECT 1 FROM price_lists
+      WHERE price_list_id = ?
+         OR (customer_ref_sap = ? AND effective = ? AND UPPER(TRIM(price_list_version)) = UPPER(TRIM(?)))
+      LIMIT 1
+    `).get(price_list_id, data.customer_ref_sap, data.effective, data.price_list_version);
+    if (duplicate) {
+      throw new Error(
+        `A price list with application date ${data.effective} and version ${data.price_list_version} already exists for this customer. ` +
+        'Please choose another date or version, or delete the existing price list.',
+      );
+    }
+
     db.transaction(() => {
       db.prepare(`
         INSERT INTO price_lists (
@@ -108,8 +121,40 @@ export function registerPriceListHandlers() {
   ipcMain.handle('price-lists:delete', (_e, price_list_id: string) => {
     const db = getDb();
     db.transaction(() => {
+      const owner = db.prepare(`
+        SELECT c.customer_ref_sap, c.last_price_list_id
+        FROM price_lists pl JOIN customers c ON c.customer_ref_sap = pl.customer_ref_sap
+        WHERE pl.price_list_id = ?
+      `).get(price_list_id) as { customer_ref_sap: string; last_price_list_id: string | null } | undefined;
+
       db.prepare('DELETE FROM price_list_entries WHERE price_list_id = ?').run(price_list_id);
       db.prepare('DELETE FROM price_lists WHERE price_list_id = ?').run(price_list_id);
+
+      // If the customer pointed at the deleted list, fall back to their latest remaining one (or clear).
+      if (owner && owner.last_price_list_id === price_list_id) {
+        const prev = db.prepare(`
+          SELECT price_list_id, price_list_version, effective, mailing_date
+          FROM price_lists WHERE customer_ref_sap = ?
+          ORDER BY effective IS NULL, effective DESC, created_at DESC
+          LIMIT 1
+        `).get(owner.customer_ref_sap) as
+          { price_list_id: string; price_list_version: string; effective: string | null; mailing_date: string | null } | undefined;
+
+        db.prepare(`
+          UPDATE customers SET
+            last_price_list_version = @version,
+            last_price_list_id = @price_list_id,
+            effective = @effective,
+            mailing_date = @mailing_date
+          WHERE customer_ref_sap = @ref
+        `).run({
+          version: prev?.price_list_version ?? null,
+          price_list_id: prev?.price_list_id ?? null,
+          effective: prev?.effective ?? null,
+          mailing_date: prev?.mailing_date ?? null,
+          ref: owner.customer_ref_sap,
+        });
+      }
     })();
   });
 

@@ -1,0 +1,4 @@
+EPL-Backups/
+*.db-journal
+*.db.partial
+*.db.restoring

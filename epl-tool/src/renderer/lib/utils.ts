@@ -4,6 +4,12 @@ export function cn(...inputs: ClassValue[]) {
   return clsx(inputs);
 }
 
+// Strips Electron's "Error invoking remote method '...': Error: " prefix from errors thrown in IPC handlers.
+export function ipcErrorMessage(err: unknown): string {
+  const msg = err instanceof Error ? err.message : String(err);
+  return msg.replace(/^Error invoking remote method '[^']*': (?:Error: )?/, '');
+}
+
 export function formatDate(iso: string | null | undefined): string {
   if (!iso) return '—';
   try {
