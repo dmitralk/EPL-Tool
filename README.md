@@ -56,9 +56,20 @@ npm run package
 ```
 
 **Windows** (via GitHub Actions):
-- Push to `main` branch (with changes under `epl-tool/`) — the workflow builds automatically
+- Push to `main` branch (with changes under `epl-tool/`) — the workflow builds automatically; download the artifact `EPL-Tool-Windows` from the workflow run
 - Or trigger manually from the Actions tab
-- Download the artifact `EPL-Tool-Windows` from the workflow run
+
+`npm run package` / `npm run make` first prepare the SQLite module for Electron automatically (`prepackage` / `premake` scripts) — no Visual Studio needed.
+
+---
+
+## Releasing a new version
+
+1. `cd epl-tool` and `npm version X.Y.Z --no-git-tag-version`; commit.
+2. Create an annotated tag whose message is the release notes: `git tag -a vX.Y.Z -F notes.txt`
+3. `git push origin main vX.Y.Z`
+
+The tag triggers the Windows build and publishes a GitHub Release with `EPL Tool-X.Y.Z Setup.exe` and the ZIP attached. Share the release page link with users: https://github.com/dmitralk/EPL-Tool/releases
 
 ---
 

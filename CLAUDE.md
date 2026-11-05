@@ -576,14 +576,16 @@ When a product's `product_name` or `product_type` is updated, the handler also u
 cd epl-tool
 npm install          # install dependencies
 npm start            # dev mode with Vite HMR (DevTools auto-open in dev)
-npm run package      # build unpackaged app (dev/testing only, no installer)
-npm run make         # build distributable installers (Squirrel .exe + ZIP for Windows)
+npm run package      # build unpackaged app (dev/testing only, no installer); prepackage prepares better-sqlite3 for Electron
+npm run make         # build distributable installers (Squirrel .exe + ZIP for Windows); premake does the same
 ```
 
 **When to use which command:**
 - `npm start` — dev mode. Renderer changes (`src/renderer/`) hot-reload instantly. Changes in `src/main/` or `src/preload/` (IPC handlers, database, export logic) are rebuilt but need a main-process restart: type `rs` in the `npm start` terminal (or restart it).
 - `npm run package` — produces an unpacked app in `out/` for local testing of the packaged build.
-- `npm run make` — produces the release artifacts: Squirrel Windows installer (`.exe`) and a ZIP. Run this before creating a GitHub release. Windows builds are also produced automatically via GitHub Actions on push to `main`.
+- `npm run make` — produces the release artifacts: Squirrel Windows installer (`.exe`) and a ZIP. Releases themselves are built and published by GitHub Actions from a `v*` tag (see GitHub Actions below).
+
+Local builds in the SharePoint-synced folder can fail with `EBUSY` on `out/…/app.asar` while OneDrive syncs the previous build output; delete `out/` (or pause sync) and retry.
 
 A packaged app does not pick up source changes — rebuild it after every change you want to test there.
 
@@ -626,7 +628,9 @@ Both are updated together when a DB is opened or created. The `userData` file pe
 
 `.github/workflows/build-windows.yml` — triggers on push to `main` when `epl-tool/**` files change, on any `v*` tag push, or manually. Runs on `windows-latest`, runs `npm ci` + `npm run make`, uploads artifact `EPL-Tool-Windows` (30-day retention). On a `v*` tag it also publishes a **GitHub Release** (`gh release create`, `GITHUB_TOKEN` with `contents: write`) with the Squirrel `.exe` and the ZIP attached; release notes come from the annotated tag message (`--notes-from-tag`).
 
-**Release procedure**: bump `epl-tool/package.json` (`npm version X.Y.Z --no-git-tag-version`), commit, then `git tag -a vX.Y.Z -F notes.txt` (notes = tag message) and `git push origin main vX.Y.Z`.
+**Release procedure**: bump `epl-tool/package.json` (`npm version X.Y.Z --no-git-tag-version`), commit, then `git tag -a vX.Y.Z -F notes.txt` (notes = tag message) and `git push origin main vX.Y.Z`. On Windows PowerShell 5 write `notes.txt` without a BOM (`[IO.File]::WriteAllText(path, text, (New-Object Text.UTF8Encoding($false)))`) — `Set-Content -Encoding utf8` adds one and it ends up at the start of the release notes. CI requires Node 22 (`@electron/rebuild` 4 needs >= 22.12).
+
+**Release history**: latest published release is **v0.5.2** (Emails tab, backups, Analysis columns/column picker, searchable customer dropdowns, unified email dialog, price list delete, duplicate guard, dialog close fix). Tags v0.5.0 and v0.5.1 exist but their CI builds failed (Node 20; then native rebuild in the packager temp dir) — no releases for them.
 
 ---
 
@@ -670,3 +674,4 @@ Both are updated together when a DB is opened or created. The `userData` file pe
 - **PBP emails in drafts**: the customer page displays PBP copy/common from `admin_emails` (Settings), but drafts use each customer's own `email_pbp_copy` / `email_pbp_common` columns. Changing an admin email in Settings does not change existing customers' drafts. Candidate fix: build recipients from `admin_emails` in `export:open-mail-bulk`.
 - **Data files in the repo**: `EPL-Database.db`, `EPL-Database BackUp.db`, `All_Prices.xlsx`, `All_PricesTest.xlsx` are tracked in git and contain customer names, emails and prices. If the repo is public, make it private or untrack them (history keeps old copies unless rewritten).
 - **Pre-existing type/lint errors**: see Build commands → Type check / lint.
+- **Open product questions (not yet decided by the user)**: (1) mass wizard Step 1 customer dropdown currently only *filters* the table — the user may prefer that ticking in the dropdown also selects rows for repricing; (2) after deleting a price list, the customer falls back to the remaining list with the latest *effective* date (not the most recently *created*) — confirm if this is the desired rule.
