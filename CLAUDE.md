@@ -608,6 +608,8 @@ The `packageAfterCopy` hook copies these into the packaged app's `node_modules/`
 
 Additionally: `asar.unpack: '**/*.node'` unpacks `.node` binaries from the asar so Electron can `dlopen` them at runtime.
 
+**Electron build of better-sqlite3 — `prepackage` / `premake` npm scripts** run `electron-rebuild -o better-sqlite3` in the project folder before every `npm run package` / `npm run make`. There `prebuild-install` is resolvable, so the prebuilt Electron binary is downloaded and a `build/Release/.forge-meta` marker (`x64--<ABI>`) is written. The packager's own rebuild runs later inside a temp folder that only contains the copied native modules: it can't find `prebuild-install` there and would fall back to compiling with node-gyp (fails without Visual Studio, e.g. on the CI runner and on corporate laptops). With the marker present it skips the module. Do not add `force` to `rebuildConfig` (that would force the compile). The old `forceRebuild: true` was never a valid option and did nothing.
+
 `NSAppleEventsUsageDescription` is set in `extendInfo` so macOS shows the "Allow EPL Tool to control Mail?" permission dialog instead of returning Apple Events error `-1743`.
 
 ### DB path persistence — two layers

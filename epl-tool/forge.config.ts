@@ -43,9 +43,10 @@ const config: ForgeConfig = {
         'EPL Tool uses Apple Mail to compose emails with price list attachments.',
     },
   },
-  rebuildConfig: {
-    forceRebuild: true,
-  },
+  // better-sqlite3 is prepared for Electron by the prepackage/premake npm scripts (electron-rebuild in the
+  // project folder, where the prebuilt download works). The packager's own rebuild then sees the
+  // .forge-meta marker and skips it; it can't compile on machines without Visual Studio.
+  rebuildConfig: {},
   makers: [
     new MakerSquirrel({ name: 'EPLTool' }),
     new MakerZIP({}, ['darwin', 'win32']),
