@@ -1,6 +1,9 @@
 import { ipcMain } from 'electron';
 import { getDb } from '../database';
 import type { Customer } from '../../types';
+import {
+  CUSTOMER_REQUIRED_FIELDS, isCustomerEditableField, type CustomerEditableField,
+} from '../../shared/customerFields';
 
 export function registerCustomerHandlers() {
   ipcMain.handle('customers:list', () => {
@@ -61,14 +64,25 @@ export function registerCustomerHandlers() {
     return db.prepare('SELECT * FROM customers WHERE id = ?').get(result.lastInsertRowid);
   });
 
-  ipcMain.handle('customers:update', (_e, customer_ref_sap: string, data: Partial<Customer>) => {
+  ipcMain.handle('customers:update', (_e, customer_ref_sap: string, data: unknown) => {
     const db = getDb();
-    const fields = Object.keys(data)
-      .filter(k => k !== 'id' && k !== 'customer_ref_sap')
-      .map(k => `${k} = @${k}`)
-      .join(', ');
-    db.prepare(`UPDATE customers SET ${fields} WHERE customer_ref_sap = @customer_ref_sap`)
-      .run({ ...data, customer_ref_sap });
+    if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('Invalid customer update.');
+    const changes = data as Record<string, unknown>;
+    const keys = Object.keys(changes);
+    const rejected = keys.filter(k => !isCustomerEditableField(k));
+    if (rejected.length) throw new Error(`These customer fields can't be changed here: ${rejected.join(', ')}.`);
+    for (const k of keys as CustomerEditableField[]) {
+      const value = changes[k];
+      if (value !== null && typeof value !== 'string') throw new Error(`Invalid value for ${k}.`);
+      const required = CUSTOMER_REQUIRED_FIELDS[k];
+      if (required && !(typeof value === 'string' && value.trim())) throw new Error(`${required} is required.`);
+    }
+    if (keys.length) {
+      const sets = keys.map(k => `${k} = @${k}`).join(', ');
+      const result = db.prepare(`UPDATE customers SET ${sets} WHERE customer_ref_sap = @__ref`)
+        .run({ ...changes, __ref: customer_ref_sap });
+      if (result.changes === 0) throw new Error('Customer not found.');
+    }
     return db.prepare('SELECT * FROM customers WHERE customer_ref_sap = ?').get(customer_ref_sap);
   });
 

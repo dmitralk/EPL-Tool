@@ -36,18 +36,24 @@ This file is read automatically by Claude Code at conversation start. It gives f
 ├── epl-tool/               ← the Electron app (all code here)
 │   ├── src/
 │   │   ├── main/           ← Electron main process
-│   │   │   ├── index.ts    ← window creation, app lifecycle
-│   │   │   ├── database.ts ← better-sqlite3 connection, schema DDL, journal/FK pragmas, integrity check + startup backup
+│   │   │   ├── index.ts    ← window creation, app lifecycle (identity detection, menu, DevTools guard, auto-reopen last DB)
+│   │   │   ├── database.ts ← better-sqlite3 connection, schema DDL, journal/FK pragmas, integrity check + startup backup, schema versioning (user_version)
 │   │   │   ├── backup.ts   ← backup create/list/prune/verify helpers (EPL-Backups folder next to the DB)
+│   │   │   ├── auth.ts     ← Windows identity: account (os.userInfo), email (whoami /upn → OneDrive registry fallback), dev override
+│   │   │   ├── localSettings.ts ← per-PC settings.json (lastDbPath + per-user prefs); never in the DB
+│   │   │   ├── logo.ts     ← logo stored in the DB as a data URL (app_settings.logo_data_url)
+│   │   │   ├── menu.ts     ← release menu policy (none on Windows) + DevTools guard
 │   │   │   ├── ipc/        ← all IPC handlers (entity:action naming)
 │   │   │   │   ├── index.ts          ← registers all handlers
-│   │   │   │   ├── customers.ts
+│   │   │   │   ├── auth.ts           ← auth:whoami
+│   │   │   │   ├── prefs.ts          ← prefs:get / prefs:set (allow-listed keys, local settings.json)
+│   │   │   │   ├── customers.ts      ← customers:update accepts only shared/customerFields.ts fields
 │   │   │   │   ├── products.ts       ← cascades name/type sync to standard_epl on update
 │   │   │   │   ├── priceLists.ts     ← create (duplicate guard), delete (customer last-list fallback)
 │   │   │   │   ├── standardEpl.ts    ← versioned EPL: list-versions, create-draft, publish-draft, delete-draft, delete-row, list-combined, upsert
 │   │   │   │   ├── packaging.ts
 │   │   │   │   ├── currencies.ts
-│   │   │   │   ├── settings.ts       ← DB open/create, logo, PBP emails (admin_emails table), units
+│   │   │   │   ├── settings.ts       ← DB open/create/get-path, logo, PBP emails (admin_emails table), units
 │   │   │   │   ├── export.ts         ← xlsx single/bulk, mail single/bulk; standard EPL xlsx + mail
 │   │   │   │   ├── analysis.ts       ← analysis:list-rows, fx rates, analysis:export-xlsx
 │   │   │   │   ├── emails.ts         ← email management (index/replace/remove addresses across customers)
@@ -56,6 +62,9 @@ This file is read automatically by Claude Code at conversation start. It gives f
 │   │   │       └── buildPriceListXlsx.ts ← ExcelJS builder, replicates reference format
 │   │   ├── preload/
 │   │   │   └── index.ts    ← contextBridge; all API methods exposed to renderer
+│   │   ├── shared/         ← plain modules imported by BOTH main and renderer (no Electron/Node APIs)
+│   │   │   ├── customerFields.ts ← CUSTOMER_EDITABLE_FIELDS allow-list + required fields
+│   │   │   └── prefs.ts    ← PREF_KEYS allow-list for prefs:get/set
 │   │   ├── types/
 │   │   │   └── index.ts    ← all shared TypeScript interfaces
 │   │   └── renderer/
@@ -130,8 +139,9 @@ packaging            -- packaging charges + pallets; groups by packaging_version
 price_lists          -- price list headers; price_type IN ('Discount','Net Price','PrevPercent','PrevAbsolute'); has created_at DEFAULT datetime('now')
 price_list_entries   -- one row per product per price list
 admin_emails         -- shared PBP email addresses (PBP Costing, PBP Common); shown as "PBP Emails" in the UI (renamed from "Admin Email Addresses" to avoid confusion with admin users)
-app_settings         -- key/value store (logo_path, db_path, email_subject_template, email_body_template)
-                     -- note: standard_epl_editable key may exist in older DBs but is no longer used by the UI (replaced by draft/publish model)
+app_settings         -- key/value store: logo_data_url (logo as data:image/...;base64, set in Settings)
+                     -- legacy keys that may exist in older DBs and are no longer read: logo_path (per-PC file path), db_path,
+                     -- email_subject_template / email_body_template (templates are per user in settings.json now), standard_epl_editable
 units                -- configurable unit list; seeded with '100 KG', '100 L' on DB open
 currencies           -- currency list; seeded with USD (is_main=1) and EUR (is_main=1); other currencies (is_main=0) can be added for one-off price lists
 fx_rates             -- display-only FX rates for the Analysis "All" mode; PK currency_code, rate_to_usd (USD per 1 unit); seeded USD=1, EUR=1.08, GBP=1.27; editable on the Analysis screen; NEVER used for actual pricing/stored data
@@ -139,13 +149,17 @@ fx_rates             -- display-only FX rates for the Analysis "All" mode; PK cu
 
 Pragmas set on every open: `journal_mode=DELETE`, `foreign_keys=ON`, `synchronous=FULL`. **Do not switch back to WAL**: the separate `-wal` file gets synced out of step with the `.db` by OneDrive/SharePoint, which caused past corruption. Existing WAL databases are converted automatically on open.
 
-**Open sequence (`openDatabase`)**: open with `fileMustExist` (only `db:create` passes `create: true`, so a not-yet-synced SharePoint file is never replaced by an empty DB) → `journal_mode=DELETE` → `PRAGMA quick_check` (fail → close, record `lastOpenError` with `corrupt: true`, throw; renderer shows restore UI on `/setup`) → close previous connection → startup backup (existing files only, never blocks open) → schema/seed/migrations.
+**Open sequence (`openDatabase`)**: open with `fileMustExist` (only `db:create` passes `create: true`, so a not-yet-synced SharePoint file is never replaced by an empty DB) → `journal_mode=DELETE` → `PRAGMA quick_check` (fail → close, record `lastOpenError` with `corrupt: true`, throw; renderer shows restore UI on `/setup`) → `PRAGMA user_version` newer than `SCHEMA_VERSION` → refuse (*"This database needs a newer version of EPL Tool"*, `corrupt: false`, file untouched) → close previous connection → startup backup (existing files only, never blocks open) → schema/seed/migrations.
+
+**Opening an up-to-date database must not change the file** (needed for the shared-DB plan): no `db_path` is written, and seeds on `AUTOINCREMENT` tables use `INSERT … WHERE NOT EXISTS` — `INSERT OR IGNORE` there still rewrites `sqlite_sequence` and bumps the file change counter on every open.
 
 **Backups (`main/backup.ts`, `ipc/backup.ts`, `components/BackupPanel.tsx`)**: stored in `EPL-Backups/` next to the DB file (so SharePoint DB → SharePoint backups, local → local). Name `{dbname}_YYYY-MM-DD_HH-mm-ss.db`; created with `VACUUM INTO` to a `.partial` file, verified with `quick_check` read-only, then renamed. 20 most recent kept (sorted by the timestamp in the name — Windows `copyFile` preserves mtime). Restore: verifies backup → closes DB → raw copy of current file as `..._pre-restore.db` → copy backup over DB (via `.restoring` temp + rename, stale `-wal/-shm/-journal` removed) → reopen with `skipBackup`. `backup:restore` only accepts files inside the target DB's `EPL-Backups` folder matching the name pattern. UI: Settings → Backups card, and the `/setup` screen when the DB is damaged. Channels: `db:last-open-error`, `backup:list`, `backup:create`, `backup:open-folder`, `backup:restore`.
 
-Schema runs `CREATE TABLE IF NOT EXISTS` so opening an existing DB is safe. Units, currencies, and `fx_rates` are seeded with `INSERT OR IGNORE` (so `fx_rates` needs no numbered migration — it appears automatically on next DB open).
+Schema runs `CREATE TABLE IF NOT EXISTS` so opening an existing DB is safe. Units and currencies are seeded with `INSERT … WHERE NOT EXISTS`, `fx_rates` with `INSERT OR IGNORE` (so `fx_rates` needs no numbered migration — it appears automatically on next DB open).
 
-**DB migration (`migrateIfNeeded` in database.ts)** — runs on every `openDatabase` call after schema init. Contains six sequential migrations:
+**Schema version = `PRAGMA user_version`** (`SCHEMA_VERSION` exported from database.ts). Databases from before the numbering have `user_version = 0`: they run the detection-based legacy Migrations 1–6 below once and are stamped **6**. `SCHEMA_SQL` / `SEED_SQL` are **frozen at that v6 baseline** — every later schema change must be a numbered entry in the `MIGRATIONS` array (`{ version: 7, up(db) }`, …), never an edit of `SCHEMA_SQL`. The runner applies pending steps in order, each in one transaction together with `user_version = N` (so a failed step leaves no trace), with `foreign_keys = OFF` and `legacy_alter_table = ON` set around it (they can't change inside a transaction). No numbered migrations exist yet; Migration 7 (access rights) is the first.
+
+**Legacy migrations (`runLegacyMigrations` in database.ts)** — only for databases below version 6. Contains six sequential migrations:
 
 **Migration 1** — Widens the `price_type` CHECK constraint on `price_lists` to include `'PrevPercent'` and `'PrevAbsolute'`. Detection: checks `sqlite_master` for the old two-value constraint string; skips if already migrated. Uses `PRAGMA foreign_keys = OFF` and **`PRAGMA legacy_alter_table = ON`** before renaming `price_lists → _price_lists_old`, then creates new table, copies data, drops old. The `legacy_alter_table` pragma is critical: without it, SQLite 3.26.0+ automatically rewrites FK references in child tables during rename — so `price_list_entries.FOREIGN KEY → price_lists` silently becomes `→ _price_lists_old`, which breaks all subsequent inserts once `_price_lists_old` is dropped.
 
@@ -157,7 +171,7 @@ Schema runs `CREATE TABLE IF NOT EXISTS` so opening an existing DB is safe. Unit
 
 **Migration 5** — Relaxes `customers.currency` CHECK constraint from `IN ('USD','EUR')` to no constraint (any currency code allowed). Uses rename/recreate pattern with `PRAGMA foreign_keys = OFF` (no `legacy_alter_table` needed here — no other tables have FK references to `customers`). Detection: checks for the old two-value constraint string in the `customers` DDL.
 
-**Migration 6** — Adds `standard_epl_versions` table and `version_id` column to `standard_epl`; changes UNIQUE constraint from `(currency, rip_code)` to `(version_id, currency, rip_code)`. Detection: checks `sqlite_master` for `version_id` in the `standard_epl` DDL; skips if already migrated. Uses rename/recreate pattern with `PRAGMA foreign_keys = OFF` + **`PRAGMA legacy_alter_table = ON`** (consistent with Migrations 1/2/5 even though no other table FKs into `standard_epl`). Seeds `standard_epl_versions` row with `version_id=1, version_name='Initial', status='published'` via SEED_SQL (runs before `migrateIfNeeded`), so the migration can safely assign all existing rows `version_id=1`. After migration, exports and price-list creation use `getLatestPublishedEplVersionId()` helper (exported from `database.ts`) to resolve the current active version.
+**Migration 6** — Adds `standard_epl_versions` table and `version_id` column to `standard_epl`; changes UNIQUE constraint from `(currency, rip_code)` to `(version_id, currency, rip_code)`. Detection: checks `sqlite_master` for `version_id` in the `standard_epl` DDL; skips if already migrated. Uses rename/recreate pattern with `PRAGMA foreign_keys = OFF` + **`PRAGMA legacy_alter_table = ON`** (consistent with Migrations 1/2/5 even though no other table FKs into `standard_epl`). Seeds `standard_epl_versions` row with `version_id=1, version_name='Initial', status='published'` via SEED_SQL (runs before the migrations), so the migration can safely assign all existing rows `version_id=1`. After migration, exports and price-list creation use `getLatestPublishedEplVersionId()` helper (exported from `database.ts`) to resolve the current active version.
 
 **Indexes:** Three performance indexes are created: `idx_price_lists_customer` (for customer filter), `idx_price_list_entries_pl` (for entry lookups), `idx_standard_epl_currency` (for currency filter).
 
@@ -177,6 +191,8 @@ All channels follow `entity:action`. The preload (`src/preload/index.ts`) expose
 
 **Channel list (grouped):**
 ```
+auth:whoami
+prefs:get, prefs:set
 db:select-file, db:open, db:create, db:get-path, db:is-open, db:last-open-error
 backup:list, backup:create, backup:open-folder, backup:restore
 customers:list, customers:get, customers:create, customers:update, customers:delete
@@ -187,12 +203,23 @@ standard-epl:create-draft, standard-epl:publish-draft, standard-epl:delete-draft
 packaging:list, packaging:update-price, packaging:list-versions, packaging:create-version, packaging:delete-version, packaging:add-row, packaging:update-row, packaging:delete-row
 price-lists:list, price-lists:get, price-lists:create, price-lists:delete, price-lists:stats
 export:xlsx, export:xlsx-bulk, export:open-mail-with-attachment, export:open-mail-bulk, export:standard-epl-xlsx, export:standard-epl-mail, export:packaging-xlsx, export:packaging-mail
-settings:get, settings:set, settings:get-admin-emails, settings:update-admin-email
-settings:get-units, settings:create-unit, settings:delete-unit, settings:select-logo
+settings:get-admin-emails, settings:update-admin-email, settings:get-logo, settings:select-logo
+settings:get-units, settings:create-unit, settings:delete-unit
 currencies:list, currencies:create, currencies:delete
 analysis:list-rows, fx:list, fx:set, analysis:export-xlsx
 emails:list, emails:set-assignments, emails:replace, emails:remove
 ```
+
+The generic `settings:get` / `settings:set` channels were removed (Phase A): every database write goes through a purpose-specific channel, which Phase B's permission guard relies on.
+
+### Identity (main/auth.ts) and local settings (main/localSettings.ts)
+
+- **Identity** is detected once at start-up (`initIdentity`, awaited by `getIdentity()` / `auth:whoami`): Windows account from `os.userInfo()`, email from `whoami /upn`, falling back to the OneDrive **Business** account email in `HKCU\Software\Microsoft\OneDrive\Accounts\Business<N>\UserEmail`. Returns `Identity { account, email, emailSource, displayNameHint, overridden }` (`displayNameHint` is derived from the email, e.g. `jan-martin.x@…` → "Jan-Martin X"). Nothing is matched against a user list yet (Phase B: `auth:me`).
+- **Dev override**: `EPL_DEV_ACCOUNT` and/or `EPL_DEV_EMAIL` env vars pretend to be another user in `npm start`; ignored in packaged builds (`allowOverride: !app.isPackaged`). Unset parts stay empty so the real identity can't leak in.
+- **Local settings** (`%APPDATA%\epl-tool\settings.json`, atomic write): `lastDbPath` (auto-reopen) and `prefs` (per-user preferences: `emailSubjectTemplate`, `emailBodyTemplate` — the allow-list is `PREF_KEYS` in `src/shared/prefs.ts`). It holds nothing that grants rights.
+
+### Release menu (main/menu.ts)
+Packaged builds have **no menu** on Windows/Linux (`Menu.setApplicationMenu(null)`), so Ctrl+R, zoom and the DevTools shortcuts don't exist; macOS keeps only the app/Edit/Window menus (needed for Cmd+Q/C/V). `npm start` keeps Electron's default menu with DevTools. `guardDevTools(win)` closes DevTools opened by any other route when not allowed (today: packaged = never; Phase B adds the admin exception in `isDevToolsAllowed()`).
 
 ---
 
@@ -201,7 +228,7 @@ emails:list, emails:set-assignments, emails:replace, emails:remove
 ### Excel export (buildPriceListXlsx.ts)
 - Uses ExcelJS; replicates a specific reference format exactly
 - Row layout: rows 1-2 logo space → rows 3-6 header info → row 7 empty → row 8 "EXPORT PRICES" → row 9 disclaimer → row 10 column headers → product rows → blank → packaging section → contact row
-- Logo positioned top-right covering cols D-F rows 1-6 (added last so anchor doesn't pre-create rows)
+- Logo positioned top-right covering cols D-F rows 1-6 (added last so anchor doesn't pre-create rows). The logo comes **from the database** (`app_settings.logo_data_url`, read by `getLogoImage()` in `main/logo.ts`, added with `addImage({ base64 })`), so every PC exports the same image. Settings → Company Logo stores PNG/JPEG/GIF ≤ 1 MB as a data URL and deletes the old `logo_path` key; the old per-PC path is **not** used as a fallback (decided 6 Nov 2026 — an admin selects the logo once; Settings shows a hint while only the legacy path exists).
 - Uses `centerContinuous` alignment (not merge) for "EXPORT PRICES" and packaging section headers — adjacent cells must be empty (null value) for this to work in Excel
 - Column widths: A=20, B=18, C=50, D=20, E=14, F=16
 - Packaging section groups by `product_type`, filters `price !== null` rows (null-price rows are section headers in the DB but excluded from export output — groupBy already handles this)
@@ -352,6 +379,8 @@ Customers can be hidden from the customer card using the **Hide** button (EyeOff
 
 ### Customer masterdata fields
 
+**`customers:update` allow-list**: only the fields in `CUSTOMER_EDITABLE_FIELDS` (`src/shared/customerFields.ts`: names, types, business model, currency, packaging, country, zone, region, SPOC, managed-by, `email_to_customer`, `email_internal_copy`) are accepted; any other key (id, `customer_ref_sap`, `is_deleted`, `effective`/`mailing_date`/`last_price_list_*`, `email_pbp_*`) is refused with *"These customer fields can't be changed here: …"*. Values must be string or null; short/full name, currency and packaging can't be empty. CustomerDetail sends **only the changed** allowed fields. When adding an editable customer field, add it to that list.
+
 `customers` table has additional fields beyond the import schema:
 - `main_supply_region` — `TEXT CHECK (main_supply_region IN ('ASIA','EUROPE','AMERICA'))`, nullable. Editable via a dropdown in the CustomerDetail Details card. Displayed as "Supply Region" in Mass Price Update Step 1 and on the Analysis tab.
 - `is_deleted` — `INTEGER NOT NULL DEFAULT 0`. Managed via soft-delete flow; never edited directly.
@@ -411,7 +440,7 @@ All modal windows use the shared native-`<dialog>` `Dialog`. Backdrop close only
 **Compare button** — always visible in the filter bar. Enabled (blue) when exactly 2 rows are checked; disabled (grey, "Select 2 to compare") otherwise. Clicking it sets `comparing: { idA, idB }` state and renders a `<ComparisonPanel>` below the table (same component used in CustomerDetail). The page auto-scrolls to the panel on open. Panel has its own "Close" button.
 
 ### Email compose dialog (components/EmailComposeDialog.tsx)
-Used by **all four** Email buttons: Price Lists bulk "Email (N)", PriceListDetail "Email", single wizard Step 4 "Email", mass wizard Step 4 "Email (N)". Props: `open`, `onClose`, `priceListIds`. Subject + Body fields support `{customer}`, `{customer_full}`, `{version}`, `{effective}` placeholders (substituted per customer at send time). Template auto-saved to `app_settings` (`email_subject_template`, `email_body_template`) on send, and reloaded on every open. Send calls `export:open-mail-bulk` (works for 1 or N ids).
+Used by **all four** Email buttons: Price Lists bulk "Email (N)", PriceListDetail "Email", single wizard Step 4 "Email", mass wizard Step 4 "Email (N)". Props: `open`, `onClose`, `priceListIds`. Subject + Body fields support `{customer}`, `{customer_full}`, `{version}`, `{effective}` placeholders (substituted per customer at send time). Template saved **per user on this PC** (local `settings.json` via `prefs:set` — `emailSubjectTemplate`, `emailBodyTemplate`) on send, and reloaded on every open; the built-in default is used until a user's first send (old DB keys `email_*_template` are ignored). Sending an email never writes to the database. Send calls `export:open-mail-bulk` (works for 1 or N ids).
 
 **Email recipients** (all Email buttons): combines `email_to_customer`, `email_internal_copy`, `email_pbp_copy`, `email_pbp_common` from the customer record, filters out null/empty, joins with `;`. All four addresses can be present simultaneously. Note: the PBP addresses come from the customer's own columns, not from `admin_emails` (see Known issues).
 
@@ -541,7 +570,9 @@ Local builds in the SharePoint-synced folder can fail with `EBUSY` on `out/…/a
 
 A packaged app does not pick up source changes — rebuild it after every change you want to test there.
 
-**Type check / lint**: `npx tsc --noEmit -p .` and `npx eslint <files>` from `epl-tool/`. Pre-existing tsc errors (not blocking Vite builds): `export.ts` lines ~47/~359 (`Promise<Buffer>` casts) and `Step2ConfigurePricing.tsx` / `Step3ReviewProducts.tsx` (currency `string` passed where `'USD' | 'EUR'` expected). ESLint config lacks the `react-hooks` plugin, so existing `eslint-disable react-hooks/...` comments report "rule not found".
+**Type check / lint**: `npx tsc --noEmit -p .` and `npx eslint <files>` from `epl-tool/`. Pre-existing tsc errors (not blocking Vite builds): `export.ts` lines ~48/~358 (`Promise<Buffer>` casts) and `Step2ConfigurePricing.tsx` / `Step3ReviewProducts.tsx` (currency `string` passed where `'USD' | 'EUR'` expected). ESLint config lacks the `react-hooks` plugin, so existing `eslint-disable react-hooks/...` comments report "rule not found". ExcelJS's own `Buffer` type clashes with Node's `Buffer<ArrayBufferLike>`: pass images as `addImage({ base64 })` rather than `{ buffer }`.
+
+**Testing main-process code without launching the app** (launching opens the real SharePoint DB and writes a startup backup): bundle a test entry with esbuild (`node_modules/esbuild`, `platform: 'node'`, `external: ['better-sqlite3', 'exceljs']`, `alias: { electron: <stub.js> }` where the stub captures `ipcMain.handle` into a Map and fakes `app.getPath` / `dialog`), then run it with `ELECTRON_RUN_AS_NODE=1` and `NODE_PATH=epl-tool\node_modules` using `node_modules\electron\dist\electron.exe` — `better-sqlite3` is built for Electron's ABI, so plain `node` can't load it. Always work on **copies** of the DB files in `%TEMP%`. Used for Phase A (52 checks: migrations, byte-identical re-open, allow-list, logo export, prefs, identity).
 
 ### Corporate network (TotalEnergies Windows machines)
 Direct access to GitHub/npm/Electron downloads is blocked and HTTPS is SSL-inspected. Working setup (session env vars, run in `epl-tool/` before `npm ci` / `npm start`):
@@ -564,13 +595,9 @@ Additionally: `asar.unpack: '**/*.node'` unpacks `.node` binaries from the asar 
 
 `NSAppleEventsUsageDescription` is set in `extendInfo` so macOS shows the "Allow EPL Tool to control Mail?" permission dialog instead of returning Apple Events error `-1743`.
 
-### DB path persistence — two layers
+### DB path persistence
 
-The app remembers the last-opened DB via two parallel mechanisms:
-1. **`settings.json`** in `app.getPath('userData')` — written by `saveDbPath()` in `main/index.ts`. Read on startup by `getSavedDbPath()` to auto-reconnect.
-2. **`app_settings` table** key `db_path` — written inside the DB itself on `db:open` / `db:create`. Used by the renderer to show the current path.
-
-Both are updated together when a DB is opened or created. The `userData` file persists across DB changes; the in-DB key is only readable after the DB is open.
+The last-opened DB path is kept only in the local **`settings.json`** (`lastDbPath`, written by `saveDbPath()` in `main/localSettings.ts` on `db:open` / `db:create`, read on startup by `getSavedDbPath()` to auto-reconnect). `db:get-path` returns the path of the currently open DB from memory. The path is **never written into the database** any more (the old `app_settings.db_path` key may remain in older DBs and is ignored).
 
 ---
 
@@ -599,5 +626,5 @@ Both are updated together when a DB is opened or created. The `userData` file pe
 - **PBP emails in drafts**: the customer page displays PBP copy/common from `admin_emails` (Settings), but drafts use each customer's own `email_pbp_copy` / `email_pbp_common` columns. Changing an admin email in Settings does not change existing customers' drafts. Candidate fix: build recipients from `admin_emails` in `export:open-mail-bulk`.
 - **Data files in the repo**: `EPL-Database.db`, `EPL-Database BackUp.db`, `All_Prices.xlsx`, `All_PricesTest.xlsx` are tracked in git and contain customer names, emails and prices. If the repo is public, make it private or untrack them (history keeps old copies unless rewritten).
 - **Pre-existing type/lint errors**: see Build commands → Type check / lint.
-- **Multi-user access + user access rights (designed, not implemented; single-user only today)**: `docs/multi-user-study.md` (local read copy + single "edit slot" via claim files next to the DB on SharePoint + atomic publish with a generation check), `docs/access-rights-study.md` (Windows-account identity, Admin/User/Viewer roles, per-customer pricing mode Open / Managed by PBP / Managed by named users, server-side IPC guard, audit log) and `docs/dev-plan.md` (phases A–F, releases v0.6–v0.8.1, in-app Help plan, historical price-list import spec). Decisions are recorded in each study (none open as of 5 Nov 2026); development starts with dev-plan Phase A. Until implemented, only one person should edit the central DB.
+- **Multi-user access + user access rights (in progress; single-user only today)**: `docs/multi-user-study.md` (local read copy + single "edit slot" via claim files next to the DB on SharePoint + atomic publish with a generation check), `docs/access-rights-study.md` (Windows-account identity, Admin/User/Viewer roles, per-customer pricing mode Open / Managed by PBP / Managed by named users, server-side IPC guard, audit log) and `docs/dev-plan.md` (phases A–F, releases v0.6–v0.8.1, in-app Help plan, historical price-list import spec). Decisions are recorded in each study. **Phase A (Foundations) done 6 Nov 2026** (identity, schema numbering, shareable DB, customer allow-list, release menu); **next: Phase B** (Migration 7, `shared/permissions.ts`, IPC guard, activity log, screens, Help) → release v0.6. Heads-up for Migration 7: the bootstrap admin is whoever's Windows identity runs it first. Until multi-user is implemented, only one person should edit the central DB.
 - **Open product questions (not yet decided by the user)**: (1) mass wizard Step 1 customer dropdown currently only *filters* the table — the user may prefer that ticking in the dropdown also selects rows for repricing; (2) after deleting a price list, the customer falls back to the remaining list with the latest *effective* date (not the most recently *created*) — confirm if this is the desired rule.

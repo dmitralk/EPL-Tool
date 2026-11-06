@@ -1,12 +1,12 @@
 import ExcelJS from 'exceljs';
-import fs from 'fs';
 import type { PriceListFull, Customer, PackagingRow } from '../../types';
+import type { LogoImage } from '../logo';
 
 interface ExportData {
   priceList: PriceListFull;
   customer: Customer;
   packaging: PackagingRow[];
-  logoPath: string | null;
+  logo: LogoImage | null;
   adminEmail: string;
 }
 
@@ -184,9 +184,8 @@ export async function buildPriceListXlsx(data: ExportData): Promise<Buffer> {
 
   // ── Logo: added last so its anchor doesn't pre-create rows ──────────────────
   // Covers cols D-F, rows 1-6 (right side of header block).
-  if (data.logoPath && fs.existsSync(data.logoPath)) {
-    const ext = data.logoPath.split('.').pop()?.toLowerCase() as 'png' | 'jpeg' | 'gif';
-    const imageId = wb.addImage({ filename: data.logoPath, extension: ext || 'png' });
+  if (data.logo) {
+    const imageId = wb.addImage({ base64: data.logo.base64, extension: data.logo.extension });
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ws.addImage(imageId, { tl: { col: 3, row: 0 }, br: { col: 6, row: 6 } } as any);
   }

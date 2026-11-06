@@ -22,7 +22,7 @@ export function EmailComposeDialog({ open, onClose, priceListIds }: {
 
   useEffect(() => {
     if (!open) return;
-    Promise.all([api.getSetting('email_subject_template'), api.getSetting('email_body_template')])
+    Promise.all([api.getPref('emailSubjectTemplate'), api.getPref('emailBodyTemplate')])
       .then(([s, b]) => {
         setSubject(s || DEFAULT_SUBJECT);
         setBody(b || DEFAULT_BODY);
@@ -32,9 +32,10 @@ export function EmailComposeDialog({ open, onClose, priceListIds }: {
   async function handleSend() {
     setSending(true);
     try {
+      // Saved on this PC only: sending an email never writes to the database.
       await Promise.all([
-        api.setSetting('email_subject_template', subject),
-        api.setSetting('email_body_template', body),
+        api.setPref('emailSubjectTemplate', subject),
+        api.setPref('emailBodyTemplate', body),
       ]);
       const result = await api.openMailBulk(priceListIds, subject, body) as {
         canceled?: boolean;
@@ -83,7 +84,7 @@ export function EmailComposeDialog({ open, onClose, priceListIds }: {
         </div>
       </div>
       <p className="text-xs text-gray-400 mb-4">
-        Template is saved automatically when you send. You'll be asked for a folder to save the Excel file{n !== 1 ? 's' : ''}, which {n !== 1 ? 'are' : 'is'} attached to the draft{n !== 1 ? 's' : ''}.
+        Your template is saved on this PC when you send. You'll be asked for a folder to save the Excel file{n !== 1 ? 's' : ''}, which {n !== 1 ? 'are' : 'is'} attached to the draft{n !== 1 ? 's' : ''}.
       </p>
       <div className="flex justify-end gap-2">
         <Button variant="outline" onClick={onClose} disabled={sending}>Cancel</Button>

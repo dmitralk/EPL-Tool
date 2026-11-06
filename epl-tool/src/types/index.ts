@@ -183,6 +183,22 @@ export interface DbOpenResult {
   error?: string;
 }
 
+// Who is running the app, as reported by Windows (auth:whoami). Not yet matched against a user list.
+export interface Identity {
+  account: string | null;           // Windows account, e.g. J0123456
+  email: string | null;             // company email (lower case)
+  emailSource: 'upn' | 'onedrive' | 'override' | null;
+  displayNameHint: string;          // derived from the email; the user list holds the real name
+  overridden: boolean;              // development-only EPL_DEV_ACCOUNT / EPL_DEV_EMAIL in use
+}
+
+export interface LogoInfo {
+  dataUrl: string | null;           // logo stored in the database
+  legacyPath: string | null;        // old per-PC file path, only reported when no logo is stored yet
+}
+
+export type SelectLogoResult = { ok: true; dataUrl: string } | { ok: false; error: string } | null;
+
 export interface Currency {
   id: number;
   code: string;

@@ -76,7 +76,7 @@ The tag triggers the Windows build and publishes a GitHub Release with `EPL Tool
 
 1. Launch the app
 2. Click **Open Database** and select the existing `.db` file (normally the shared one on SharePoint)
-3. If exports show no logo, go to **Settings → Company Logo** and select the logo image (today the app stores only the file's path, so the image must exist on your computer)
+3. If exports show no logo, go to **Settings → Company Logo** and select the logo image (PNG, JPEG or GIF, under 1 MB). It is stored inside the database, so exports made on any computer show it — this only needs to be done once (logos chosen with older versions were only linked to a file on one computer and must be selected again)
 4. The app is ready to use
 
 The original one-off Excel import (`All_Prices.xlsx`) has been removed. A wizard for uploading historical price lists for existing customers and products is planned (see [docs/dev-plan.md](docs/dev-plan.md)).
@@ -122,7 +122,7 @@ Products are pre-populated from the customer's most recent price list. If no pre
 
 The database is a single `.db` file. You can store it on SharePoint or a shared drive. To switch databases, use **Change Database** in the sidebar.
 
-The app remembers the last opened database path between sessions. If the file is not there (e.g. SharePoint not yet synced), the app reports it instead of creating an empty database.
+The app remembers the last opened database path between sessions (on your computer only; the path is not stored in the database). If the file is not there (e.g. SharePoint not yet synced), the app reports it instead of creating an empty database. A database last used by a newer version of EPL Tool is not opened: update the app first.
 
 ---
 
@@ -140,6 +140,6 @@ The app remembers the last opened database path between sessions. If the file is
 - **macOS**: uses AppleScript to open a draft in Mail.app. You may need to grant automation permission the first time: System Settings → Privacy & Security → Automation → EPL Tool → Mail.
 - **Windows**: uses Outlook COM via PowerShell. Outlook must be installed.
 
-Every **Email** button (Price Lists selection, price list page, end of both wizards) opens the same compose dialog. Subject and body are saved as a template; placeholders: `{customer}`, `{customer_full}`, `{version}`, `{effective}`. On send you pick a folder, the Excel file(s) are saved there and one draft per price list opens with the file attached.
+Every **Email** button (Price Lists selection, price list page, end of both wizards) opens the same compose dialog. Subject and body are saved as **your own** template on your computer (not in the database; until your first send a default text is used); placeholders: `{customer}`, `{customer_full}`, `{version}`, `{effective}`. On send you pick a folder, the Excel file(s) are saved there and one draft per price list opens with the file attached.
 
 Recipients = the customer's *To customer* + *Internal copy* addresses + PBP copy / common. Use the **Emails** tab to change an address across many customers at once.

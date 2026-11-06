@@ -1,21 +1,10 @@
-import { ipcMain, dialog, app } from 'electron';
-import { getDb, openDatabase, isOpen } from '../database';
-import { saveDbPath } from '../index';
-import fs from 'fs';
+import { ipcMain, dialog } from 'electron';
+import { getDb, openDatabase, isOpen, getCurrentDbPath } from '../database';
+import { saveDbPath } from '../localSettings';
+import { getLegacyLogoPath, getLogoDataUrl, logoFileToDataUrl, saveLogo } from '../logo';
+import type { LogoInfo, SelectLogoResult } from '../../types';
 
 export function registerSettingsHandlers() {
-  ipcMain.handle('settings:get', (_e, key: string) => {
-    try {
-      return (getDb().prepare('SELECT value FROM app_settings WHERE key = ?').get(key) as { value: string } | undefined)?.value ?? null;
-    } catch {
-      return null;
-    }
-  });
-
-  ipcMain.handle('settings:set', (_e, key: string, value: string) => {
-    getDb().prepare('INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)').run(key, value);
-  });
-
   ipcMain.handle('settings:get-admin-emails', () => {
     return getDb().prepare('SELECT * FROM admin_emails ORDER BY email_name').all();
   });
@@ -24,14 +13,8 @@ export function registerSettingsHandlers() {
     getDb().prepare('UPDATE admin_emails SET email = ? WHERE id = ?').run(email, id);
   });
 
-  ipcMain.handle('db:get-path', () => {
-    try {
-      const result = getDb().prepare("SELECT value FROM app_settings WHERE key = 'db_path'").get() as { value: string } | undefined;
-      return result?.value ?? null;
-    } catch {
-      return null;
-    }
-  });
+  // The path is per PC, so it is never stored in the (shared) database.
+  ipcMain.handle('db:get-path', () => getCurrentDbPath());
 
   ipcMain.handle('db:is-open', () => isOpen());
 
@@ -46,7 +29,6 @@ export function registerSettingsHandlers() {
   ipcMain.handle('db:open', (_e, filePath: string) => {
     try {
       openDatabase(filePath);
-      getDb().prepare('INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)').run('db_path', filePath);
       saveDbPath(filePath);
       return { ok: true };
     } catch (err) {
@@ -64,7 +46,6 @@ export function registerSettingsHandlers() {
 
     try {
       openDatabase(result.filePath, { create: true });
-      getDb().prepare('INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)').run('db_path', result.filePath);
       saveDbPath(result.filePath);
       return { ok: true, path: result.filePath };
     } catch (err) {
@@ -86,14 +67,24 @@ export function registerSettingsHandlers() {
     getDb().prepare('DELETE FROM units WHERE id = ?').run(id);
   });
 
-  ipcMain.handle('settings:select-logo', async () => {
+  ipcMain.handle('settings:get-logo', (): LogoInfo => {
+    const db = getDb();
+    const dataUrl = getLogoDataUrl(db);
+    return { dataUrl, legacyPath: dataUrl ? null : getLegacyLogoPath(db) };
+  });
+
+  ipcMain.handle('settings:select-logo', async (): Promise<SelectLogoResult> => {
     const result = await dialog.showOpenDialog({
       properties: ['openFile'],
       filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif'] }],
     });
-    if (result.canceled) return null;
-    const logoPath = result.filePaths[0];
-    getDb().prepare('INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)').run('logo_path', logoPath);
-    return logoPath;
+    if (result.canceled || !result.filePaths[0]) return null;
+    try {
+      const dataUrl = logoFileToDataUrl(result.filePaths[0]);
+      saveLogo(getDb(), dataUrl);
+      return { ok: true, dataUrl };
+    } catch (err) {
+      return { ok: false, error: (err as Error).message };
+    }
   });
 }

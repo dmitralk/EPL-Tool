@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
+import type { PrefKey } from '../shared/prefs';
 
 const api = {
   // DB management
@@ -74,14 +75,18 @@ const api = {
   exportPackagingMail: (version: string) => ipcRenderer.invoke('export:packaging-mail', version),
 
   // Settings
-  getSetting: (key: string) => ipcRenderer.invoke('settings:get', key),
-  setSetting: (key: string, value: string) => ipcRenderer.invoke('settings:set', key, value),
   getAdminEmails: () => ipcRenderer.invoke('settings:get-admin-emails'),
   updateAdminEmail: (id: number, email: string) => ipcRenderer.invoke('settings:update-admin-email', id, email),
   getUnits: () => ipcRenderer.invoke('settings:get-units'),
   createUnit: (name: string) => ipcRenderer.invoke('settings:create-unit', name),
   deleteUnit: (id: number) => ipcRenderer.invoke('settings:delete-unit', id),
+  getLogo: () => ipcRenderer.invoke('settings:get-logo'),
   selectLogo: () => ipcRenderer.invoke('settings:select-logo'),
+
+  // Identity and local (per-user) preferences
+  whoami: () => ipcRenderer.invoke('auth:whoami'),
+  getPref: (key: PrefKey) => ipcRenderer.invoke('prefs:get', key),
+  setPref: (key: PrefKey, value: string) => ipcRenderer.invoke('prefs:set', key, value),
 
   // Currencies
   getCurrencies: () => ipcRenderer.invoke('currencies:list'),

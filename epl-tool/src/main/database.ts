@@ -105,13 +105,35 @@ CREATE INDEX IF NOT EXISTS idx_price_list_entries_pl ON price_list_entries(price
 CREATE INDEX IF NOT EXISTS idx_standard_epl_currency ON standard_epl(currency);
 `;
 
+// units/currencies use NOT EXISTS instead of INSERT OR IGNORE: on AUTOINCREMENT tables an ignored insert still
+// rewrites sqlite_sequence, which would change the database file on every open.
 const SEED_SQL = `
-INSERT OR IGNORE INTO units (name) VALUES ('100 KG'), ('100 L');
-INSERT OR IGNORE INTO currencies (code, is_main) VALUES ('USD', 1), ('EUR', 1);
+INSERT INTO units (name) SELECT v.name FROM (SELECT '100 KG' AS name UNION ALL SELECT '100 L') v
+  WHERE NOT EXISTS (SELECT 1 FROM units u WHERE u.name = v.name);
+INSERT INTO currencies (code, is_main) SELECT v.code, 1 FROM (SELECT 'USD' AS code UNION ALL SELECT 'EUR') v
+  WHERE NOT EXISTS (SELECT 1 FROM currencies c WHERE c.code = v.code);
 INSERT OR IGNORE INTO fx_rates (currency_code, rate_to_usd) VALUES ('USD', 1), ('EUR', 1.08), ('GBP', 1.27);
 INSERT OR IGNORE INTO standard_epl_versions (version_id, version_name, status, effective_from, published_at)
   VALUES (1, 'Initial', 'published', date('now'), datetime('now'));
 `;
+
+// Schema version = PRAGMA user_version. Databases from before the numbering (user_version 0) run the detection-based
+// legacy steps 1–6 once and are stamped 6. SCHEMA_SQL and SEED_SQL are frozen at that v6 baseline: every later schema
+// change must be a numbered entry in MIGRATIONS (version 7, 8, …), never an edit of SCHEMA_SQL.
+const LEGACY_SCHEMA_VERSION = 6;
+
+interface Migration {
+  version: number;
+  up: (db: Database.Database) => void;
+}
+
+const MIGRATIONS: Migration[] = [];
+
+export const SCHEMA_VERSION = MIGRATIONS.reduce((v, m) => Math.max(v, m.version), LEGACY_SCHEMA_VERSION);
+
+function schemaVersion(db: Database.Database): number {
+  return db.pragma('user_version', { simple: true }) as number;
+}
 
 export function openDatabase(filePath: string, opts: { skipBackup?: boolean; create?: boolean } = {}): void {
   if (currentPath && path.resolve(currentPath) === path.resolve(filePath)) closeDatabase();
@@ -123,6 +145,13 @@ export function openDatabase(filePath: string, opts: { skipBackup?: boolean; cre
     // Rollback journal keeps the .db self-contained; WAL's separate -wal file breaks under OneDrive/SharePoint sync.
     next.pragma('journal_mode = DELETE');
     if (!isHealthy(next)) throw new Error('Database integrity check failed (PRAGMA quick_check).');
+    const fileVersion = schemaVersion(next);
+    if (fileVersion > SCHEMA_VERSION) {
+      throw new Error(
+        `This database needs a newer version of EPL Tool (database schema ${fileVersion}, this app supports up to ` +
+        `${SCHEMA_VERSION}). Please update EPL Tool.`,
+      );
+    }
   } catch (err) {
     try { next?.close(); } catch { /* ignore */ }
     closeDatabase();
@@ -153,10 +182,37 @@ export function openDatabase(filePath: string, opts: { skipBackup?: boolean; cre
 
   db.exec(SCHEMA_SQL);
   db.exec(SEED_SQL);
-  migrateIfNeeded(db);
+  migrate(db);
 }
 
-function migrateIfNeeded(db: Database.Database): void {
+function migrate(db: Database.Database): void {
+  if (schemaVersion(db) < LEGACY_SCHEMA_VERSION) {
+    runLegacyMigrations(db);
+    db.pragma(`user_version = ${LEGACY_SCHEMA_VERSION}`);
+  }
+
+  const pending = MIGRATIONS
+    .filter(m => m.version > schemaVersion(db))
+    .sort((a, b) => a.version - b.version);
+  for (const m of pending) {
+    // foreign_keys can't change inside a transaction; legacy_alter_table stops RENAME from rewriting FKs in other
+    // tables (see Migration 1). user_version is part of the transaction, so a failed step leaves no trace.
+    db.pragma('foreign_keys = OFF');
+    db.pragma('legacy_alter_table = ON');
+    try {
+      db.transaction(() => {
+        m.up(db);
+        db.pragma(`user_version = ${m.version}`);
+      })();
+    } finally {
+      db.pragma('legacy_alter_table = OFF');
+      db.pragma('foreign_keys = ON');
+    }
+  }
+}
+
+// Steps 1–6 predate PRAGMA user_version: each one detects from the stored DDL whether it is still needed.
+function runLegacyMigrations(db: Database.Database): void {
   // Migration 1: Widen price_type CHECK constraint to include PrevPercent and PrevAbsolute.
   // Uses legacy_alter_table=ON to prevent SQLite 3.26.0+ from rewriting FK references
   // in price_list_entries when renaming price_lists (which would corrupt the FK).

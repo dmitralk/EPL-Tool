@@ -7,8 +7,9 @@ import { Badge } from '../../components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
 import { ConfirmDialog } from '../../components/ui/dialog';
 import { useToast } from '../../components/ui/toast';
-import { formatDate, priceTypeLabel } from '../../lib/utils';
+import { formatDate, ipcErrorMessage, priceTypeLabel } from '../../lib/utils';
 import { ComparisonPanel } from './ComparisonPanel';
+import { CUSTOMER_EDITABLE_FIELDS, type CustomerEditableField } from '../../../shared/customerFields';
 import type { AdminEmail, Currency, Customer, PackagingVersion, PriceListHeader } from '../../../types';
 
 export function CustomerDetail() {
@@ -93,15 +94,23 @@ export function CustomerDetail() {
 
   async function saveEdit() {
     if (!customer || !draft) return;
+    const changes: Partial<Record<CustomerEditableField, string | null>> = {};
+    for (const k of CUSTOMER_EDITABLE_FIELDS) {
+      if (draft[k] !== customer[k]) changes[k] = draft[k];
+    }
+    if (Object.keys(changes).length === 0) {
+      cancelEdit();
+      return;
+    }
     setSaving(true);
     try {
-      const updated = await api.updateCustomer(customer.customer_ref_sap, draft);
+      const updated = await api.updateCustomer(customer.customer_ref_sap, changes);
       setCustomer(updated as Customer);
       setEditing(false);
       setDraft(null);
       toast('Customer updated', 'success');
-    } catch {
-      toast('Failed to save changes', 'error');
+    } catch (err) {
+      toast(`Failed to save changes: ${ipcErrorMessage(err)}`, 'error');
     } finally {
       setSaving(false);
     }

@@ -7,6 +7,7 @@ import { promisify } from 'util';
 import ExcelJS from 'exceljs';
 import { getDb, getLatestPublishedEplVersionId } from '../database';
 import { buildPriceListXlsx } from '../export/buildPriceListXlsx';
+import { getLogoImage } from '../logo';
 import type { PriceListFull, Customer, PackagingRow, CombinedEplRow } from '../../types';
 
 function fetchPackagingRows(db: ReturnType<typeof getDb>, version: string): PackagingRow[] {
@@ -78,11 +79,9 @@ function fetchExportData(db: ReturnType<typeof getDb>, price_list_id: string) {
     .get() as { email: string } | undefined;
   const adminEmail = adminEmailRow?.email ?? '';
 
-  const logoPath = (db
-    .prepare("SELECT value FROM app_settings WHERE key = 'logo_path'")
-    .get() as { value: string } | undefined)?.value ?? null;
+  const logo = getLogoImage(db);
 
-  return { priceList, customer, packaging, adminEmail, logoPath };
+  return { priceList, customer, packaging, adminEmail, logo };
 }
 
 function suggestFilename(customer: Customer, priceList: PriceListFull): string {

@@ -1,6 +1,6 @@
 # EPL Tool — Development plan: access rights + multi-user
 
-*Status: decisions recorded · updated 5 Nov 2026 · current version v0.5.2*
+*Status: decisions recorded · Phase A done · updated 6 Nov 2026 · current version v0.5.2*
 *Studies: [access-rights-study.md](./access-rights-study.md) · [multi-user-study.md](./multi-user-study.md)*
 
 ---
@@ -99,27 +99,36 @@ dialog, FX popover, import wizard). It is written for users; the files in `docs/
 
 ## 4. Phases
 
-### Phase A — Foundations (1.5–2 d)
+### Phase A — Foundations (1.5–2 d) — **done 6 Nov 2026**
 
-- [ ] **Identity**
-  - [ ] Add `main/auth.ts`: Windows account from `os.userInfo()`, email from `whoami /upn`, with the OneDrive account email from
+- [x] **Identity**
+  - [x] Add `main/auth.ts`: Windows account from `os.userInfo()`, email from `whoami /upn`, with the OneDrive account email from
         the registry as fallback.
-  - [ ] Add an `auth:whoami` channel. A development-only environment variable can pretend to be another user.
-- [ ] **Schema numbering:** use `PRAGMA user_version` as the schema version (existing level = 6); turn `migrateIfNeeded` into
-      numbered steps.
-- [ ] **Make the database shareable** (multi-user study §5.9):
-  - [ ] Stop writing `db_path` into the database.
-  - [ ] Store the logo **inside the database** (old path used as fallback); export uses `addImage({ buffer })`.
-  - [ ] Save **email templates per user** in the local `settings.json` (new `prefs:get` / `prefs:set` channels).
-- [ ] **Customer update:** `customers:update` accepts only an allow-list of fields.
-- [ ] **Release menu:** releases get a minimal app menu; Developer Tools only in development (admin exception added in B).
+  - [x] Add an `auth:whoami` channel. A development-only environment variable can pretend to be another user
+        (`EPL_DEV_ACCOUNT` / `EPL_DEV_EMAIL`, ignored in packaged builds).
+- [x] **Schema numbering:** use `PRAGMA user_version` as the schema version (existing level = 6); turn `migrateIfNeeded` into
+      numbered steps. A database with a newer schema than the app is refused with *"please update EPL Tool"* (decided 6 Nov;
+      Phase C turns this into read-only).
+- [x] **Make the database shareable** (multi-user study §5.9):
+  - [x] Stop writing `db_path` into the database.
+  - [x] Store the logo **inside the database**; export uses ExcelJS `addImage({ base64 })`. Decided 6 Nov: **no fallback to
+        the old file path** — an admin selects the logo once in Settings (admin-only from Phase B).
+  - [x] Save **email templates per user** in the local `settings.json` (new `prefs:get` / `prefs:set` channels). Decided 6 Nov:
+        the old template stored in the database is ignored; the built-in default is used until a user's first send.
+  - [x] Also: opening an existing database no longer changes the file (the `units` / `currencies` seeds rewrote
+        `sqlite_sequence` on every open), and the generic `settings:get` / `settings:set` channels were removed.
+- [x] **Customer update:** `customers:update` accepts only an allow-list of fields.
+- [x] **Release menu:** decided 6 Nov: **no menu bar** in releases on Windows (macOS keeps only the app/Edit/Window menus);
+      Developer Tools only in development (admin exception added in B).
 - [x] ~~Excel import fix~~ — not needed: the old import was removed (§2).
 
 **Done when:**
 
-- an existing database opens with no data change
-- sending an email doesn't change the database file (date unchanged)
-- the logo appears in exports made from a copy of the database on another PC
+- [x] an existing database opens with no data change
+- [x] sending an email doesn't change the database file (date unchanged)
+- [x] the logo appears in exports made from a copy of the database on another PC
+
+Checked on copies of the databases, by running the real main-process code outside the app (no app launch).
 
 ### Phase B — Access rights + Help (5.5–6.5 d) → release v0.6
 
@@ -331,4 +340,4 @@ All decisions are recorded (the last two on 5 Nov 2026):
 - **Historical import:** Admins plus Users, for the customers they may change.
 - **Session FX rates:** forgotten when the app closes.
 
-**Next step:** Phase A (Foundations), then Phase B, towards release v0.6.
+**Next step:** Phase B (access rights + Help), towards release v0.6. Phase A was completed on 6 Nov 2026.

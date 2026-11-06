@@ -7,14 +7,14 @@ import { Input, Label } from '../../components/ui/input';
 import { useToast } from '../../components/ui/toast';
 import { Dialog } from '../../components/ui/dialog';
 import { BackupPanel } from '../../components/BackupPanel';
-import type { AdminEmail, Unit } from '../../../types';
+import type { AdminEmail, LogoInfo, SelectLogoResult, Unit } from '../../../types';
 
 export function SettingsScreen() {
   const { toast } = useToast();
   const navigate = useNavigate();
   const [dbOpen, setDbOpen] = useState(true);
   const [dbPath, setDbPath] = useState<string | null>(null);
-  const [logoPath, setLogoPath] = useState<string | null>(null);
+  const [logo, setLogo] = useState<LogoInfo>({ dataUrl: null, legacyPath: null });
   const [adminEmails, setAdminEmails] = useState<AdminEmail[]>([]);
   const [editingEmail, setEditingEmail] = useState<{ id: number; value: string } | null>(null);
   const [units, setUnits] = useState<Unit[]>([]);
@@ -23,16 +23,16 @@ export function SettingsScreen() {
 
   useEffect(() => {
     async function load() {
-      const [open, path, logo, emails, unitList] = await Promise.all([
-        api.dbIsOpen(),
-        api.dbGetPath(),
-        api.getSetting('logo_path'),
+      const [open, path] = await Promise.all([api.dbIsOpen(), api.dbGetPath()]);
+      setDbOpen(Boolean(open));
+      setDbPath(path);
+      if (!open) return;
+      const [logoInfo, emails, unitList] = await Promise.all([
+        api.getLogo(),
         api.getAdminEmails(),
         api.getUnits(),
       ]);
-      setDbOpen(Boolean(open));
-      setDbPath(path);
-      setLogoPath(logo);
+      setLogo(logoInfo as LogoInfo);
       setAdminEmails(emails as AdminEmail[]);
       setUnits(unitList as Unit[]);
     }
@@ -40,10 +40,13 @@ export function SettingsScreen() {
   }, []);
 
   async function handleSelectLogo() {
-    const path = await api.selectLogo();
-    if (path) {
-      setLogoPath(path);
+    const result = await api.selectLogo() as SelectLogoResult;
+    if (!result) return;
+    if (result.ok) {
+      setLogo({ dataUrl: result.dataUrl, legacyPath: null });
       toast('Logo updated', 'success');
+    } else {
+      toast(result.error, 'error');
     }
   }
 
@@ -83,7 +86,7 @@ export function SettingsScreen() {
 
       {!dbOpen && (
         <div className="flex items-center justify-between gap-4 px-4 py-3 bg-amber-50 border border-amber-300 rounded-lg text-sm text-amber-800">
-          <span>No database is open. Open or create one before importing data.</span>
+          <span>No database is open. Open or create one first.</span>
           <Button size="sm" onClick={() => navigate('/setup')}>Open Database</Button>
         </div>
       )}
@@ -120,21 +123,24 @@ export function SettingsScreen() {
         <CardContent>
           <div className="flex items-start gap-4">
             <div className="w-32 h-16 border border-gray-200 rounded-md bg-gray-50 flex items-center justify-center overflow-hidden">
-              {logoPath ? (
-                <img src={`file://${logoPath}`} alt="Logo" className="max-w-full max-h-full object-contain" />
+              {logo.dataUrl ? (
+                <img src={logo.dataUrl} alt="Logo" className="max-w-full max-h-full object-contain" />
               ) : (
                 <span className="text-gray-400 text-xs">No logo</span>
               )}
             </div>
             <div>
               <p className="text-sm text-gray-600 mb-2">
-                This logo appears in every exported price list.
+                This logo appears in every exported price list. It is stored in the database, so exports made on any PC show it.
               </p>
-              <Button variant="outline" onClick={handleSelectLogo}>
-                {logoPath ? 'Replace Logo' : 'Select Logo'}
+              <Button variant="outline" onClick={handleSelectLogo} disabled={!dbOpen}>
+                {logo.dataUrl ? 'Replace Logo' : 'Select Logo'}
               </Button>
-              {logoPath && (
-                <p className="text-xs text-gray-400 mt-1 font-mono break-all">{logoPath}</p>
+              {logo.legacyPath && (
+                <p className="text-xs text-amber-700 mt-2">
+                  The logo was linked to a file on one PC ({logo.legacyPath}) and is no longer used in exports.
+                  Select it again to store it in the database.
+                </p>
               )}
             </div>
           </div>

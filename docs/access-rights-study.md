@@ -1,6 +1,6 @@
 # EPL Tool — User access rights study
 
-*Status: decisions recorded (§9) · 5 Nov 2026 · based on EPL Tool v0.5.2*
+*Status: decisions recorded (§9) · Phase A items done 6 Nov 2026 · based on EPL Tool v0.5.2*
 *Related: [multi-user-study.md](./multi-user-study.md) (several users sharing one database) · [dev-plan.md](./dev-plan.md)
 (combined development plan)*
 
@@ -226,16 +226,17 @@ lock badges, disabled UI ─┘                  handler: per-customer checks + 
    - `emails:replace` / `emails:remove` / `emails:set-assignments` change only the allowed customers and report how many were
      skipped.
 5. **`customers:update` is split and given an allow-list.**
-   [Today it builds its SQL from whatever field names it receives](../epl-tool/src/main/ipc/customers.ts#L64). After the change:
-   - `customers:update` accepts only master-data and email fields.
-   - A new `customers:set-access` changes the mode and managers.
-   - `is_deleted` is only changed through hide / restore.
+   - **Done in Phase A (6 Nov 2026):** `customers:update` accepts only the master-data and email fields listed in
+     [`shared/customerFields.ts`](../epl-tool/src/shared/customerFields.ts) and refuses anything else; `is_deleted` is only
+     changed through hide / restore.
+   - Phase B: a new `customers:set-access` changes the mode and managers (and `price_list_managed_by` leaves the allow-list
+     when Migration 7 drops it).
 6. **The old Excel import has been removed (5 Nov 2026).** It replaced customer rows
    (`INSERT OR REPLACE INTO customers`), which would have reset the access mode and deleted the managers, and already reset
    *Supply Region* and *hidden*. The new historical import (§3.7) only creates price lists and never touches customers.
-7. **Developer Tools.** The packaged app has no menu of its own
-   ([`main/index.ts`](../epl-tool/src/main/index.ts#L28)), so Electron's default menu, including *Toggle Developer Tools*, is
-   available. Releases will get a minimal menu, and Developer Tools will be disabled for non-admins. The checks in the main process
+7. **Developer Tools.** **Done in Phase A (6 Nov 2026):** releases have **no menu bar** on Windows (macOS keeps only the
+   app/Edit/Window menus), so the Developer Tools shortcuts are gone, and DevTools opened any other way are closed again
+   ([`main/menu.ts`](../epl-tool/src/main/menu.ts)). Phase B adds the admin exception. The checks in the main process
    (point 3) remain the real protection.
 8. **Activity log.** Every write handler adds an entry in the same database transaction as the change itself (§6).
 9. **Screens.** An `AuthContext` loaded from `auth:me` holds the user, the role and the list of customers they manage. A

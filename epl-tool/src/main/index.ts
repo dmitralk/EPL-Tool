@@ -1,8 +1,11 @@
-import { app, BrowserWindow, dialog } from 'electron';
+import { app, BrowserWindow } from 'electron';
 import path from 'node:path';
 import started from 'electron-squirrel-startup';
-import { openDatabase, closeDatabase, getDb } from './database';
+import { openDatabase, closeDatabase } from './database';
 import { registerAllIpcHandlers } from './ipc';
+import { getSavedDbPath } from './localSettings';
+import { guardDevTools, installAppMenu } from './menu';
+import { initIdentity } from './auth';
 
 if (started) app.quit();
 
@@ -22,6 +25,7 @@ function createWindow() {
     titleBarStyle: 'default',
     title: 'EPL Tool',
   });
+  guardDevTools(mainWindow);
 
   if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
     mainWindow.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
@@ -36,6 +40,8 @@ function createWindow() {
 }
 
 app.on('ready', () => {
+  initIdentity({ allowOverride: !app.isPackaged });
+  installAppMenu();
   registerAllIpcHandlers();
   createWindow();
 
@@ -59,32 +65,3 @@ app.on('activate', () => {
 });
 
 app.on('quit', () => closeDatabase());
-
-function getSavedDbPath(): string | null {
-  try {
-    const settingsPath = path.join(app.getPath('userData'), 'settings.json');
-    const fs = require('fs');
-    if (fs.existsSync(settingsPath)) {
-      const data = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'));
-      return data.lastDbPath || null;
-    }
-  } catch {
-    // ignore
-  }
-  return null;
-}
-
-export function saveDbPath(dbPath: string) {
-  try {
-    const fs = require('fs');
-    const settingsPath = path.join(app.getPath('userData'), 'settings.json');
-    const data: Record<string, string> = {};
-    if (fs.existsSync(settingsPath)) {
-      Object.assign(data, JSON.parse(fs.readFileSync(settingsPath, 'utf-8')));
-    }
-    data.lastDbPath = dbPath;
-    fs.writeFileSync(settingsPath, JSON.stringify(data, null, 2));
-  } catch {
-    // ignore
-  }
-}

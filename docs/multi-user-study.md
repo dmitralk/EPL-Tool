@@ -1,6 +1,6 @@
 # EPL Tool — Multi-user access study
 
-*Status: approved direction, decisions recorded in §8 · 5 Nov 2026 · based on EPL Tool v0.5.2*
+*Status: approved direction, decisions recorded in §8 · §5.9 items 1–3 and 6 done 6 Nov 2026 · based on EPL Tool v0.5.2*
 *Related: [access-rights-study.md](./access-rights-study.md) (who may change what) · [dev-plan.md](./dev-plan.md) (combined
 development plan, which replaces §7)*
 
@@ -373,17 +373,22 @@ packaging, emails) appear in a short report so they can be redone by hand. Given
 
 ### 5.9 Making the database shareable (Phase 1 — useful on its own)
 
-1. **Stop writing `db_path` into the DB** (in `db:open` and `db:create`). `db:get-path` should return the path known to the main
-   process instead.
-2. **Store the logo inside the DB** (image bytes as a BLOB, or base64 in `app_settings`), so every user's exports show the same
-   logo. `buildPriceListXlsx` then uses `addImage({ buffer })`. The old `logo_path` stays as a fallback.
+Items 1, 2, 3 and 6 were **done in Phase A (6 Nov 2026)**; 4 comes with Phase B and 5 with Phase C ([dev-plan.md](./dev-plan.md)).
+
+1. **Stop writing `db_path` into the DB** (in `db:open` and `db:create`). `db:get-path` returns the path known to the main
+   process instead. *(Done.)*
+2. **Store the logo inside the DB** (base64 data URL in `app_settings.logo_data_url`), so every user's exports show the same
+   logo. `buildPriceListXlsx` uses `addImage({ base64 })`. *(Done. Decided 6 Nov: no fallback to the old `logo_path`; an admin
+   selects the logo once.)*
 3. **Store email templates per user** in the local `settings.json`, so sending an email no longer writes to the DB.
-   *(Decided: per user.)*
+   *(Decided: per user. Done.)*
 4. **FX rates on the Analysis screen:** admins set the shared **default** rates, in edit mode. Anybody can change rates for their
    own session; these are not saved, so this causes no database write. *(Decided.)*
 5. **Backups:** no backup on every open. Take one at the start of each edit session and before a restore (still keeping 20).
    Readers never write to SharePoint.
 6. **Schema version:** each migration increases `PRAGMA user_version`, so the version can be read without running the migrations.
+   *(Done: existing databases are stamped 6; later migrations are numbered steps.)* Opening an up-to-date database no longer
+   changes the file at all (the `units` / `currencies` seeds used to rewrite `sqlite_sequence` on every open).
 
 ### 5.10 App versions and updates
 
