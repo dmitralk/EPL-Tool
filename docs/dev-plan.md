@@ -215,6 +215,42 @@ Checked on copies of the databases, by running the real main-process code outsid
 
 ### Phase C — Read copy + publish (3–4 d) → release v0.7
 
+**Kickoff — points to confirm with the user before coding** (prepared 6 Nov 2026 from how v0.6.1 is built; the design itself
+is in the multi-user study §5, decisions in §8). Ask them in one form, then update this list.
+
+1. **Local mode.** Keep a way to open a `.db` file directly, as today (useful for test databases and development), next to the new
+   *Connect to shared database*? Proposal: yes, as *Open a local database (no sharing)* on the setup screen.
+2. **Existing installs.** `settings.json` has `lastDbPath` (the database opened directly). Proposal: on first start of v0.7, if
+   that file is in a OneDrive/SharePoint-synced folder, offer to connect to it as the shared database; otherwise keep it as a
+   local database.
+3. **Writes that happen while reading** (they fail under `PRAGMA query_only`):
+   - first sign-in of a user added by email only records their Windows account (`currentUser.ts`, `user.link-account`);
+   - the first-admin bootstrap (`bootstrapFirstAdmin`) on a database without users;
+   - migrations (Migration 8 `sync_meta`, later ones) — by design they run on the local copy only.
+   Proposal: in read mode, skip account linking (recognise by email; record the account at the next *Start editing*) and
+   allow the bootstrap only in local mode or in edit mode.
+4. **Guard + read mode.** Keep the order "role → per-customer rule → read-only". Proposal: add a `writes` flag to the
+   `editor`/`admin` channels in `ipc/guard.ts`, so in read mode they are refused with *"Read-only — click Start editing"*
+   before the handler runs, instead of relying only on the `SQLITE_READONLY` error.
+5. **Startup backup.** Today a backup is written to `EPL-Backups/` (SharePoint) on every open. Phase C: only at *Start editing*
+   (and before a restore). Confirm that the local cache gets no backups of its own.
+6. **Publish in the activity log.** Should each publish add an entry (`sync.publish`, who/when/generation)? It is written into
+   the working copy before the copy is published, so it costs nothing extra. Proposal: yes.
+7. **Who edits in v0.7.** The plan says Admins only in v0.7 (Users from v0.8 with the edit slot). Confirm, because Users who
+   could create price lists in v0.6.1 lose that until v0.8.
+8. **Auto-refresh vs open screens.** Refresh automatically every ~30 s only when no wizard or dialog is open; otherwise show the
+   *New data — Refresh* banner. Needs a small "busy" signal from the renderer (wizards, dialogs, unsaved edits).
+9. **Paths and names.** Local copies in `%APPDATA%\epl-tool\cache\` and `work\` (study §5.2); manifest file
+   `EPL-Database.manifest.json` next to the central DB; `EPL-Conflicts/`. Confirm, or prefer `%LOCALAPPDATA%` for the cache.
+10. **Test setup.** Two PCs are needed for the final check (you + a colleague). Before that, extend the main-process checks
+    (`epl-tool/scripts/main-checks/`, `npm run test:main`) with a `phase-c.checks.ts` that simulates two PCs as two processes
+    with separate `userData` folders sharing a temp "central" folder.
+
+**Starting points in the code:** `main/database.ts` (`openDatabase`, startup backup, `bootstrapFirstAdmin`),
+`main/localSettings.ts` (`lastDbPath`), `main/currentUser.ts` (account linking), `main/ipc/guard.ts`, `main/ipc/settings.ts`
+(`db:open` / `db:create`), `main/ipc/backup.ts`, `renderer/screens/DatabaseSelector.tsx`, `renderer/components/layout/Sidebar.tsx`
+(status line), `renderer/App.tsx` (`AccessGuard`).
+
 - [ ] **SharePoint access in one place:** a `CentralStore` interface and a `SyncedFolderStore` implementation that handles:
   - [ ] download + verify
   - [ ] manifest

@@ -4,14 +4,65 @@ This file is read automatically by Claude Code at conversation start. It gives f
 
 ---
 
+## Current state & next session (updated 6 Nov 2026, end of session)
+
+**Released:** **v0.6.1** (6 Nov 2026) = dev-plan Phase A (foundations) + Phase B (access rights + Guides & Help). Everything is
+committed and pushed; `main` = tag `v0.6.1` + one commit with the handoff docs and the main-process checks. The user checked the
+permission matrix in the app with *Preview as…* and reported "all is working well". GitHub release:
+https://github.com/dmitralk/EPL-Tool/releases/tag/v0.6.1
+
+**Next: Phase C — read copy + publish → v0.7** (`docs/dev-plan.md` Phase C, design in `docs/multi-user-study.md` §5).
+1. Start by asking the user the **Phase C kickoff points** listed at the top of the dev-plan's Phase C section (one form; the user
+   reviews designs before development and prefers forms for questions). Record the answers in the dev-plan.
+2. Then build in reviewable steps (Migration 8 `sync_meta` + `CentralStore`/`SyncedFolderStore` → read mode with
+   `query_only` + change detection + offline → admin edit mode with auto-publish + generation check + `EPL-Conflicts/` →
+   setup screen + sidebar status line → Guides & Help v0.7 topics), verifying each with the main-process test approach below.
+
+**Working agreements with the user**
+- Ask (with a form) before committing; always add the `Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>`
+  trailer. Never stage the data files `All_Prices.xlsx`, `All_PricesTest.xlsx`, `EPL-Database.db`, `EPL-Database BackUp.db`
+  (modified locally before these sessions; not our work).
+- Don't launch the app (`npm start` / packaged) without asking: it auto-opens the user's real SharePoint database and writes a
+  startup backup. Test main-process code outside the app instead (see *Testing main-process code* below).
+- Keep `docs/` (dev-plan + studies), CLAUDE.md and README.md updated as phases complete; update the Guides & Help topic
+  *What's new* (`epl-tool/src/renderer/help/10-whats-new.md`) with each release.
+- Never hard-code people's emails or names in the repo (admins are added in Settings → Users).
+
+**Verify after changes** (from `epl-tool/`; for anything that downloads — npm, packaging — first set in the same PowerShell call:
+`$env:HTTP_PROXY='http://cloudproxy-emea.corp.local:8080'; $env:HTTPS_PROXY=$env:HTTP_PROXY; $env:NODE_OPTIONS='--use-system-ca'; $env:ELECTRON_GET_USE_PROXY='1'; $env:GLOBAL_AGENT_HTTPS_PROXY=$env:HTTP_PROXY`):
+`npx tsc --noEmit -p .` (exactly 4 known errors: `export.ts` ×2, `Step2ConfigurePricing.tsx`, `Step3ReviewProducts.tsx`),
+`npx eslint <changed files>`, `npm test` (49 tests), `npm run test:main` (main-process checks, see below), and packaging into a temp folder (`out/` is often locked by OneDrive):
+`node -e "require('@electron-forge/core').api.package({dir:process.cwd(),outDir:process.env.TEMP+'\\epl-pkg-check',interactive:false})"`,
+then delete that folder. Release procedure: see *GitHub Actions* below (`npm version X.Y.Z --no-git-tag-version`, commit, BOM-free
+annotated tag, push `main` + tag; CI runs `npm test`, builds and publishes).
+
+**Facts worth remembering**
+- Schema is at `user_version` 7. New schema changes = numbered entries in `MIGRATIONS` (`database.ts`), never edits of `SCHEMA_SQL`.
+- Every IPC channel is registered with `handle(channel, rule, fn)` from `main/ipc/guard.ts`; rules live in `src/shared/permissions.ts`;
+  every write calls `audit()` inside its transaction.
+- On the Windows dev PC, `whoami /upn` resolves to one of the named admins' accounts (relevant for first-admin bootstrap tests).
+- The stored legacy logo path was a macOS path; the logo must be selected once in Settings (done by the user or still to do —
+  ask if exports lack a logo).
+- The main-process checks for Phases A/B are in the repo: `epl-tool/scripts/main-checks/` (`npm run test:main`, 51 + 105
+  checks on temp copies of the sample DBs; not run in CI). Extend them for Phase C (e.g. a `phase-c.checks.ts` simulating two
+  PCs with separate `userData` folders sharing a temp "central" folder).
+- npm on this PC: `npm install <pkg>` also bumped an existing dev dependency (tsx) — check the `package.json`/lockfile diff and
+  revert unintended changes; npm warns that package install scripts are held back (`allow-scripts`), so avoid a fresh `npm ci`
+  locally unless needed (better-sqlite3 must stay built for Electron: `build/Release/.forge-meta` = `x64--<ABI>`; the
+  `prepackage` script `electron-rebuild -o better-sqlite3` rebuilds it).
+- Opening the WAL-mode sample `EPL-Database.db` read-only creates `-wal`/`-shm` side files (now in `.gitignore`).
+
+---
+
 ## What this project is
 
 **EPL Tool** — an Electron desktop app for Lubmarine that replaces an Excel-based workflow for generating customer Export Price Lists (EPL). It stores all pricing data in a SQLite database, lets users create formatted price lists per customer, exports them to Excel in a standard format, and opens email drafts with the file attached.
 
 **Key constraints that drove all architectural decisions:**
 - No admin rights on corporate machines (no IT-managed servers, no PostgreSQL)
-- Cross-platform: macOS and Windows
-- Single user at a time, DB stored on SharePoint as a file
+- Cross-platform: macOS and Windows (the multi-user features of v0.7+ are Windows only — there are no Mac users)
+- Single editor at a time, DB stored on SharePoint as a file (v0.6.1: one person edits the central DB; v0.7–v0.8 add a local
+  read copy, publishing and an edit slot so several people can work safely)
 - Email via local mail client (Mail.app / Outlook) — no SMTP
 
 ---
@@ -134,6 +185,7 @@ This file is read automatically by Claude Code at conversation start. It gives f
 │   │           └── StandardEpl/
 │   │               ├── StandardEplScreen.tsx ← two tabs: “Standard Prices” (version selector, draft management, combined USD+EUR table, Export/Email buttons) and “Packaging Charges” (version selector, read-only table, Export/Email buttons)
 │   │               └── StandardEplComparisonPanel.tsx ← side-by-side diff of two EPL versions (Changed / Added / Removed sections)
+│   ├── scripts/main-checks/ ← `npm run test:main`: run.js (esbuild + Electron-as-Node), electron-stub.js, harness.ts, phase-a/phase-b .checks.ts
 │   ├── forge.config.ts     ← IMPORTANT: contains packageAfterCopy for better-sqlite3
 │   └── package.json
 ├── All_Prices.xlsx         ← original master data file (source of the initial DB load; the in-app import was removed)
@@ -600,7 +652,8 @@ npm install          # install dependencies
 npm start            # dev mode with Vite HMR (DevTools auto-open in dev)
 npm run package      # build unpackaged app (dev/testing only, no installer); prepackage prepares better-sqlite3 for Electron
 npm run make         # build distributable installers (Squirrel .exe + ZIP for Windows); premake does the same
-npm test             # unit tests (node:test via tsx): src/**/*.test.ts — today shared/permissions.test.ts (49 tests)
+npm test             # unit tests (node:test via tsx): src/**/*.test.ts — today shared/permissions.test.ts (49 tests); also run in CI
+npm run test:main    # main-process checks (scripts/main-checks/*.checks.ts) on temp copies of the sample DBs; local only
 ```
 
 **When to use which command:**
@@ -614,7 +667,7 @@ A packaged app does not pick up source changes — rebuild it after every change
 
 **Type check / lint**: `npx tsc --noEmit -p .` and `npx eslint <files>` from `epl-tool/`. Pre-existing tsc errors (not blocking Vite builds): `export.ts` lines ~48/~358 (`Promise<Buffer>` casts) and `Step2ConfigurePricing.tsx` / `Step3ReviewProducts.tsx` (currency `string` passed where `'USD' | 'EUR'` expected). ESLint config lacks the `react-hooks` plugin, so existing `eslint-disable react-hooks/...` comments report "rule not found". ExcelJS's own `Buffer` type clashes with Node's `Buffer<ArrayBufferLike>`: pass images as `addImage({ base64 })` rather than `{ buffer }`.
 
-**Testing main-process code without launching the app** (launching opens the real SharePoint DB and writes a startup backup): bundle a test entry with esbuild (`node_modules/esbuild`, `platform: 'node'`, `external: ['better-sqlite3', 'exceljs']`, `alias: { electron: <stub.js> }` where the stub captures `ipcMain.handle` into a Map and fakes `app.getPath` / `dialog`), then run it with `ELECTRON_RUN_AS_NODE=1` and `NODE_PATH=epl-tool\node_modules` using `node_modules\electron\dist\electron.exe` — `better-sqlite3` is built for Electron's ABI, so plain `node` can't load it. Always work on **copies** of the DB files in `%TEMP%`. Used for Phase A (52 checks: migrations, byte-identical re-open, allow-list, logo export, prefs, identity) and Phase B (105 checks: Migration 7 on both DB files, bootstrap, guard declarations, Admin/User/Viewer/unknown/deactivated rules via `EPL_DEV_*` + `initIdentity({ allowOverride: true })`, preview, email skip-reporting, audit entries, damaged-DB restore). The stub must also capture `shell.openExternal` (mailto drafts would otherwise open Outlook).
+**Testing main-process code without launching the app** (launching opens the real SharePoint DB and writes a startup backup): **`npm run test:main`** runs `epl-tool/scripts/main-checks/*.checks.ts`. `run.js` bundles each file with esbuild (`platform: 'node'`, `external: ['better-sqlite3', 'exceljs']`, `alias: { electron: electron-stub.js }` — the stub captures `ipcMain.handle` into a Map, fakes `app.getPath` / `dialog`, and records `shell.openExternal` so mailto drafts don't open Outlook) and runs it with Electron's own Node (`ELECTRON_RUN_AS_NODE=1`, `NODE_PATH=epl-tool/node_modules`) — `better-sqlite3` is built for Electron's ABI, so plain `node` can't load it. `harness.ts` has the helpers (`invoke(channel, …)` calls the real handlers, `check`, `expectError`, `allowed`, `sha`, `userVersion`, `setupTemp`, `finish`). The checks only work on **copies** of the repo-root sample DBs in `%TEMP%`. `phase-a.checks.ts` (51: migrations, byte-identical re-open, allow-list, logo export, prefs, identity — the UPN/OneDrive checks are skipped off Windows work PCs) and `phase-b.checks.ts` (105: Migration 7 on both DB files, bootstrap, guard declarations, Admin/User/Viewer/unknown/deactivated rules via `EPL_DEV_*` + `initIdentity({ allowOverride: true })`, preview, email skip-reporting, audit entries, orphan/crafted-entry price-list cases, damaged-DB restore). `npm run test:main -- phase-b` runs one file; `EPL_CHECKS_VERBOSE=1` prints passing checks too. Not in CI (needs the local sample DBs). The scripts are type-checked by `tsc` (tsconfig includes `scripts/**/*`).
 
 ### Corporate network (TotalEnergies Windows machines)
 Direct access to GitHub/npm/Electron downloads is blocked and HTTPS is SSL-inspected. Working setup (session env vars, run in `epl-tool/` before `npm ci` / `npm start`):

@@ -1,4 +1,6 @@
 EPL-Backups/
 *.db-journal
+*.db-wal
+*.db-shm
 *.db.partial
 *.db.restoring

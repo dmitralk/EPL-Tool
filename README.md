@@ -37,8 +37,10 @@ npm start
 
 The app opens with Vite hot-reload for screen (renderer) changes. Main-process changes (IPC, database, export) need a restart: type `rs` in the `npm start` terminal.
 
-`npm test` runs the unit tests (the access rules in `src/shared/permissions.ts`). In development, the environment variables
-`EPL_DEV_ACCOUNT` / `EPL_DEV_EMAIL` make the app act as another person (ignored by packaged builds).
+`npm test` runs the unit tests (the access rules in `src/shared/permissions.ts`). `npm run test:main` runs the main-process
+checks (`scripts/main-checks/`): the real IPC handlers on temporary copies of the sample databases, without opening the app. In
+development, the environment variables `EPL_DEV_ACCOUNT` / `EPL_DEV_EMAIL` make the app act as another person (ignored by
+packaged builds).
 
 **Behind the TotalEnergies corporate proxy (Windows)**, set these in the same PowerShell session before `npm install` / `npm start`:
 

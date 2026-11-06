@@ -13,7 +13,8 @@
     "make": "electron-forge make",
     "publish": "electron-forge publish",
     "lint": "eslint --ext .ts,.tsx .",
-    "test": "tsx --test src/**/*.test.ts"
+    "test": "tsx --test src/**/*.test.ts",
+    "test:main": "node scripts/main-checks/run.js"
   },
   "keywords": [],
   "author": {
