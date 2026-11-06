@@ -1,0 +1,334 @@
+# EPL Tool — Development plan: access rights + multi-user
+
+*Status: decisions recorded · updated 5 Nov 2026 · current version v0.5.2*
+*Studies: [access-rights-study.md](./access-rights-study.md) · [multi-user-study.md](./multi-user-study.md)*
+
+---
+
+## 1. Overview
+
+The work is split into **6 phases** and delivered in **4 releases**. Each release can be used on its own, so colleagues can be
+brought in step by step.
+
+| Release | Phases | What you get | Who can be onboarded | Effort |
+|---|---|---|---|---|
+| **v0.6 — Governance** | A Foundations + B Access rights | User list, roles, customer pricing modes, *New Customer*, activity log, rules checked in the background process, Help section | Still only you. You set up users, modes and managers and test them with *Preview as…* | 7–8.5 d |
+| **v0.7 — Shared reading** | C Read copy + publish | Everybody works on a fresh local copy. An admin edits through *Start editing* / auto-publish, protected by the generation check | **Viewers**, and Users in read-only mode | 3–4 d |
+| **v0.8 — Shared editing** | D Edit slot + E Rollout | Edit slot with waiting, take-over, crash recovery and price-list rescue. Update notice, onboarding kit | **Everybody**, within their rights | 4.5–6 d |
+| **v0.8.1 — Historical import** | F Import wizard | Upload historical price lists for existing customers and products, from a clear Excel template | — | 2–3 d |
+| | | | **Total** | **≈ 16.5–21.5 d** |
+
+```mermaid
+flowchart LR
+    A[A · Foundations] --> B[B · Access rights]
+    A --> C[C · Read copy + publish]
+    B --> R6((v0.6))
+    C --> R7((v0.7))
+    B --> R7
+    C --> D[D · Edit slot]
+    D --> E[E · Rollout]
+    E --> R8((v0.8))
+    R8 --> F[F · Historical import]
+    F --> R81((v0.8.1))
+```
+
+**B and C both depend only on A**, so they can be built in parallel. Releasing B first is recommended: access rights must be in
+place before anybody else opens the tool.
+
+**Decisions this plan builds on** (details in the two studies):
+
+- **Identity:** Windows account + company email, no password.
+- **Roles:** Admin / User / Viewer; unknown users are blocked and can request access.
+- **Customers:**
+  - one or several managers per customer; managers + admins change master data
+  - anyone (Admin/User) can create a customer and becomes its manager
+  - existing customers start as *Managed by PBP*; the old "Managed by" text field is dropped
+- **Activity log:** visible to everybody.
+- **Email templates:** per user.
+- **FX rates:** admins set the shared defaults; anybody can use their own rates for the current session.
+- **SharePoint permissions:** managed outside the app; the app only reminds admins.
+- **Multi-user:** auto-publish about a minute after the last change; take-over after 15 min, release after 30 min; no IT / no Graph
+  API; Windows only.
+- **Go-live:** the central database may be moved or renamed.
+
+---
+
+## 2. Already done (5 Nov 2026)
+
+- **The old Excel import was removed**:
+  - `ipc/migration.ts`, `ImportScreen.tsx`, the `migration:*` channels and their types
+  - the Settings card
+  - the SheetJS (`xlsx`) dependency and its packaging special case (`forge.config.ts`, `vite.main.config.ts`)
+
+  Checked: type check (only the existing, known errors), lint, Vite build, and packaging into a temporary folder.
+- **"Admin Email Addresses" was renamed to "PBP Emails"**: on the Settings card, and as the "PBP" badge/filter and hints on the
+  Emails tab and customer page. The `admin_emails` table keeps its name.
+- **README and CLAUDE.md** were updated accordingly.
+
+---
+
+## 3. In-app Help (built up across releases)
+
+A **Help** entry in the sidebar (all roles), plus "?" links from the relevant controls (Pricing management card, *Start editing*
+dialog, FX popover, import wizard). It is written for users; the files in `docs/` stay the design notes.
+
+**How it's built**
+
+- Topics are Markdown files in `src/renderer/help/` and are bundled into the app, so Help works offline and always matches the
+  installed version. A small Markdown renderer and a search box over the topics.
+- **No duplicated facts:**
+  - The permission matrix is **generated from `shared/permissions.ts`**.
+  - Timeouts and delays (15 min take-over, 30 min idle release, ~60 s auto-publish, ~45 s slot reservation, 30 s refresh) are
+    inserted from the **same constants the code uses**.
+  - So Help can't contradict the app.
+- **Your access** block at the top: your name, role, the customers you manage, and the admins to contact (with a *Request a
+  change* email button).
+
+**Topics by release**
+
+| Release | Topics |
+|---|---|
+| v0.6 | Getting started & your access · Roles & permissions · Pricing management modes · Creating price lists (single / mass) · Customers & New Customer · Emails tab & PBP emails · Analysis & FX rates (session vs default) · Activity log · Backups · *What's new* |
+| v0.7 | Shared database: read mode, *data of …* status, refresh, offline copy, "newer data still syncing", updating the app |
+| v0.8 | Editing: *Start editing*, waiting for the slot, auto-publish, **timeouts**, take-over, crash recovery, conflicts and *Re-apply my price lists* · Onboarding a new user (admins, incl. SharePoint permissions) · Rules of use · FAQ / troubleshooting (OneDrive, SmartScreen) |
+| v0.8.1 | Historical import: template, validation messages, what is never created |
+
+**Effort:** 0.5 d to build the Help screen, then about 0.25 d of writing per release (included in the phase estimates).
+
+---
+
+## 4. Phases
+
+### Phase A — Foundations (1.5–2 d)
+
+- [ ] **Identity**
+  - [ ] Add `main/auth.ts`: Windows account from `os.userInfo()`, email from `whoami /upn`, with the OneDrive account email from
+        the registry as fallback.
+  - [ ] Add an `auth:whoami` channel. A development-only environment variable can pretend to be another user.
+- [ ] **Schema numbering:** use `PRAGMA user_version` as the schema version (existing level = 6); turn `migrateIfNeeded` into
+      numbered steps.
+- [ ] **Make the database shareable** (multi-user study §5.9):
+  - [ ] Stop writing `db_path` into the database.
+  - [ ] Store the logo **inside the database** (old path used as fallback); export uses `addImage({ buffer })`.
+  - [ ] Save **email templates per user** in the local `settings.json` (new `prefs:get` / `prefs:set` channels).
+- [ ] **Customer update:** `customers:update` accepts only an allow-list of fields.
+- [ ] **Release menu:** releases get a minimal app menu; Developer Tools only in development (admin exception added in B).
+- [x] ~~Excel import fix~~ — not needed: the old import was removed (§2).
+
+**Done when:**
+
+- an existing database opens with no data change
+- sending an email doesn't change the database file (date unchanged)
+- the logo appears in exports made from a copy of the database on another PC
+
+### Phase B — Access rights + Help (5.5–6.5 d) → release v0.6
+
+- [ ] **Database:** Migration 7.
+  - [ ] Add `users`, `customers.pricing_mode` (all → `pbp`), `customer_managers`, `price_lists.created_by_user_id` and
+        `audit_log`.
+  - [ ] Drop `customers.price_list_managed_by` and remove it from types, the customer page and `customers:create`.
+  - [ ] Make the current Windows user the first admin.
+- [ ] **`shared/permissions.ts`:** the permission functions used by both sides, plus unit tests (`node:test` via `tsx`, the first
+      automated tests in the repo; add `npm test`).
+- [ ] **A check on every action:** one helper for all channels.
+  - [ ] Each channel declares its rule; anything not declared is refused.
+  - [ ] Users who are not on the list can only use `db:*` / `auth:*`.
+  - [ ] Clear refusal messages.
+- [ ] **Per-customer checks** in:
+  - [ ] `price-lists:create` / `price-lists:delete`
+  - [ ] `customers:update`, hide / restore / permanent delete
+  - [ ] `emails:set-assignments` / `emails:replace` / `emails:remove` (change only allowed customers, report the skipped ones)
+  - [ ] new `customers:create` (the creator becomes manager)
+  - [ ] new `customers:set-access`
+- [ ] **Activity log:** an `audit()` helper called in the same transaction as every change; `audit:list` with filters.
+- [ ] **FX rates:**
+  - [ ] `fx:set` becomes admin-only and saves the **default** rates.
+  - [ ] The Analysis screen keeps **session rates** in memory only (forgotten when the app closes — decided): start from the
+        defaults, *"Your rates (this session)"* label, *Reset to defaults*, and *Save as default rates* for admins.
+- [ ] **PBP Emails:** admins can add, edit and remove entries. The old import was the only way to fill a new database.
+- [ ] **Screens:**
+  - [ ] **Basics:** `AuthContext`, `useCan()`, `LockBadge`, and a route guard that sends unknown users to `/no-access`.
+  - [ ] **No-access screen:** admin contacts, a *Request access* email, and a short help text.
+  - [ ] **Sidebar:** name and role.
+  - [ ] **Settings → Users:**
+    - [ ] add, edit role, deactivate
+    - [ ] the last admin can't be removed
+    - [ ] warning about customers left without an active manager
+    - [ ] **SharePoint reminder** (Edit for Admin/User, Read for Viewer) and an *Open shared folder* button
+    - [ ] **Preview as…**
+  - [ ] **Customers:**
+    - [ ] Customers list: mode badges and a *My customers* filter.
+    - [ ] Customer detail: **Pricing management** card (mode + managers) and a **History** section.
+    - [ ] **New Customer** dialog: SAP ref (required, unique), names, currency, packaging, region, etc.; the creator becomes
+          manager; admins choose the mode.
+  - [ ] **Wizards:**
+    - [ ] Single wizard Step 1: lists only the user's own customers.
+    - [ ] Mass update Step 1: other customers are locked, with the reason.
+  - [ ] **Emails tab:**
+    - [ ] Edit dialog: only allowed customers can be ticked.
+    - [ ] Replace / Remove: change only allowed customers, with an *"x of y"* message.
+  - [ ] **Price lists:**
+    - [ ] Delete only where allowed.
+    - [ ] *"Created by"* shown on the price list page.
+  - [ ] **Read-only for non-admins:** Products, Standard EPL (export stays available), Packaging, Currencies, Units, PBP Emails,
+        logo and backup actions.
+  - [ ] **Settings → Activity:** visible to all, with filters and export to Excel.
+- [ ] **Help v1** (§3): the screen and the v0.6 topics.
+- [ ] **Developer Tools:** allowed for admins only in releases.
+- [ ] **Docs:** README and CLAUDE.md.
+
+**Done when:**
+
+- the permission unit tests pass
+- every row of the permission matrix (access-rights study §3.2) has been checked manually with *Preview as…* for User and Viewer
+- calling a forbidden channel through Developer Tools is refused
+- every change appears in the activity log
+- the matrix shown in Help matches the enforced rules
+
+### Phase C — Read copy + publish (3–4 d) → release v0.7
+
+- [ ] **SharePoint access in one place:** a `CentralStore` interface and a `SyncedFolderStore` implementation that handles:
+  - [ ] download + verify
+  - [ ] manifest
+  - [ ] publishing with the generation check
+  - [ ] spotting OneDrive conflict copies
+- [ ] **Generation number:** stored in the database (Migration 8: `sync_meta`).
+- [ ] **Read mode:**
+  - [ ] Open the local copy with `PRAGMA query_only`; in read mode, "read-only" errors become the message *"Read-only — click
+        Start editing"* (the role check runs first).
+  - [ ] Check for changes every 30 s; refresh automatically or show a banner.
+  - [ ] Offline mode using the last copy.
+  - [ ] Block editing when the database needs a newer app version (`minAppVersion` / schema version).
+- [ ] **Edit mode, first version (Admins only, no edit slot yet):**
+  - [ ] *Start editing* copies the fresh database to a working copy.
+  - [ ] Auto-publish about 60 s after the last change; *Finish editing*.
+  - [ ] A publish that conflicts with someone else's is refused, and the copy is saved to `EPL-Conflicts/`.
+- [ ] **Backups:** one backup at the start of each editing session; none on every open; read-only users never write to
+      SharePoint.
+- [ ] **Setup and status:** a setup screen *"Connect to shared database"* and a status line in the sidebar.
+- [ ] **Help:** the v0.7 topics.
+
+**Done when** (two PCs: you + a colleague):
+
+- the reader sees the admin's changes within about 1–2 minutes
+- the reader never changes the central file
+- a publish on top of a newer central version is refused and the work is kept
+- offline start works from the last copy
+
+### Phase D — Edit slot (3–4 d)
+
+- [ ] **Edit slot:**
+  - [ ] a claim file per editing session in `EPL-EditSlot/`
+  - [ ] heartbeat every 3 min
+  - [ ] about 45 s waiting window; the earliest claim wins
+  - [ ] take-over after 15 min without activity
+  - [ ] automatic publish and release after 30 min without changes
+- [ ] **Waiting:** a waiting dialog, and a Windows notification when the slot is free.
+- [ ] ***Start editing* for Users** as well (role check: Admin or User).
+- [ ] **Recovery:**
+  - [ ] crash recovery (`work\session.json`)
+  - [ ] the `EPL-Conflicts/` folder
+  - [ ] **"Re-apply my price lists"** rescue tool, with a report of other differences
+- [ ] **Help:** the editing topics.
+
+**Done when:** all scenarios in the multi-user study §7 (testing) work on two PCs.
+
+### Phase E — Rollout (1.5–2 d) → release v0.8
+
+- [ ] **Settings → Shared database** card: current editor, last publish, generation, and *Force release* for admins.
+- [ ] **Updates:**
+  - [ ] An `Installer/` folder on SharePoint with `latest.json`; the app shows an update banner.
+  - [ ] The release procedure gains a step: copy the installer to SharePoint.
+- [ ] **Help:** onboarding, rules of use, FAQ / troubleshooting. README and CLAUDE.md.
+- [ ] **Go-live** (§6) and a pilot with one colleague before everyone else.
+
+### Phase F — Historical price-list import (2–3 d) → release v0.8.1
+
+**Goal:** upload past price lists from Excel for **existing** customers and products. It **never creates or changes** customers,
+products, Standard EPL or packaging.
+
+**Who:** Admins, plus Users for the customers they may change (same rule as creating a price list) — decided. It needs the edit
+slot.
+
+1. **Template.** *Download template* builds an Excel file from the database (ExcelJS) with:
+   - **Instructions**
+   - **Price lists:** one row per product line, with the columns *Customer SAP ref · Effective date · Mailing date · Version ·
+     Comments · RIP code · Net price · Unit*. Rows with the same customer + effective date + version form one price list.
+   - **Customers:** the valid references, names and currencies, limited to the customers the person may import for.
+   - **Products:** the valid RIP codes, names and types.
+   - Dropdowns (data validation) wherever possible.
+2. **Upload and check.** Each row gets a clear message, and these block the row:
+   - unknown customer or RIP code (**never created**)
+   - a customer the user may not change
+   - an invalid date or non-numeric price
+   - the same product twice in one list
+   - a price list that already exists (same customer + effective date + version, or same ID); these are skipped
+
+   Two things only give a warning: an unknown unit, and a currency that differs from the customer's (the customer's currency is
+   used).
+
+   A preview groups the rows by price list (ready / skipped / error, number of lines). The user can download an error report
+   (the template plus an *Error* column).
+3. **Import.**
+   - One transaction per price list, with price type *Net Price*.
+   - Product type and name are taken **from the product list**, not the file.
+   - The creator is recorded and the activity log gets a `price_list.import` entry.
+   - The customer's *latest price list* fields are updated **only if** the imported list is newer by effective date: the same
+     "latest" rule as Price Lists, Analysis and delete. Today `price-lists:create` always overwrites them, so importing an old
+     list would otherwise replace the real latest one.
+4. **Result:** a summary with links to the new price lists and the activity log.
+
+Also: a Help topic, and remember the lessons from the old import (CLAUDE.md, "Old Excel import"): keep spaces in names and convert
+Excel dates yourself.
+
+---
+
+## 5. Testing approach
+
+| Level | What | When |
+|---|---|---|
+| Unit tests | `shared/permissions.ts`: every role × mode × action; import row validation | B, F |
+| Preview as… | The permission matrix as seen by a User and a Viewer, without a second Windows account | B |
+| Two-PC tests (you + a colleague) | The read / publish / edit-slot scenarios (multi-user study §7) | C, D |
+| Regression | Single and mass wizards, exports, email drafts, Standard EPL drafts, backups — as admin | Every release |
+| Installer check | Install on a colleague's PC early to catch SmartScreen or AppLocker blocks | Before C |
+| Import | The template round trip; files with unknown customers/products, duplicates, wrong dates, other currencies | F |
+
+---
+
+## 6. Go-live checklist (v0.8)
+
+1. Install v0.8 and open the current database (migrations run).
+2. In **Settings → Users**, add the other PBP admins and the users (by email), and set customer modes and managers. Check
+   everything with *Preview as…*.
+3. Create the central folder on SharePoint (e.g. `EPL-Central/`) and **move/rename** the database there, so old app versions can't
+   find it.
+4. Set SharePoint permissions on that folder (outside the app): **Edit** for Admins and Users, **Read** for Viewers.
+5. Put the installer and `latest.json` in `Installer/`.
+6. Uninstall old versions and remove old database copies.
+7. Onboard colleagues with the checklist in multi-user study §6 (also in Help), starting with one pilot.
+8. During the first weeks, watch the **Activity** log and the **Shared database** card.
+
+---
+
+## 7. Risks
+
+| Risk | Mitigation |
+|---|---|
+| OneDrive on colleagues' PCs is slower or set up differently than expected | Pilot read mode (v0.7) with one colleague before building the edit slot. |
+| Corporate policies block the unsigned installer | Test the install on a colleague's PC early; if needed, ask about code signing. |
+| Missing a button when locking screens for each role | Rules live only in `shared/permissions.ts`; the matrix is checked screen by screen with *Preview as…*. |
+| Few automated tests | Unit tests for permissions and import checks, plus a written manual test script per release. |
+| A new database version meets an old app version | Schema version + `minAppVersion` block editing; the update banner points to the installer. |
+| Help gets out of date | The matrix and timeouts are generated from code; *What's new* is updated with each release. |
+
+---
+
+## 8. Before starting
+
+All decisions are recorded (the last two on 5 Nov 2026):
+
+- **Historical import:** Admins plus Users, for the customers they may change.
+- **Session FX rates:** forgotten when the app closes.
+
+**Next step:** Phase A (Foundations), then Phase B, towards release v0.6.
