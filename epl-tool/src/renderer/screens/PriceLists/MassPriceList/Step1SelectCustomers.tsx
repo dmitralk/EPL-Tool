@@ -6,12 +6,15 @@ import { Card, CardContent, CardHeader, CardTitle } from '../../../components/ui
 import { SearchableSelect } from '../../../components/ui/searchable-select';
 import { formatDate, nextVersion } from '../../../lib/utils';
 import { useMassWizard, type MassSelectedRow } from './index';
+import { useCan } from '../../../lib/auth';
+import { LockBadge } from '../../../components/LockBadge';
 import type { Customer, PriceListHeader, PriceListFull } from '../../../../types';
 
 const REGIONS = ['ASIA', 'EUROPE', 'AMERICA'] as const;
 
 export function Step1SelectCustomers() {
   const navigate = useNavigate();
+  const can = useCan();
   const { state, dispatch } = useMassWizard();
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [allLists, setAllLists] = useState<PriceListHeader[]>([]);
@@ -75,8 +78,10 @@ export function Step1SelectCustomers() {
   }, [visibleCustomers, customerFilter, regionFilter, effectiveFrom, effectiveTo, latestByCustomer]);
 
   const selectableRefs = useMemo(
-    () => new Set(filteredCustomers.filter(c => latestByCustomer.has(c.customer_ref_sap)).map(c => c.customer_ref_sap)),
-    [filteredCustomers, latestByCustomer]
+    () => new Set(filteredCustomers
+      .filter(c => latestByCustomer.has(c.customer_ref_sap) && can.changeCustomer(c))
+      .map(c => c.customer_ref_sap)),
+    [filteredCustomers, latestByCustomer, can]
   );
 
   const selectedInView = [...selected].filter(r => selectableRefs.has(r));
@@ -121,7 +126,7 @@ export function Step1SelectCustomers() {
 
   async function handleNext() {
     const toLoad = visibleCustomers.filter(
-      c => selected.has(c.customer_ref_sap) && latestByCustomer.has(c.customer_ref_sap)
+      c => selected.has(c.customer_ref_sap) && latestByCustomer.has(c.customer_ref_sap) && can.changeCustomer(c)
     );
     setAdvancing(true);
     try {
@@ -276,7 +281,8 @@ export function Step1SelectCustomers() {
               ) : (
                 filteredCustomers.map(customer => {
                   const latest = latestByCustomer.get(customer.customer_ref_sap);
-                  const selectable = !!latest;
+                  const lockReason = can.lockReason(customer);
+                  const selectable = !!latest && !lockReason;
                   const isSelected = selected.has(customer.customer_ref_sap);
                   return (
                     <tr
@@ -301,7 +307,9 @@ export function Step1SelectCustomers() {
                       </td>
                       <td className="px-4 py-2.5 font-medium text-gray-900">
                         {customer.customer_short_name}
-                        {!selectable && (
+                        {lockReason ? (
+                          <LockBadge reason={lockReason} className="ml-2" />
+                        ) : !latest && (
                           <span className="ml-2 text-xs text-gray-400 font-normal">No price list on record</span>
                         )}
                       </td>

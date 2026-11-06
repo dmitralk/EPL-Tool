@@ -7,7 +7,9 @@ import { Input } from '../../components/ui/input';
 import { Badge } from '../../components/ui/badge';
 import { Dialog, ConfirmDialog } from '../../components/ui/dialog';
 import { useToast } from '../../components/ui/toast';
-import type { AdminEmail, Customer, EmailAssignmentChange, EmailUsage } from '../../../types';
+import { LockBadge } from '../../components/LockBadge';
+import { useCan } from '../../lib/auth';
+import type { AdminEmail, Customer, EmailAssignmentChange, EmailBulkResult, EmailUsage } from '../../../types';
 
 type RoleFilter = 'all' | 'to' | 'internal' | 'admin';
 type Assign = { to: boolean; internal: boolean };
@@ -16,6 +18,18 @@ const EMAIL_RE = /^[^\s@;,]+@[^\s@;,]+\.[^\s@;,]+$/;
 const CHIP_LIMIT = 8;
 const NONE: Assign = { to: false, internal: false };
 const norm = (e: string) => e.trim().toLowerCase();
+const plural = (n: number) => `${n} customer${n === 1 ? '' : 's'}`;
+
+// "all 4 customers" or "4 of 7 customers — 3 are managed by others and stay unchanged"
+function partOf(allowed: number, total: number): string {
+  if (allowed === total) return total === 1 ? '1 customer' : `all ${total} customers`;
+  return `${allowed} of ${plural(total)} — ${total - allowed} ${total - allowed === 1 ? 'is' : 'are'} managed by others and stay unchanged`;
+}
+
+function bulkMessage(verb: string, res: EmailBulkResult): string {
+  const skipped = res.skipped?.length ?? 0;
+  return `${verb} ${plural(res.updated ?? 0)}${skipped ? ` (${skipped} skipped: managed by others)` : ''}`;
+}
 
 function chipClass(to: boolean, internal: boolean): string {
   if (to && internal) return 'bg-purple-50 text-purple-700 border-purple-200';
@@ -26,6 +40,7 @@ function chipClass(to: boolean, internal: boolean): string {
 export function EmailsScreen() {
   const navigate = useNavigate();
   const { toast } = useToast();
+  const can = useCan();
 
   const [usages, setUsages] = useState<EmailUsage[]>([]);
   const [adminEmails, setAdminEmails] = useState<AdminEmail[]>([]);
@@ -81,13 +96,14 @@ export function EmailsScreen() {
   }
 
   async function handleRemove(u: EmailUsage) {
-    const res = await api.removeEmail(u.email) as { ok: boolean; updated?: number; error?: string };
-    if (res.ok) toast(`Removed from ${res.updated} customer${res.updated === 1 ? '' : 's'}`, 'success');
+    const res = await api.removeEmail(u.email) as EmailBulkResult;
+    if (res.ok) toast(bulkMessage('Removed from', res), 'success');
     else toast(res.error ?? 'Remove failed', 'error');
     await reload();
   }
 
   const assignUsage = assignTarget ? usages.find(u => norm(u.email) === norm(assignTarget.email)) : undefined;
+  const removeAllowed = removeTarget ? removeTarget.customers.filter(c => can.changeCustomer(c)).length : 0;
 
   return (
     <div className="p-6">
@@ -98,10 +114,12 @@ export function EmailsScreen() {
             {loading ? 'Loading…' : `${usages.length} customer/internal address${usages.length === 1 ? '' : 'es'} · ${adminEmails.length} PBP`}
           </p>
         </div>
-        <Button size="sm" onClick={() => setAssignTarget({ email: '', isNew: true })}>
-          <Plus size={14} className="mr-1.5" />
-          Add Email
-        </Button>
+        {can.isEditor && (
+          <Button size="sm" onClick={() => setAssignTarget({ email: '', isNew: true })}>
+            <Plus size={14} className="mr-1.5" />
+            Add Email
+          </Button>
+        )}
       </div>
 
       <div className="flex items-center gap-3 mb-3 flex-wrap">
@@ -199,15 +217,21 @@ export function EmailsScreen() {
                         </div>
                       </td>
                       <td className="px-4 py-2.5 text-right whitespace-nowrap">
-                        <Button variant="ghost" size="sm" onClick={() => setAssignTarget({ email: u.email, isNew: false })} title="Add / remove customers">
-                          <Pencil size={13} />
-                        </Button>
-                        <Button variant="ghost" size="sm" onClick={() => setReplaceTarget(u)} title="Replace with another address everywhere">
-                          <ArrowRightLeft size={13} />
-                        </Button>
-                        <Button variant="ghost" size="sm" onClick={() => setRemoveTarget(u)} title="Remove from all customers" className="text-red-600 hover:bg-red-50">
-                          <Trash2 size={13} />
-                        </Button>
+                        {!can.isEditor ? null : u.customers.some(c => can.changeCustomer(c)) ? (
+                          <>
+                            <Button variant="ghost" size="sm" onClick={() => setAssignTarget({ email: u.email, isNew: false })} title="Add / remove customers">
+                              <Pencil size={13} />
+                            </Button>
+                            <Button variant="ghost" size="sm" onClick={() => setReplaceTarget(u)} title="Replace with another address everywhere you may change">
+                              <ArrowRightLeft size={13} />
+                            </Button>
+                            <Button variant="ghost" size="sm" onClick={() => setRemoveTarget(u)} title="Remove from all customers you may change" className="text-red-600 hover:bg-red-50">
+                              <Trash2 size={13} />
+                            </Button>
+                          </>
+                        ) : (
+                          <LockBadge reason="Only used by customers you can't change" />
+                        )}
                       </td>
                     </tr>
                   );
@@ -245,7 +269,7 @@ export function EmailsScreen() {
         onConfirm={() => { if (removeTarget) handleRemove(removeTarget); }}
         title="Remove Email"
         description={removeTarget
-          ? `Remove ${removeTarget.email} from ${removeTarget.customers.length} customer${removeTarget.customers.length === 1 ? '' : 's'} (To customer and Internal copy, including hidden customers)?`
+          ? `Remove ${removeTarget.email} from ${partOf(removeAllowed, removeTarget.customers.length)} (To customer and Internal copy, including hidden customers)?`
           : ''}
         confirmLabel="Remove"
       />
@@ -263,6 +287,7 @@ function AssignDialog({ initialEmail, isNew, usage, allUsages, customers, onClos
   onSaved: () => void;
 }) {
   const { toast } = useToast();
+  const can = useCan();
   const [email, setEmail] = useState(initialEmail);
   const [search, setSearch] = useState('');
   const [assignedOnly, setAssignedOnly] = useState(!isNew);
@@ -303,10 +328,11 @@ function AssignDialog({ initialEmail, isNew, usage, allUsages, customers, onClos
   }
 
   function toggleAllVisible(field: keyof Assign) {
-    const allOn = visible.length > 0 && visible.every(c => get(state, c.customer_ref_sap)[field]);
+    const editable = visible.filter(c => can.changeCustomer(c));
+    const allOn = editable.length > 0 && editable.every(c => get(state, c.customer_ref_sap)[field]);
     setState(prev => {
       const next = new Map(prev);
-      for (const c of visible) next.set(c.customer_ref_sap, { ...get(prev, c.customer_ref_sap), [field]: !allOn });
+      for (const c of editable) next.set(c.customer_ref_sap, { ...get(prev, c.customer_ref_sap), [field]: !allOn });
       return next;
     });
   }
@@ -316,17 +342,18 @@ function AssignDialog({ initialEmail, isNew, usage, allUsages, customers, onClos
   async function save() {
     setSaving(true);
     try {
-      const res = await api.setEmailAssignments(email.trim(), changes) as { ok: boolean; updated?: number; error?: string };
+      const res = await api.setEmailAssignments(email.trim(), changes) as EmailBulkResult;
       if (!res.ok) { toast(res.error ?? 'Save failed', 'error'); return; }
-      toast(`Updated ${res.updated} customer${res.updated === 1 ? '' : 's'}`, 'success');
+      toast(bulkMessage('Updated', res), 'success');
       onSaved();
     } finally {
       setSaving(false);
     }
   }
 
-  const allTo = visible.length > 0 && visible.every(c => get(state, c.customer_ref_sap).to);
-  const allInternal = visible.length > 0 && visible.every(c => get(state, c.customer_ref_sap).internal);
+  const editableVisible = visible.filter(c => can.changeCustomer(c));
+  const allTo = editableVisible.length > 0 && editableVisible.every(c => get(state, c.customer_ref_sap).to);
+  const allInternal = editableVisible.length > 0 && editableVisible.every(c => get(state, c.customer_ref_sap).internal);
 
   return (
     <Dialog open onClose={onClose} title={isNew ? 'Add Email to Customers' : 'Edit Customers for Email'} className="max-w-2xl">
@@ -377,17 +404,19 @@ function AssignDialog({ initialEmail, isNew, usage, allUsages, customers, onClos
                 <tr><td colSpan={3} className="text-center py-6 text-gray-400 text-xs">No customers</td></tr>
               ) : visible.map(c => {
                 const a = get(state, c.customer_ref_sap);
+                const lock = can.lockReason(c);
                 return (
-                  <tr key={c.customer_ref_sap} className="hover:bg-gray-50">
+                  <tr key={c.customer_ref_sap} className={lock ? 'bg-gray-50/60' : 'hover:bg-gray-50'}>
                     <td className="px-3 py-1.5">
-                      <span className="text-gray-900">{c.customer_short_name}</span>
+                      <span className={lock ? 'text-gray-500' : 'text-gray-900'}>{c.customer_short_name}</span>
                       <span className="text-[11px] text-gray-400 ml-2">{c.customer_ref_sap}{c.country ? ` · ${c.country}` : ''}</span>
+                      {lock && <LockBadge reason={lock} className="ml-2" />}
                     </td>
                     <td className="px-3 py-1.5 text-center">
-                      <input type="checkbox" checked={a.to} onChange={e => setField(c.customer_ref_sap, 'to', e.target.checked)} />
+                      <input type="checkbox" checked={a.to} disabled={!!lock} onChange={e => setField(c.customer_ref_sap, 'to', e.target.checked)} />
                     </td>
                     <td className="px-3 py-1.5 text-center">
-                      <input type="checkbox" checked={a.internal} onChange={e => setField(c.customer_ref_sap, 'internal', e.target.checked)} />
+                      <input type="checkbox" checked={a.internal} disabled={!!lock} onChange={e => setField(c.customer_ref_sap, 'internal', e.target.checked)} />
                     </td>
                   </tr>
                 );
@@ -415,6 +444,7 @@ function ReplaceDialog({ usage, allUsages, onClose, onSaved }: {
   onSaved: () => void;
 }) {
   const { toast } = useToast();
+  const can = useCan();
   const [value, setValue] = useState(usage.email);
   const [saving, setSaving] = useState(false);
 
@@ -422,13 +452,14 @@ function ReplaceDialog({ usage, allUsages, onClose, onSaved }: {
   const valid = EMAIL_RE.test(trimmed);
   const unchanged = trimmed === usage.email;
   const mergeWith = norm(trimmed) !== norm(usage.email) ? allUsages.find(u => norm(u.email) === norm(trimmed)) : undefined;
+  const allowed = usage.customers.filter(c => can.changeCustomer(c)).length;
 
   async function save() {
     setSaving(true);
     try {
-      const res = await api.replaceEmail(usage.email, trimmed) as { ok: boolean; updated?: number; error?: string };
+      const res = await api.replaceEmail(usage.email, trimmed) as EmailBulkResult;
       if (!res.ok) { toast(res.error ?? 'Replace failed', 'error'); return; }
-      toast(`Replaced in ${res.updated} customer${res.updated === 1 ? '' : 's'}`, 'success');
+      toast(bulkMessage('Replaced in', res), 'success');
       onSaved();
     } finally {
       setSaving(false);
@@ -439,7 +470,7 @@ function ReplaceDialog({ usage, allUsages, onClose, onSaved }: {
     <Dialog open onClose={onClose} title="Replace Email">
       <div className="space-y-3">
         <p className="text-sm text-gray-600">
-          Replaces <strong>{usage.email}</strong> with a new address in all {usage.customers.length} customer{usage.customers.length === 1 ? '' : 's'} using it
+          Replaces <strong>{usage.email}</strong> with a new address in {partOf(allowed, usage.customers.length)} using it
           (To customer and Internal copy, including hidden customers).
         </p>
         <div>

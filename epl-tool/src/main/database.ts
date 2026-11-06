@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import Database from 'better-sqlite3';
 import { createBackup, isHealthy } from './backup';
+import { getResolvedIdentity } from './auth';
 import type { DbOpenError } from '../types';
 
 let db: Database.Database | null = null;
@@ -127,7 +128,52 @@ interface Migration {
   up: (db: Database.Database) => void;
 }
 
-const MIGRATIONS: Migration[] = [];
+// Migration 7 — access rights (access-rights study §5): user list, per-customer pricing mode and managers,
+// price list creator, activity log. Every existing customer starts as 'pbp'; the free-text "Managed by" is dropped.
+const MIGRATION_7_SQL = `
+CREATE TABLE users (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  display_name TEXT NOT NULL,
+  email        TEXT UNIQUE COLLATE NOCASE,
+  account      TEXT UNIQUE COLLATE NOCASE,
+  role         TEXT NOT NULL CHECK (role IN ('admin','user','viewer')),
+  is_active    INTEGER NOT NULL DEFAULT 1,
+  created_at   TEXT DEFAULT (datetime('now')),
+  CHECK (email IS NOT NULL OR account IS NOT NULL)
+);
+
+ALTER TABLE customers ADD COLUMN pricing_mode TEXT NOT NULL DEFAULT 'pbp'
+  CHECK (pricing_mode IN ('open','pbp','managed'));
+ALTER TABLE customers DROP COLUMN price_list_managed_by;
+
+CREATE TABLE customer_managers (
+  customer_ref_sap TEXT NOT NULL REFERENCES customers(customer_ref_sap) ON DELETE CASCADE,
+  user_id          INTEGER NOT NULL REFERENCES users(id),
+  PRIMARY KEY (customer_ref_sap, user_id)
+);
+CREATE INDEX idx_customer_managers_user ON customer_managers(user_id);
+
+ALTER TABLE price_lists ADD COLUMN created_by_user_id INTEGER REFERENCES users(id);
+
+CREATE TABLE audit_log (
+  id               INTEGER PRIMARY KEY AUTOINCREMENT,
+  at               TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+  user_id          INTEGER REFERENCES users(id),
+  user_label       TEXT NOT NULL,
+  action           TEXT NOT NULL,
+  entity_type      TEXT,
+  entity_key       TEXT,
+  customer_ref_sap TEXT,
+  summary          TEXT NOT NULL,
+  details          TEXT
+);
+CREATE INDEX idx_audit_at       ON audit_log(at);
+CREATE INDEX idx_audit_customer ON audit_log(customer_ref_sap);
+`;
+
+const MIGRATIONS: Migration[] = [
+  { version: 7, up: db => db.exec(MIGRATION_7_SQL) },
+];
 
 export const SCHEMA_VERSION = MIGRATIONS.reduce((v, m) => Math.max(v, m.version), LEGACY_SCHEMA_VERSION);
 
@@ -183,6 +229,28 @@ export function openDatabase(filePath: string, opts: { skipBackup?: boolean; cre
   db.exec(SCHEMA_SQL);
   db.exec(SEED_SQL);
   migrate(db);
+  bootstrapFirstAdmin(db);
+}
+
+// A database without any user (just upgraded by Migration 7, or new) makes the person opening it the first admin.
+// Callers must await getIdentity() before openDatabase so the identity is known here.
+function bootstrapFirstAdmin(db: Database.Database): void {
+  if ((db.prepare('SELECT COUNT(*) AS n FROM users').get() as { n: number }).n > 0) return;
+  const id = getResolvedIdentity();
+  if (!id || (!id.account && !id.email)) return;
+  const name = id.displayNameHint || id.account || id.email || 'Admin';
+  db.transaction(() => {
+    const userId = db.prepare(`INSERT INTO users (display_name, email, account, role) VALUES (?, ?, ?, 'admin')`)
+      .run(name, id.email, id.account).lastInsertRowid;
+    db.prepare(`
+      INSERT INTO audit_log (user_id, user_label, action, entity_type, entity_key, summary)
+      VALUES (?, ?, 'user.bootstrap', 'user', ?, ?)
+    `).run(userId, userLabel(name, id.account), String(userId), `${name} became the first admin (user list created)`);
+  })();
+}
+
+export function userLabel(displayName: string, account: string | null): string {
+  return account ? `${displayName} (${account})` : displayName;
 }
 
 function migrate(db: Database.Database): void {

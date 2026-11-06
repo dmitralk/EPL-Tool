@@ -1,11 +1,16 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Download, Search, Filter, DollarSign, SlidersHorizontal } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Download, Search, Filter, DollarSign, SlidersHorizontal, HelpCircle } from 'lucide-react';
 import { api } from '../../lib/ipc';
+import { useCan } from '../../lib/auth';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { useToast } from '../../components/ui/toast';
-import { absDelta, pctDelta, fmtNum, priceTypeLabel, formatDate } from '../../lib/utils';
+import { absDelta, pctDelta, fmtNum, priceTypeLabel, formatDate, ipcErrorMessage } from '../../lib/utils';
 import type { AnalysisRow, FxRate, StandardEplVersion } from '../../../types';
+
+// Rates changed on this screen live only in memory: kept while the app is open, forgotten when it closes (decided).
+let sessionFxRates: Record<string, number> | null = null;
 
 type CurrencyMode = 'USD' | 'EUR' | 'ALL';
 
@@ -83,7 +88,9 @@ export function AnalysisScreen() {
   const [productPickerSearch, setProductPickerSearch] = useState('');
 
   const [fxRates, setFxRates] = useState<Record<string, number>>({});
+  const [defaultFx, setDefaultFx] = useState<Record<string, number>>({});
   const [showFx, setShowFx] = useState(false);
+  const can = useCan();
 
   const [visibleCols, setVisibleCols] = useState<Record<ColKey, boolean>>(loadVisibility);
   const [showColumnPicker, setShowColumnPicker] = useState(false);
@@ -108,7 +115,8 @@ export function AnalysisScreen() {
       setComparisonVersionId(latestPub?.version_id ?? vList[0]?.version_id ?? null);
       const map: Record<string, number> = {};
       for (const r of fx as FxRate[]) map[r.currency_code] = r.rate_to_usd;
-      setFxRates(map);
+      setDefaultFx(map);
+      setFxRates(sessionFxRates ?? map);
     });
   }, []);
 
@@ -191,9 +199,34 @@ export function AnalysisScreen() {
 
   async function handleSetFx(code: string, value: string) {
     const rate = parseFloat(value);
-    setFxRates(prev => ({ ...prev, [code]: isNaN(rate) ? prev[code] : rate }));
-    if (!isNaN(rate) && rate > 0) await api.setFxRate(code, rate);
+    setFxRates(prev => {
+      const next = { ...prev, [code]: isNaN(rate) ? prev[code] : rate };
+      sessionFxRates = next;
+      return next;
+    });
   }
+
+  function resetFx() {
+    sessionFxRates = null;
+    setFxRates(defaultFx);
+  }
+
+  async function saveDefaultFx() {
+    const rates = Object.entries(fxRates)
+      .filter(([, r]) => isFinite(r) && r > 0)
+      .map(([currency_code, rate_to_usd]) => ({ currency_code, rate_to_usd }));
+    try {
+      const res = await api.setDefaultFxRates(rates) as { ok: boolean; error?: string };
+      if (!res.ok) { toast(res.error ?? 'Saving the default rates failed', 'error'); return; }
+      setDefaultFx(fxRates);
+      sessionFxRates = null;
+      toast('Default FX rates saved for everybody', 'success');
+    } catch (err) {
+      toast(ipcErrorMessage(err), 'error');
+    }
+  }
+
+  const fxIsSession = Object.keys({ ...fxRates, ...defaultFx }).some(k => fxRates[k] !== defaultFx[k]);
 
   async function handleExport() {
     if (display.length === 0) return;
@@ -347,13 +380,21 @@ export function AnalysisScreen() {
           <div className="relative">
             <Button variant="outline" size="sm" onClick={() => setShowFx(v => !v)}>
               <DollarSign size={14} className="mr-1.5" />
-              FX rates
+              FX rates{fxIsSession && <span className="ml-1.5 text-[10px] font-semibold text-amber-600">· yours</span>}
             </Button>
             {showFx && (
               <>
                 <div className="fixed inset-0 z-10" onClick={() => setShowFx(false)} />
-                <div className="absolute left-0 z-20 mt-1 w-72 bg-white border border-gray-200 rounded-lg shadow-lg p-3">
-                  <p className="text-xs text-gray-500 mb-2">USD per 1 unit of currency. Used only for this view.</p>
+                <div className="absolute left-0 z-20 mt-1 w-80 bg-white border border-gray-200 rounded-lg shadow-lg p-3">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className={`text-xs font-semibold ${fxIsSession ? 'text-amber-700' : 'text-gray-700'}`}>
+                      {fxIsSession ? 'Your rates (this session)' : 'Default rates'}
+                    </span>
+                    <Link to="/help/analysis-fx" className="text-gray-400 hover:text-blue-600" title="About FX rates"><HelpCircle size={13} /></Link>
+                  </div>
+                  <p className="text-xs text-gray-500 mb-2">
+                    USD per 1 unit of currency, used only for this view. Your changes are kept until EPL Tool is closed and are not saved.
+                  </p>
                   {nonUsdCurrencies.length === 0 ? (
                     <p className="text-xs text-gray-400 py-2 text-center">Only USD in the data.</p>
                   ) : nonUsdCurrencies.map(code => (
@@ -367,9 +408,18 @@ export function AnalysisScreen() {
                         className="text-sm"
                         placeholder="1.00"
                       />
+                      {defaultFx[code] !== undefined && fxRates[code] !== defaultFx[code] && (
+                        <span className="text-[10px] text-gray-400 whitespace-nowrap" title="Default rate">def. {defaultFx[code]}</span>
+                      )}
                     </div>
                   ))}
-                  <div className="flex justify-end pt-1">
+                  <div className="flex items-center justify-end gap-2 pt-1">
+                    {fxIsSession && <Button size="sm" variant="ghost" onClick={resetFx}>Reset to defaults</Button>}
+                    {fxIsSession && can.referenceData && (
+                      <Button size="sm" variant="outline" onClick={saveDefaultFx} title="Make these the shared default rates for everybody">
+                        Save as default rates
+                      </Button>
+                    )}
                     <Button size="sm" onClick={() => setShowFx(false)}>Done</Button>
                   </div>
                 </div>

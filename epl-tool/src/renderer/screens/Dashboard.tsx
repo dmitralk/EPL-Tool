@@ -7,6 +7,7 @@ import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
 import { useToast } from '../components/ui/toast';
 import { formatDate, priceTypeLabel } from '../lib/utils';
+import { useCan } from '../lib/auth';
 import type { PriceListHeader } from '../../types';
 
 interface Stats {
@@ -18,6 +19,7 @@ interface Stats {
 export function Dashboard() {
   const navigate = useNavigate();
   const { toast } = useToast();
+  const can = useCan();
   const [stats, setStats] = useState<Stats>({ total: 0, thisYear: 0, last: null });
   const [recentLists, setRecentLists] = useState<PriceListHeader[]>([]);
   const [customerCount, setCustomerCount] = useState(0);
@@ -49,10 +51,12 @@ export function Dashboard() {
           <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
           <p className="text-gray-500 text-sm mt-0.5">Overview of your price list activity</p>
         </div>
-        <Button onClick={() => navigate('/price-lists/new')} className="gap-2">
-          <Plus size={15} />
-          New Price List
-        </Button>
+        {can.isEditor && (
+          <Button onClick={() => navigate('/price-lists/new')} className="gap-2">
+            <Plus size={15} />
+            New Price List
+          </Button>
+        )}
       </div>
 
       {/* Stats cards */}

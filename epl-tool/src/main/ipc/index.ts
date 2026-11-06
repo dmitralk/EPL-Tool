@@ -11,10 +11,14 @@ import { registerEmailHandlers } from './emails';
 import { registerBackupHandlers } from './backup';
 import { registerAuthHandlers } from './auth';
 import { registerPrefsHandlers } from './prefs';
+import { registerUserHandlers } from './users';
+import { registerAuditHandlers } from './audit';
 
 export function registerAllIpcHandlers() {
   registerAuthHandlers();
   registerPrefsHandlers();
+  registerUserHandlers();
+  registerAuditHandlers();
   registerCustomerHandlers();
   registerProductHandlers();
   registerPriceListHandlers();

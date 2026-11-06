@@ -1,6 +1,6 @@
 // The only fields customers:update accepts. The rest are keys (id, customer_ref_sap), derived from price lists
 // (effective, mailing_date, last_price_list_*), not edited per customer (email_pbp_*), or have their own channel
-// (is_deleted → customers:soft-delete / customers:restore).
+// (is_deleted → customers:soft-delete / customers:restore; pricing_mode / managers → customers:set-access).
 export const CUSTOMER_EDITABLE_FIELDS = [
   'customer_short_name',
   'customer_full_name',
@@ -13,7 +13,6 @@ export const CUSTOMER_EDITABLE_FIELDS = [
   'zone',
   'main_supply_region',
   'customer_spoc',
-  'price_list_managed_by',
   'email_to_customer',
   'email_internal_copy',
 ] as const;

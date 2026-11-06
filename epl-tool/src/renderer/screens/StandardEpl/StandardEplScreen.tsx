@@ -8,12 +8,15 @@ import { useToast } from '../../components/ui/toast';
 import { StandardEplComparisonPanel } from './StandardEplComparisonPanel';
 import type { CombinedEplRow, PackagingRow, PackagingVersion, Product, StandardEplVersion, Unit } from '../../../types';
 import { todayISO } from '../../lib/utils';
+import { useCan } from '../../lib/auth';
+import { LockBadge } from '../../components/LockBadge';
 
 type EditingCell = { id: number; currency: 'USD' | 'EUR'; field: 'price' | 'unit' };
 type Tab = 'prices' | 'packaging';
 
 export function StandardEplScreen() {
   const { toast } = useToast();
+  const can = useCan();
   const [tab, setTab] = useState<Tab>('prices');
 
   // Version management
@@ -73,6 +76,9 @@ export function StandardEplScreen() {
   const draftVersion = versions.find(v => v.status === 'draft') ?? null;
   const selectedVersion = versions.find(v => v.version_id === selectedVersionId) ?? null;
   const isDraftSelected = selectedVersion?.status === 'draft';
+  // Only admins edit the Standard EPL; everybody can view, compare and export.
+  const canEdit = can.referenceData;
+  const editable = isDraftSelected && canEdit;
   const publishedVersions = versions.filter(v => v.status === 'published');
   const latestPublishedId = publishedVersions[0]?.version_id ?? null;
   const defaultUnit = units[0]?.name ?? '100 KG';
@@ -209,7 +215,7 @@ export function StandardEplScreen() {
 
   // --- Price editing (draft only) ---
   function startEdit(row: CombinedEplRow, currency: 'USD' | 'EUR', field: 'price' | 'unit') {
-    if (!isDraftSelected) return;
+    if (!editable) return;
     const current = currency === 'USD'
       ? (field === 'price' ? row.usd_price : row.usd_unit)
       : (field === 'price' ? row.eur_price : row.eur_unit);
@@ -223,7 +229,7 @@ export function StandardEplScreen() {
   }
 
   async function commitEdit(row: CombinedEplRow, valueOverride?: string) {
-    if (!editing || !isDraftSelected || !selectedVersionId) return;
+    if (!editing || !editable || !selectedVersionId) return;
     const { currency, field } = editing;
     const value = valueOverride ?? draftValue;
     const existingId = currency === 'USD' ? row.usd_id : row.eur_id;
@@ -263,7 +269,7 @@ export function StandardEplScreen() {
   }
 
   async function handleDeleteRow(ripCode: string) {
-    if (!isDraftSelected || !selectedVersionId) return;
+    if (!editable || !selectedVersionId) return;
     try {
       await api.deleteStandardEplRow({ versionId: selectedVersionId, ripCode });
       await reloadRows();
@@ -359,7 +365,7 @@ export function StandardEplScreen() {
     const price = currency === 'USD' ? row.usd_price : row.eur_price;
     const unit = currency === 'USD' ? row.usd_unit : row.eur_unit;
 
-    if (!isDraftSelected) {
+    if (!editable) {
       return (
         <div className="flex items-center gap-2">
           <span className={`text-sm font-mono w-24 text-right px-2 py-0.5 ${price !== null ? 'text-gray-900' : 'text-gray-300 italic'}`}>
@@ -510,7 +516,7 @@ export function StandardEplScreen() {
                   Compare versions
                 </Button>
               )}
-              {isDraftSelected ? (
+              {!canEdit ? null : isDraftSelected ? (
                 <>
                   <Button size="sm" onClick={openPublish}>
                     Publish
@@ -539,7 +545,7 @@ export function StandardEplScreen() {
           {/* Draft info bar */}
           {isDraftSelected && (
             <div className="flex items-center gap-2 mb-3 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
-              <span className="font-medium">Editing Draft:</span>
+              <span className="font-medium">{canEdit ? 'Editing Draft:' : 'Draft (not published yet):'}</span>
               <span>{draftVersion?.version_name}</span>
               {draftVersion?.notes && (
                 <span className="text-amber-600 text-xs ml-2 italic">— {draftVersion.notes}</span>
@@ -548,7 +554,11 @@ export function StandardEplScreen() {
           )}
 
           {/* Published version note */}
-          {!isDraftSelected && (
+          {!canEdit ? (
+            <div className="flex items-center gap-2 mb-3 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-500">
+              <LockBadge reason="View only" /> Only admins change the Standard EPL. You can view, compare, export and email it.
+            </div>
+          ) : !isDraftSelected && (
             <div className="flex items-center gap-2 mb-3 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-500">
               <span>Read-only —</span>
               {draftVersion
@@ -601,7 +611,7 @@ export function StandardEplScreen() {
               <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
               <Input placeholder="Search products…" value={search} onChange={e => setSearch(e.target.value)} className="pl-9" />
             </div>
-            {isDraftSelected && (
+            {editable && (
               <Button variant="outline" size="sm" onClick={openAddProduct}>
                 <Plus size={14} className="mr-1.5" />
                 Add Product
@@ -619,13 +629,13 @@ export function StandardEplScreen() {
                   <th className="text-left px-4 py-3 font-medium text-gray-600">Product Name</th>
                   <th className="text-left px-4 py-3 font-medium text-gray-600">USD Price / Unit</th>
                   <th className="text-left px-4 py-3 font-medium text-gray-600">EUR Price / Unit</th>
-                  {isDraftSelected && <th className="w-10 px-2 py-3" />}
+                  {editable && <th className="w-10 px-2 py-3" />}
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {filtered.length === 0 ? (
                   <tr>
-                    <td colSpan={isDraftSelected ? 6 : 5} className="text-center py-10 text-gray-400">
+                    <td colSpan={editable ? 6 : 5} className="text-center py-10 text-gray-400">
                       No products found
                     </td>
                   </tr>
@@ -637,7 +647,7 @@ export function StandardEplScreen() {
                       <td className="px-4 py-2 text-gray-900">{row.product_name}</td>
                       <td className="px-4 py-2">{PriceCell({ row, currency: 'USD' })}</td>
                       <td className="px-4 py-2">{PriceCell({ row, currency: 'EUR' })}</td>
-                      {isDraftSelected && (
+                      {editable && (
                         <td className="px-2 py-2">
                           <button
                             className="opacity-0 group-hover:opacity-100 p-1 text-gray-400 hover:text-red-600 transition-all rounded"

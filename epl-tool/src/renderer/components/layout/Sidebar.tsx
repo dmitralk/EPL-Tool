@@ -1,7 +1,9 @@
 import { NavLink, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, FileText, Users, Settings, Database, Package, BookOpen, BarChart3, Mail } from 'lucide-react';
+import { LayoutDashboard, FileText, Users, Settings, Database, Package, BookOpen, BarChart3, Mail, HelpCircle, UserCircle } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { api } from '../../lib/ipc';
+import { useAuth } from '../../lib/auth';
+import { ROLE_LABELS } from '../../../shared/permissions';
 
 const navItems = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
@@ -14,17 +16,20 @@ const navItems = [
 ];
 
 const bottomItems = [
+  { to: '/help', label: 'Help', icon: HelpCircle },
   { to: '/settings', label: 'Settings', icon: Settings },
 ];
 
 export function Sidebar() {
   const navigate = useNavigate();
+  const { state, refresh } = useAuth();
 
   async function handleChangeDb() {
     const filePath = await api.dbSelectFile();
     if (!filePath) return;
     const result = await api.dbOpen(filePath);
-    navigate(result.ok ? '/' : '/setup');
+    const next = await refresh();
+    navigate(!result.ok || !next.dbOpen ? '/setup' : next.user ? '/' : '/no-access');
   }
 
   return (
@@ -83,6 +88,18 @@ export function Sidebar() {
             {label}
           </NavLink>
         ))}
+        {state?.user && (
+          <div className="flex items-center gap-2 px-3 pt-3 mt-2 border-t border-gray-800 text-xs" title={state.realUser?.email ?? ''}>
+            <UserCircle size={16} className="text-gray-400 shrink-0" />
+            <div className="min-w-0">
+              <div className="text-gray-200 truncate">{state.realUser?.display_name ?? state.user.display_name}</div>
+              <div className="text-gray-500">
+                {ROLE_LABELS[state.realUser?.role ?? state.user.role]}
+                {state.previewing && <span className="text-purple-300"> · as {state.user.display_name}</span>}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </aside>
   );

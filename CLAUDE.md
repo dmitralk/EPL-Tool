@@ -40,14 +40,20 @@ This file is read automatically by Claude Code at conversation start. It gives f
 │   │   │   ├── database.ts ← better-sqlite3 connection, schema DDL, journal/FK pragmas, integrity check + startup backup, schema versioning (user_version)
 │   │   │   ├── backup.ts   ← backup create/list/prune/verify helpers (EPL-Backups folder next to the DB)
 │   │   │   ├── auth.ts     ← Windows identity: account (os.userInfo), email (whoami /upn → OneDrive registry fallback), dev override
+│   │   │   ├── currentUser.ts ← user-list lookup (account, then email), effective actor (with Preview as…), audit label, AuthState
+│   │   │   ├── customerAccess.ts ← customer managers, requireCustomerChange / requireCustomerHide (per-customer refusals)
+│   │   │   ├── audit.ts    ← audit(db, entry) — call inside the same transaction as the change; diffFields()
 │   │   │   ├── localSettings.ts ← per-PC settings.json (lastDbPath + per-user prefs); never in the DB
 │   │   │   ├── logo.ts     ← logo stored in the DB as a data URL (app_settings.logo_data_url)
-│   │   │   ├── menu.ts     ← release menu policy (none on Windows) + DevTools guard
-│   │   │   ├── ipc/        ← all IPC handlers (entity:action naming)
+│   │   │   ├── menu.ts     ← release menu policy (none on Windows) + DevTools guard (admins only in releases)
+│   │   │   ├── ipc/        ← all IPC handlers (entity:action naming), each registered via guard.ts handle()
 │   │   │   │   ├── index.ts          ← registers all handlers
-│   │   │   │   ├── auth.ts           ← auth:whoami
+│   │   │   │   ├── guard.ts          ← handle(channel, rule, fn): rule public/viewer/editor/admin; ipcMain.handle is disabled
+│   │   │   │   ├── auth.ts           ← auth:whoami, auth:me, auth:preview-start/stop, auth:request-access
+│   │   │   │   ├── users.ts          ← users:list/create/update (last-admin guard)
+│   │   │   │   ├── audit.ts          ← audit:list (filters + facets), audit:export-xlsx
 │   │   │   │   ├── prefs.ts          ← prefs:get / prefs:set (allow-listed keys, local settings.json)
-│   │   │   │   ├── customers.ts      ← customers:update accepts only shared/customerFields.ts fields
+│   │   │   │   ├── customers.ts      ← list/get/create/update (allow-list)/set-access/hide/restore/delete-permanent, per-customer checks
 │   │   │   │   ├── products.ts       ← cascades name/type sync to standard_epl on update
 │   │   │   │   ├── priceLists.ts     ← create (duplicate guard), delete (customer last-list fallback)
 │   │   │   │   ├── standardEpl.ts    ← versioned EPL: list-versions, create-draft, publish-draft, delete-draft, delete-row, list-combined, upsert
@@ -63,33 +69,48 @@ This file is read automatically by Claude Code at conversation start. It gives f
 │   │   ├── preload/
 │   │   │   └── index.ts    ← contextBridge; all API methods exposed to renderer
 │   │   ├── shared/         ← plain modules imported by BOTH main and renderer (no Electron/Node APIs)
+│   │   │   ├── permissions.ts ← THE access rules (roles × pricing modes), refusal texts, generated PERMISSION_MATRIX for Help
+│   │   │   ├── permissions.test.ts ← node:test unit tests (`npm test`)
 │   │   │   ├── customerFields.ts ← CUSTOMER_EDITABLE_FIELDS allow-list + required fields
 │   │   │   └── prefs.ts    ← PREF_KEYS allow-list for prefs:get/set
 │   │   ├── types/
 │   │   │   └── index.ts    ← all shared TypeScript interfaces
 │   │   └── renderer/
 │   │       ├── main.tsx
-│   │       ├── App.tsx     ← React Router, DbGuard, all routes
+│   │       ├── App.tsx     ← React Router, AuthProvider, AccessGuard (no DB → /setup, not on user list → /no-access), all routes
+│   │       ├── help/       ← Help topics as Markdown (NN-topic.md) + index.ts (?raw imports, display order)
 │   │       ├── lib/
 │   │       │   ├── ipc.ts  ← typed wrapper: `export const api = window.api`
+│   │       │   ├── auth.tsx  ← AuthProvider (auth:me), useAuth(), useCan() — mirrors shared/permissions.ts for UI gating
 │   │       │   └── utils.ts  ← cn, ipcErrorMessage, formatDate, formatCurrency, todayISO, nextVersion, priceTypeLabel, fmtNum/absDelta/pctDelta (shared delta helpers)
 │   │       ├── components/
 │   │       │   ├── ui/     ← button, input, select, dialog, card, badge, toast, searchable-select (slicer-style dropdown)
-│   │       │   ├── layout/ ← AppShell.tsx, Sidebar.tsx
+│   │       │   ├── layout/ ← AppShell.tsx (Preview-as banner), Sidebar.tsx (user + role, Help entry)
+│   │       │   ├── LockBadge.tsx          ← lock + reason ("Managed by PBP — view only"), AdminOnlyNote
+│   │       │   ├── ModeBadge.tsx          ← pricing mode badge
+│   │       │   ├── Markdown.tsx           ← tiny Markdown renderer for Help ({{BLOCK}} lines = generated content)
 │   │       │   ├── BackupPanel.tsx        ← backup list / back up now / open folder / restore (Settings + damaged-DB screen)
 │   │       │   └── EmailComposeDialog.tsx ← shared subject/body compose step used by every Email button
 │   │       └── screens/
 │   │           ├── DatabaseSelector.tsx        ← route /setup: open/create DB; shows restore UI when the DB failed its integrity check
+│   │           ├── NoAccessScreen.tsx          ← route /no-access: identity, admin contacts, Request access, Try again, open another DB
+│   │           ├── Help/HelpScreen.tsx         ← routes /help, /help/:topic: topic list + search, "Your access" block, generated roles/matrix
 │   │           ├── Dashboard.tsx               ← stats cards, recent price lists table; "+ New Price List" routes to /price-lists/new (gateway)
 │   │           ├── Settings/
-│   │           │   ├── SettingsScreen.tsx      ← DB path, Backups card, logo, PBP Emails card, units, packaging/currencies/hidden customers links
-│   │           │   ├── DeletedCustomersScreen.tsx ← lists soft-deleted customers; Restore or Delete Permanently per row
+│   │           │   ├── SettingsScreen.tsx      ← DB path, Users + Activity links, Backups, logo, PBP Emails (admins add/edit/remove), units, packaging/currencies/hidden customers links; admin-only cards locked for others
+│   │           │   ├── UsersScreen.tsx         ← route /settings/users (admins): add/edit/deactivate, SharePoint reminder + Open shared folder, customers without active manager, Preview as…
+│   │           │   ├── ActivityScreen.tsx      ← route /settings/activity (everybody): filters (user, area/action, customer, dates, text), details, Excel export
+│   │           │   ├── DeletedCustomersScreen.tsx ← lists soft-deleted customers; Restore or Delete Permanently per row (admins)
 │   │           │   ├── CurrenciesScreen.tsx    ← route /settings/currencies: main currencies (USD/EUR, read-only) + other currencies (add/remove)
 │   │           │   ├── PackagingScreen.tsx     ← route /settings/packaging: version list with row/customer counts; New Version dialog (clone-from support); Delete blocked if customers assigned
 │   │           │   └── PackagingVersionScreen.tsx ← route /settings/packaging/:version: per-row inline editor (type, name, price, currency, unit, sort); Add Row dialog; label rows (null price) shown as italic "label"
 │   │           ├── Customers/
-│   │           │   ├── CustomersScreen.tsx     ← active customers; searchable multi-select customer filter (name / SAP / full name)
-│   │           │   ├── CustomerDetail.tsx      ← inline editing, price list table, Hide Customer button; Packaging field is a dropdown (fetches packaging:list-versions)
+│   │           │   ├── CustomersScreen.tsx     ← active customers; searchable multi-select filter, "My customers", mode badges, New Customer (Admins/Users)
+│   │           │   ├── CustomerDetail.tsx      ← inline editing (allowed fields only, Edit/Hide gated), price list table, Pricing management card, History; Packaging field is a dropdown
+│   │           │   ├── NewCustomerDialog.tsx   ← SAP ref + names + currency + packaging required; admins choose the mode, users manage what they create
+│   │           │   ├── PricingManagementCard.tsx ← mode + managers (customers:set-access), warning before losing rights
+│   │           │   ├── ManagersPicker.tsx      ← multi-select of active Admins/Users
+│   │           │   ├── CustomerHistory.tsx     ← the customer's audit_log entries
 │   │           │   └── ComparisonPanel.tsx     ← side-by-side price list diff
 │   │           ├── Emails/EmailsScreen.tsx     ← route /emails (nav after Customers): one row per address with its customers; bulk edit/replace/remove
 │   │           ├── PriceLists/
@@ -144,7 +165,11 @@ app_settings         -- key/value store: logo_data_url (logo as data:image/...;b
                      -- email_subject_template / email_body_template (templates are per user in settings.json now), standard_epl_editable
 units                -- configurable unit list; seeded with '100 KG', '100 L' on DB open
 currencies           -- currency list; seeded with USD (is_main=1) and EUR (is_main=1); other currencies (is_main=0) can be added for one-off price lists
-fx_rates             -- display-only FX rates for the Analysis "All" mode; PK currency_code, rate_to_usd (USD per 1 unit); seeded USD=1, EUR=1.08, GBP=1.27; editable on the Analysis screen; NEVER used for actual pricing/stored data
+fx_rates             -- display-only FX rates for the Analysis "All" mode = the shared DEFAULT rates (admins, fx:set-defaults); PK currency_code, rate_to_usd (USD per 1 unit); seeded USD=1, EUR=1.08, GBP=1.27; NEVER used for actual pricing/stored data
+users                -- (Migration 7) display_name, email UNIQUE NOCASE, account UNIQUE NOCASE (Windows account, filled at first sign-in), role IN ('admin','user','viewer'), is_active; never deleted, only deactivated
+customer_managers    -- (Migration 7) (customer_ref_sap → customers ON DELETE CASCADE, user_id → users); only meaningful when customers.pricing_mode = 'managed'
+audit_log            -- (Migration 7) at (ISO UTC), user_id (the real person), user_label snapshot ("Name (account)" or "… as Previewed"), action ('customer.update', …), entity_type/key, customer_ref_sap (for History), summary, details JSON
+-- also in Migration 7: customers.pricing_mode IN ('open','pbp','managed') (existing → 'pbp'); customers.price_list_managed_by DROPPED; price_lists.created_by_user_id → users (NULL for older lists)
 ```
 
 Pragmas set on every open: `journal_mode=DELETE`, `foreign_keys=ON`, `synchronous=FULL`. **Do not switch back to WAL**: the separate `-wal` file gets synced out of step with the `.db` by OneDrive/SharePoint, which caused past corruption. Existing WAL databases are converted automatically on open.
@@ -157,7 +182,9 @@ Pragmas set on every open: `journal_mode=DELETE`, `foreign_keys=ON`, `synchronou
 
 Schema runs `CREATE TABLE IF NOT EXISTS` so opening an existing DB is safe. Units and currencies are seeded with `INSERT … WHERE NOT EXISTS`, `fx_rates` with `INSERT OR IGNORE` (so `fx_rates` needs no numbered migration — it appears automatically on next DB open).
 
-**Schema version = `PRAGMA user_version`** (`SCHEMA_VERSION` exported from database.ts). Databases from before the numbering have `user_version = 0`: they run the detection-based legacy Migrations 1–6 below once and are stamped **6**. `SCHEMA_SQL` / `SEED_SQL` are **frozen at that v6 baseline** — every later schema change must be a numbered entry in the `MIGRATIONS` array (`{ version: 7, up(db) }`, …), never an edit of `SCHEMA_SQL`. The runner applies pending steps in order, each in one transaction together with `user_version = N` (so a failed step leaves no trace), with `foreign_keys = OFF` and `legacy_alter_table = ON` set around it (they can't change inside a transaction). No numbered migrations exist yet; Migration 7 (access rights) is the first.
+**Schema version = `PRAGMA user_version`** (`SCHEMA_VERSION` exported from database.ts). Databases from before the numbering have `user_version = 0`: they run the detection-based legacy Migrations 1–6 below once and are stamped **6**. `SCHEMA_SQL` / `SEED_SQL` are **frozen at that v6 baseline** — every later schema change must be a numbered entry in the `MIGRATIONS` array (`{ version: 7, up(db) }`, …), never an edit of `SCHEMA_SQL`. The runner applies pending steps in order, each in one transaction together with `user_version = N` (so a failed step leaves no trace), with `foreign_keys = OFF` and `legacy_alter_table = ON` set around it (they can't change inside a transaction).
+
+**Migration 7 (access rights, `MIGRATION_7_SQL`)** — creates `users`, `customer_managers`, `audit_log` (+ indexes), adds `customers.pricing_mode` (default `'pbp'`) and `price_lists.created_by_user_id`, and `DROP COLUMN customers.price_list_managed_by`. Data otherwise untouched (verified on copies of both DB files). **First-admin bootstrap** (`bootstrapFirstAdmin`, after the migrations on every open): if `users` is empty and the Windows identity is known, the person opening the DB becomes the first admin (`user.bootstrap` audit entry) — also for brand-new databases. Callers must `await getIdentity()` before `openDatabase` (startup, `db:open`, `db:create` do).
 
 **Legacy migrations (`runLegacyMigrations` in database.ts)** — only for databases below version 6. Contains six sequential migrations:
 
@@ -189,37 +216,55 @@ Schema runs `CREATE TABLE IF NOT EXISTS` so opening an existing DB is safe. Unit
 
 All channels follow `entity:action`. The preload (`src/preload/index.ts`) exposes every channel as a typed method on `window.api`. The renderer only ever calls `api.someMethod()` — never `ipcRenderer` directly.
 
-**Channel list (grouped):**
+**Channel list (grouped, with the guard rule: P = public, V = viewer, E = editor, A = admin):**
 ```
-auth:whoami
-prefs:get, prefs:set
-db:select-file, db:open, db:create, db:get-path, db:is-open, db:last-open-error
-backup:list, backup:create, backup:open-folder, backup:restore
-customers:list, customers:get, customers:create, customers:update, customers:delete
-customers:soft-delete, customers:restore, customers:list-deleted, customers:delete-permanent
-products:list, products:create, products:update, products:delete
-standard-epl:list-versions, standard-epl:list, standard-epl:list-combined, standard-epl:update-price, standard-epl:upsert
-standard-epl:create-draft, standard-epl:publish-draft, standard-epl:delete-draft, standard-epl:update-draft-meta, standard-epl:delete-row
-packaging:list, packaging:update-price, packaging:list-versions, packaging:create-version, packaging:delete-version, packaging:add-row, packaging:update-row, packaging:delete-row
-price-lists:list, price-lists:get, price-lists:create, price-lists:delete, price-lists:stats
-export:xlsx, export:xlsx-bulk, export:open-mail-with-attachment, export:open-mail-bulk, export:standard-epl-xlsx, export:standard-epl-mail, export:packaging-xlsx, export:packaging-mail
-settings:get-admin-emails, settings:update-admin-email, settings:get-logo, settings:select-logo
-settings:get-units, settings:create-unit, settings:delete-unit
-currencies:list, currencies:create, currencies:delete
-analysis:list-rows, fx:list, fx:set, analysis:export-xlsx
-emails:list, emails:set-assignments, emails:replace, emails:remove
+P  auth:whoami, auth:me, auth:preview-start (checks real admin), auth:preview-stop, auth:request-access
+V  prefs:get, prefs:set
+P  db:select-file, db:open, db:create, db:get-path, db:is-open, db:last-open-error      V  db:open-folder
+P  backup:list, backup:open-folder, backup:restore (A when a DB is open; else admin in the backup)      A  backup:create
+V  users:list      A  users:create, users:update
+V  audit:list, audit:export-xlsx
+V  customers:list, customers:get, customers:list-deleted
+E  customers:create, customers:update, customers:set-access, customers:soft-delete   (+ per-customer checks)
+A  customers:restore, customers:delete-permanent
+V  products:list      A  products:create, products:update, products:delete
+V  standard-epl:list-versions, standard-epl:list, standard-epl:list-combined
+A  standard-epl:update-price, standard-epl:upsert, standard-epl:create-draft, standard-epl:publish-draft, standard-epl:delete-draft, standard-epl:update-draft-meta, standard-epl:delete-row
+V  packaging:list, packaging:list-versions      A  packaging:create-version, packaging:delete-version, packaging:add-row, packaging:update-row, packaging:delete-row
+V  price-lists:list, price-lists:get, price-lists:stats      E  price-lists:create, price-lists:delete   (+ per-customer checks)
+V  export:xlsx, export:xlsx-bulk, export:open-mail-bulk, export:standard-epl-xlsx, export:standard-epl-mail, export:packaging-xlsx, export:packaging-mail
+V  settings:get-admin-emails, settings:get-logo, settings:get-units
+A  settings:create-admin-email, settings:update-admin-email, settings:delete-admin-email, settings:select-logo, settings:create-unit, settings:delete-unit
+V  currencies:list      A  currencies:create, currencies:delete
+V  analysis:list-rows, analysis:export-xlsx, fx:list      A  fx:set-defaults
+V  emails:list      E  emails:set-assignments, emails:replace, emails:remove   (only allowed customers; skipped ones reported)
 ```
 
-The generic `settings:get` / `settings:set` channels were removed (Phase A): every database write goes through a purpose-specific channel, which Phase B's permission guard relies on.
+Removed: generic `settings:get` / `settings:set` (Phase A); `customers:delete`, `packaging:update-price`, `export:open-mail-with-attachment` (unused, Phase B); `fx:set` → `fx:set-defaults`.
+
+### Access rights (v0.6 — access-rights study, dev-plan Phase B)
+
+- **One source of rules: `src/shared/permissions.ts`** — `canChangeCustomer` (price lists, emails, master data: admin, or user on an Open customer / one they manage), `canHideCustomer` (admin or manager), `canChangeCustomerAccess` + `accessChangeError` (§3.3), `canCreateCustomer`, `canEditReferenceData` / `canManageUsers` / `canBackup` (admin), refusal texts (`customerChangeError`, `hideCustomerError`, `customerLockReason`) and the `PERMISSION_MATRIX` that Help renders. Unit tests: `src/shared/permissions.test.ts` (`npm test`). Change a rule there, and the main process, screens, Help and tests follow.
+- **Guard (`main/ipc/guard.ts`)**: every channel is registered with `handle(channel, rule, fn, deniedMessage?)`; `ipcMain.handle` is replaced by a thrower, so no channel can exist without a rule. Rules: `public` (no DB/user needed), `viewer` (any active user), `editor` (Admin/User), `admin`. Order of checks: DB open → on the user list and active → role → (inside the handler) per-customer rule. Messages: *"Viewers can only view and export."*, *"Only admins can change products."*, *"ACME is managed by PBP: only admins can change it."*
+- **Who is it (`main/currentUser.ts`)**: identity → user by `account` (NOCASE), else by `email`; a user added by email only gets their Windows account recorded at first sign-in (`user.link-account`). Looked up on every check (cheap), so user-list changes apply at once. `getActor()` = effective active user (the previewed one during **Preview as…**, admins only, memory only, reset when another DB is opened). Activity entries use the **real** user's id with label *"Name (account) as Previewed"*. `created_by_user_id` is the real user.
+- **Per-customer checks (`main/customerAccess.ts`)**: `requireCustomerChange` in `price-lists:create/delete`, `customers:update`; `requireCustomerHide` in `customers:soft-delete`; `emails:*` skip forbidden customers and return `skipped`. Price lists whose customer row no longer exists (orphans) behave as PBP: only admins delete them. `price-lists:create` inserts only the line fields of each entry (the list id is always server-computed). Customers carry `pricing_mode`, `manager_ids`, `manager_names` (from `withManagers`) in `customers:list/get/list-deleted`, `price-lists:list/get`, `emails:list`, so screens can gate with the same functions.
+- **`customers:create`** (Admin/User): allow-listed fields + `customer_ref_sap` (unique, case-insensitive incl. hidden), currency/packaging must exist; a User's customer is `managed` by them, an admin picks the mode (default `pbp`); `email_pbp_copy` / `email_pbp_common` filled from `admin_emails` (names containing "costing" / "common"). **`customers:set-access`**: managers must be active Admins/Users (existing managers may stay); non-managed modes clear the managers.
+- **Activity log (`main/audit.ts`)**: `audit(db, { action, summary, entityType, entityKey, customerRef, details })` is called inside the same `db.transaction` as every write (all handlers above, plus bootstrap, account linking and backup restore). `audit:list` filters: userId, action (exact, or prefix ending in `.`), customerRef, from/to (dates), search; returns facets (users, actions). Visible to everybody (Settings → Activity, customer History).
+- **Users (`ipc/users.ts`)**: never deleted (deactivate); `users:update` refuses to demote/deactivate the last active admin. The Users screen shows the SharePoint reminder (Edit for Admin/User, Read for Viewer — managed outside the app) and lists managed customers without an active manager (they behave as PBP).
+- **Restore on the damaged-DB screen**: no DB to look the person up in, so `backup:restore` checks that the identity is an active admin **in the backup** (backups without a `users` table are allowed).
+- **FX**: `fx_rates` = shared defaults (`fx:set-defaults`, admins, one audited call); the Analysis screen keeps **session rates** in a module variable (forgotten when the app closes), with *Reset to defaults* and *Save as default rates* (admins).
+- **Renderer**: `AuthProvider` (`auth:me`) + `AccessGuard` in App.tsx; `useCan()` exposes the shared rules for the effective user; `LockBadge` shows the reason; admin-only cards/buttons are hidden or locked. The UI only mirrors the rules — the guard is the protection.
+- **DevTools in releases**: admins only (Ctrl+Shift+I / F12 via `before-input-event`, real user, not the previewed one); otherwise closed on `devtools-opened`.
+- **Help (`renderer/help/*.md`, `screens/Help/HelpScreen.tsx`)**: topics are Markdown files listed in `help/index.ts` (`?raw` imports; `import.meta.glob` can't be used because tsconfig `module` is CommonJS). `{{ROLES}}` and `{{PERMISSION_MATRIX}}` lines are replaced by content generated from `shared/permissions.ts`. Links `help:<id>`. "?" links: Pricing management card → `pricing-modes`, FX popover → `analysis-fx`. Update *What's new* (`10-whats-new.md`) with each release.
 
 ### Identity (main/auth.ts) and local settings (main/localSettings.ts)
 
-- **Identity** is detected once at start-up (`initIdentity`, awaited by `getIdentity()` / `auth:whoami`): Windows account from `os.userInfo()`, email from `whoami /upn`, falling back to the OneDrive **Business** account email in `HKCU\Software\Microsoft\OneDrive\Accounts\Business<N>\UserEmail`. Returns `Identity { account, email, emailSource, displayNameHint, overridden }` (`displayNameHint` is derived from the email, e.g. `jan-martin.x@…` → "Jan-Martin X"). Nothing is matched against a user list yet (Phase B: `auth:me`).
+- **Identity** is detected once at start-up (`initIdentity`, awaited by `getIdentity()`; `getResolvedIdentity()` once done): Windows account from `os.userInfo()`, email from `whoami /upn`, falling back to the OneDrive **Business** account email in `HKCU\Software\Microsoft\OneDrive\Accounts\Business<N>\UserEmail`. Returns `Identity { account, email, emailSource, displayNameHint, overridden }` (`displayNameHint` is derived from the email, e.g. `jan-martin.x@…` → "Jan-Martin X"). Matched against the user list by `main/currentUser.ts`.
 - **Dev override**: `EPL_DEV_ACCOUNT` and/or `EPL_DEV_EMAIL` env vars pretend to be another user in `npm start`; ignored in packaged builds (`allowOverride: !app.isPackaged`). Unset parts stay empty so the real identity can't leak in.
 - **Local settings** (`%APPDATA%\epl-tool\settings.json`, atomic write): `lastDbPath` (auto-reopen) and `prefs` (per-user preferences: `emailSubjectTemplate`, `emailBodyTemplate` — the allow-list is `PREF_KEYS` in `src/shared/prefs.ts`). It holds nothing that grants rights.
 
 ### Release menu (main/menu.ts)
-Packaged builds have **no menu** on Windows/Linux (`Menu.setApplicationMenu(null)`), so Ctrl+R, zoom and the DevTools shortcuts don't exist; macOS keeps only the app/Edit/Window menus (needed for Cmd+Q/C/V). `npm start` keeps Electron's default menu with DevTools. `guardDevTools(win)` closes DevTools opened by any other route when not allowed (today: packaged = never; Phase B adds the admin exception in `isDevToolsAllowed()`).
+Packaged builds have **no menu** on Windows/Linux (`Menu.setApplicationMenu(null)`), so Ctrl+R, zoom and the default DevTools shortcuts don't exist; macOS keeps only the app/Edit/Window menus (needed for Cmd+Q/C/V). `npm start` keeps Electron's default menu with DevTools. `guardDevTools(win, isRealUserAdmin)`: in releases admins toggle DevTools with Ctrl+Shift+I / F12; for anybody else DevTools opened by any route are closed again.
 
 ---
 
@@ -238,7 +283,7 @@ Packaged builds have **no menu** on Windows/Linux (`Menu.setApplicationMenu(null
 
 ### Price Analysis view (Analysis/AnalysisScreen.tsx + ipc/analysis.ts)
 
-Read-only analytical surface (route `/analysis`, nav after Emails). No mutations except `fx:set`. One flat table: every price list entry across all **active** customers (`customers.is_deleted = 0`), joined with the standard EPL price (USD + EUR) for a chosen comparison version. Default currency mode is **All**.
+Read-only analytical surface (route `/analysis`, nav after Emails). No mutations except `fx:set-defaults` (admins). One flat table: every price list entry across all **active** customers (`customers.is_deleted = 0`), joined with the standard EPL price (USD + EUR) for a chosen comparison version. Default currency mode is **All**.
 
 **Data flow:** `analysis:list-rows(comparisonVersionId?)` runs one JOIN (`price_list_entries → price_lists → customers`, LEFT JOIN `standard_epl` for USD and EUR at the version, default `getLatestPublishedEplVersionId()`) and returns `AnalysisRow[]`. Each row's `is_latest` flag is computed in the handler (latest price list per customer by `effective` desc, `created_at` tiebreak; null effective sorts oldest). The renderer loads once per comparison version and does all filtering/computation client-side (re-query only on version change).
 
@@ -246,7 +291,7 @@ Read-only analytical surface (route `/analysis`, nav after Emails). No mutations
 - **USD / EUR** — table filtered to that currency; diff computed natively (`net_price − same-currency EPL`). Rigorous, no FX involved.
 - **All** — every currency shown; non-USD net prices converted to USD via editable `fx_rates` (USD per 1 unit) and compared against the **USD EPL** as a single yardstick. This is a deliberate product decision by the user (see design note below): the converted diff **blends FX with the independently-set USD/EUR pricing** and is a bird's-eye scan, not exact. Converted values are marked `≈`; an amber banner states the caveat. GBP/other currencies get a diff in All mode (via USD EPL) that they cannot get in a native tab.
 
-**FX rates** live in the `fx_rates` table, edited inline via the "FX rates" popover (All mode only), one input per non-USD currency present in the data. `fx:set` upserts (`ON CONFLICT DO UPDATE`); rates are **display-only, never written to price lists**. `fx:list` returns all rows.
+**FX rates**: the `fx_rates` table holds the shared **default** rates. The "FX rates" popover (All mode only, one input per non-USD currency present in the data) edits **session rates** kept in a module-level variable of `AnalysisScreen.tsx` (survive navigation, forgotten when the app closes — never saved); it shows *Your rates (this session)* / *FX rates · yours*, *Reset to defaults*, and for admins *Save as default rates* → `fx:set-defaults(rates[])` (one transaction, one `fx.default` audit entry, only changed rates upserted). Rates are **display-only, never written to price lists**. `fx:list` returns all rows.
 
 **Other controls:** comparison EPL version selector (any published or draft; default active published); latest-only / all-versions toggle (default latest-only — one row-set per customer's most recent list; off shows all versions with a "latest" badge); product multi-select popover (checkbox list of distinct products in the data, filters by `rip_code`); free-text search (customer/product/rip/type); "Clear filters".
 
@@ -369,17 +414,13 @@ Customers can be hidden from the customer card using the **Hide** button (EyeOff
 - `price-lists:list` and `price-lists:stats` — `AND (c.is_deleted IS NULL OR c.is_deleted = 0)` via the existing LEFT JOIN. The `IS NULL` guard handles orphaned price lists (no matching customer row at all).
 - All wizards, customer selectors, and the price list screen automatically exclude hidden customers without any changes to their code.
 
-**New IPC handlers:**
-- `customers:soft-delete` — `UPDATE customers SET is_deleted = 1`
-- `customers:restore` — `UPDATE customers SET is_deleted = 0`
-- `customers:list-deleted` — `SELECT * FROM customers WHERE is_deleted = 1`
-- `customers:delete-permanent` — transaction: deletes all `price_list_entries` for the customer's lists, then `price_lists`, then the `customers` row
+**IPC handlers** (rules in the Access rights section): `customers:soft-delete` (Admins + the customer's managers), `customers:restore` and `customers:delete-permanent` (admins; the permanent delete removes entries, price lists, the customer and — by `ON DELETE CASCADE` — its manager links; the audit entries stay), `customers:list-deleted` (everybody).
 
-**Settings → Hidden Customers** (`DeletedCustomersScreen.tsx`, route `/settings/deleted-customers`): table of all hidden customers with Restore and Delete Permanently actions. Delete Permanently shows a confirm dialog and runs `customers:delete-permanent`.
+**Settings → Hidden Customers** (`DeletedCustomersScreen.tsx`, route `/settings/deleted-customers`): table of all hidden customers; Restore and Delete Permanently for admins (others see a lock). Delete Permanently shows a confirm dialog and runs `customers:delete-permanent`.
 
 ### Customer masterdata fields
 
-**`customers:update` allow-list**: only the fields in `CUSTOMER_EDITABLE_FIELDS` (`src/shared/customerFields.ts`: names, types, business model, currency, packaging, country, zone, region, SPOC, managed-by, `email_to_customer`, `email_internal_copy`) are accepted; any other key (id, `customer_ref_sap`, `is_deleted`, `effective`/`mailing_date`/`last_price_list_*`, `email_pbp_*`) is refused with *"These customer fields can't be changed here: …"*. Values must be string or null; short/full name, currency and packaging can't be empty. CustomerDetail sends **only the changed** allowed fields. When adding an editable customer field, add it to that list.
+**`customers:update` allow-list**: only the fields in `CUSTOMER_EDITABLE_FIELDS` (`src/shared/customerFields.ts`: names, types, business model, currency, packaging, country, zone, region, SPOC, `email_to_customer`, `email_internal_copy`) are accepted; any other key (id, `customer_ref_sap`, `is_deleted`, `effective`/`mailing_date`/`last_price_list_*`, `email_pbp_*`) is refused with *"These customer fields can't be changed here: …"*. Values must be string or null; short/full name, currency and packaging can't be empty. CustomerDetail sends **only the changed** allowed fields. When adding an editable customer field, add it to that list.
 
 `customers` table has additional fields beyond the import schema:
 - `main_supply_region` — `TEXT CHECK (main_supply_region IN ('ASIA','EUROPE','AMERICA'))`, nullable. Editable via a dropdown in the CustomerDetail Details card. Displayed as "Supply Region" in Mass Price Update Step 1 and on the Analysis tab.
@@ -442,7 +483,7 @@ All modal windows use the shared native-`<dialog>` `Dialog`. Backdrop close only
 ### Email compose dialog (components/EmailComposeDialog.tsx)
 Used by **all four** Email buttons: Price Lists bulk "Email (N)", PriceListDetail "Email", single wizard Step 4 "Email", mass wizard Step 4 "Email (N)". Props: `open`, `onClose`, `priceListIds`. Subject + Body fields support `{customer}`, `{customer_full}`, `{version}`, `{effective}` placeholders (substituted per customer at send time). Template saved **per user on this PC** (local `settings.json` via `prefs:set` — `emailSubjectTemplate`, `emailBodyTemplate`) on send, and reloaded on every open; the built-in default is used until a user's first send (old DB keys `email_*_template` are ignored). Sending an email never writes to the database. Send calls `export:open-mail-bulk` (works for 1 or N ids).
 
-**Email recipients** (all Email buttons): combines `email_to_customer`, `email_internal_copy`, `email_pbp_copy`, `email_pbp_common` from the customer record, filters out null/empty, joins with `;`. All four addresses can be present simultaneously. Note: the PBP addresses come from the customer's own columns, not from `admin_emails` (see Known issues).
+**Email recipients** (all Email buttons): combines `email_to_customer`, `email_internal_copy`, `email_pbp_copy`, `email_pbp_common` from the customer record, filters out null/empty, joins with `;`. All four addresses can be present simultaneously. Note: the PBP addresses come from the customer's own columns, not from `admin_emails` (see Known issues); `customers:create` fills them from `admin_emails` (names containing "costing" / "common") for new customers.
 
 **Flow**: Email button → compose dialog → "Send" → folder picker (once) → for each price list: exports xlsx to the folder, opens a mail draft with it attached. `export:open-mail-with-attachment` still exists in main/preload but is no longer used by the renderer.
 
@@ -559,6 +600,7 @@ npm install          # install dependencies
 npm start            # dev mode with Vite HMR (DevTools auto-open in dev)
 npm run package      # build unpackaged app (dev/testing only, no installer); prepackage prepares better-sqlite3 for Electron
 npm run make         # build distributable installers (Squirrel .exe + ZIP for Windows); premake does the same
+npm test             # unit tests (node:test via tsx): src/**/*.test.ts — today shared/permissions.test.ts (49 tests)
 ```
 
 **When to use which command:**
@@ -572,7 +614,7 @@ A packaged app does not pick up source changes — rebuild it after every change
 
 **Type check / lint**: `npx tsc --noEmit -p .` and `npx eslint <files>` from `epl-tool/`. Pre-existing tsc errors (not blocking Vite builds): `export.ts` lines ~48/~358 (`Promise<Buffer>` casts) and `Step2ConfigurePricing.tsx` / `Step3ReviewProducts.tsx` (currency `string` passed where `'USD' | 'EUR'` expected). ESLint config lacks the `react-hooks` plugin, so existing `eslint-disable react-hooks/...` comments report "rule not found". ExcelJS's own `Buffer` type clashes with Node's `Buffer<ArrayBufferLike>`: pass images as `addImage({ base64 })` rather than `{ buffer }`.
 
-**Testing main-process code without launching the app** (launching opens the real SharePoint DB and writes a startup backup): bundle a test entry with esbuild (`node_modules/esbuild`, `platform: 'node'`, `external: ['better-sqlite3', 'exceljs']`, `alias: { electron: <stub.js> }` where the stub captures `ipcMain.handle` into a Map and fakes `app.getPath` / `dialog`), then run it with `ELECTRON_RUN_AS_NODE=1` and `NODE_PATH=epl-tool\node_modules` using `node_modules\electron\dist\electron.exe` — `better-sqlite3` is built for Electron's ABI, so plain `node` can't load it. Always work on **copies** of the DB files in `%TEMP%`. Used for Phase A (52 checks: migrations, byte-identical re-open, allow-list, logo export, prefs, identity).
+**Testing main-process code without launching the app** (launching opens the real SharePoint DB and writes a startup backup): bundle a test entry with esbuild (`node_modules/esbuild`, `platform: 'node'`, `external: ['better-sqlite3', 'exceljs']`, `alias: { electron: <stub.js> }` where the stub captures `ipcMain.handle` into a Map and fakes `app.getPath` / `dialog`), then run it with `ELECTRON_RUN_AS_NODE=1` and `NODE_PATH=epl-tool\node_modules` using `node_modules\electron\dist\electron.exe` — `better-sqlite3` is built for Electron's ABI, so plain `node` can't load it. Always work on **copies** of the DB files in `%TEMP%`. Used for Phase A (52 checks: migrations, byte-identical re-open, allow-list, logo export, prefs, identity) and Phase B (105 checks: Migration 7 on both DB files, bootstrap, guard declarations, Admin/User/Viewer/unknown/deactivated rules via `EPL_DEV_*` + `initIdentity({ allowOverride: true })`, preview, email skip-reporting, audit entries, damaged-DB restore). The stub must also capture `shell.openExternal` (mailto drafts would otherwise open Outlook).
 
 ### Corporate network (TotalEnergies Windows machines)
 Direct access to GitHub/npm/Electron downloads is blocked and HTTPS is SSL-inspected. Working setup (session env vars, run in `epl-tool/` before `npm ci` / `npm start`):
@@ -603,7 +645,7 @@ The last-opened DB path is kept only in the local **`settings.json`** (`lastDbPa
 
 ## GitHub Actions (Windows build)
 
-`.github/workflows/build-windows.yml` — triggers on push to `main` when `epl-tool/**` files change, on any `v*` tag push, or manually. Runs on `windows-latest`, runs `npm ci` + `npm run make`, uploads artifact `EPL-Tool-Windows` (30-day retention). On a `v*` tag it also publishes a **GitHub Release** (`gh release create`, `GITHUB_TOKEN` with `contents: write`) with the Squirrel `.exe` and the ZIP attached; release notes come from the annotated tag message (`--notes-from-tag`).
+`.github/workflows/build-windows.yml` — triggers on push to `main` when `epl-tool/**` files change, on any `v*` tag push, or manually. Runs on `windows-latest`, runs `npm ci` + `npm test` + `npm run make`, uploads artifact `EPL-Tool-Windows` (30-day retention). On a `v*` tag it also publishes a **GitHub Release** (`gh release create`, `GITHUB_TOKEN` with `contents: write`) with the Squirrel `.exe` and the ZIP attached; release notes come from the annotated tag message (`--notes-from-tag`).
 
 **Release procedure**: bump `epl-tool/package.json` (`npm version X.Y.Z --no-git-tag-version`), commit, then `git tag -a vX.Y.Z -F notes.txt` (notes = tag message) and `git push origin main vX.Y.Z`. On Windows PowerShell 5 write `notes.txt` without a BOM (`[IO.File]::WriteAllText(path, text, (New-Object Text.UTF8Encoding($false)))`) — `Set-Content -Encoding utf8` adds one and it ends up at the start of the release notes. CI requires Node 22 (`@electron/rebuild` 4 needs >= 22.12).
 
@@ -626,5 +668,5 @@ The last-opened DB path is kept only in the local **`settings.json`** (`lastDbPa
 - **PBP emails in drafts**: the customer page displays PBP copy/common from `admin_emails` (Settings), but drafts use each customer's own `email_pbp_copy` / `email_pbp_common` columns. Changing an admin email in Settings does not change existing customers' drafts. Candidate fix: build recipients from `admin_emails` in `export:open-mail-bulk`.
 - **Data files in the repo**: `EPL-Database.db`, `EPL-Database BackUp.db`, `All_Prices.xlsx`, `All_PricesTest.xlsx` are tracked in git and contain customer names, emails and prices. If the repo is public, make it private or untrack them (history keeps old copies unless rewritten).
 - **Pre-existing type/lint errors**: see Build commands → Type check / lint.
-- **Multi-user access + user access rights (in progress; single-user only today)**: `docs/multi-user-study.md` (local read copy + single "edit slot" via claim files next to the DB on SharePoint + atomic publish with a generation check), `docs/access-rights-study.md` (Windows-account identity, Admin/User/Viewer roles, per-customer pricing mode Open / Managed by PBP / Managed by named users, server-side IPC guard, audit log) and `docs/dev-plan.md` (phases A–F, releases v0.6–v0.8.1, in-app Help plan, historical price-list import spec). Decisions are recorded in each study. **Phase A (Foundations) done 6 Nov 2026** (identity, schema numbering, shareable DB, customer allow-list, release menu); **next: Phase B** (Migration 7, `shared/permissions.ts`, IPC guard, activity log, screens, Help) → release v0.6. Heads-up for Migration 7: the bootstrap admin is whoever's Windows identity runs it first. Until multi-user is implemented, only one person should edit the central DB.
+- **Multi-user access + user access rights (in progress; single-user only today)**: `docs/multi-user-study.md` (local read copy + single "edit slot" via claim files next to the DB on SharePoint + atomic publish with a generation check), `docs/access-rights-study.md` (Windows-account identity, Admin/User/Viewer roles, per-customer pricing mode Open / Managed by PBP / Managed by named users, server-side IPC guard, audit log) and `docs/dev-plan.md` (phases A–F, releases v0.6–v0.8.1, in-app Help plan, historical price-list import spec). Decisions are recorded in each study. **Phase A (Foundations) done 6 Nov 2026** (identity, schema numbering, shareable DB, customer allow-list, release menu). **Phase B (access rights + Help) built 6 Nov 2026, in review** — remaining before release v0.6: the manual check of the permission matrix with *Preview as…* (User and Viewer) in the app, then version bump + tag. Next: Phase C (read copy + publish) → v0.7. Heads-up for Migration 7: the bootstrap admin is whoever's Windows identity first opens the database with v0.6 (on the Windows dev PC that is the account whose UPN is one of the named admins); the other admins are then added in Settings → Users. Until multi-user is implemented, only one person should edit the central DB.
 - **Open product questions (not yet decided by the user)**: (1) mass wizard Step 1 customer dropdown currently only *filters* the table — the user may prefer that ticking in the dropdown also selects rows for repricing; (2) after deleting a price list, the customer falls back to the remaining list with the latest *effective* date (not the most recently *created*) — confirm if this is the desired rule.

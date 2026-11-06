@@ -7,8 +7,11 @@ import { Input } from '../../components/ui/input';
 import { Dialog } from '../../components/ui/dialog';
 import { useToast } from '../../components/ui/toast';
 import type { PackagingVersion } from '../../../types';
+import { useCan } from '../../lib/auth';
+import { LockBadge } from '../../components/LockBadge';
 
 export function PackagingScreen() {
+  const can = useCan();
   const navigate = useNavigate();
   const { toast } = useToast();
   const [versions, setVersions] = useState<PackagingVersion[]>([]);
@@ -66,7 +69,7 @@ export function PackagingScreen() {
         </button>
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-bold text-gray-900">Packaging Versions</h1>
-          <Button onClick={() => setNewOpen(true)}>+ New Version</Button>
+          {can.referenceData ? <Button onClick={() => setNewOpen(true)}>+ New Version</Button> : <LockBadge reason="View only — admins manage packaging" />}
         </div>
         <p className="text-sm text-gray-500 mt-1">
           Each customer is assigned one packaging version. Prices from that version appear in their exported price list.
@@ -100,18 +103,20 @@ export function PackagingScreen() {
                   size="sm"
                   onClick={() => navigate(`/settings/packaging/${encodeURIComponent(v.version)}`)}
                 >
-                  Edit
+                  {can.referenceData ? 'Edit' : 'View'}
                 </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="text-red-500 hover:text-red-700 hover:bg-red-50"
-                  onClick={() => handleDelete(v)}
-                  disabled={v.customer_count > 0}
-                  title={v.customer_count > 0 ? 'Reassign all customers to another version first' : undefined}
-                >
-                  Delete
-                </Button>
+                {can.referenceData && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-red-500 hover:text-red-700 hover:bg-red-50"
+                    onClick={() => handleDelete(v)}
+                    disabled={v.customer_count > 0}
+                    title={v.customer_count > 0 ? 'Reassign all customers to another version first' : undefined}
+                  >
+                    Delete
+                  </Button>
+                )}
               </CardContent>
             </Card>
           ))}

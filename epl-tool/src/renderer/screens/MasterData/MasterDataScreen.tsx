@@ -6,9 +6,12 @@ import { Input } from '../../components/ui/input';
 import { useToast } from '../../components/ui/toast';
 import { Dialog } from '../../components/ui/dialog';
 import type { Product } from '../../../types';
+import { useCan } from '../../lib/auth';
+import { LockBadge } from '../../components/LockBadge';
 
 export function MasterDataScreen() {
   const { toast } = useToast();
+  const can = useCan();
   const [products, setProducts] = useState<Product[]>([]);
   const [search, setSearch] = useState('');
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -112,9 +115,13 @@ export function MasterDataScreen() {
           <h1 className="text-2xl font-bold text-gray-900">Products</h1>
           <p className="text-gray-500 text-sm mt-0.5">{products.length} products</p>
         </div>
-        <Button onClick={() => setAddOpen(true)} className="gap-2">
-          <Plus size={14} /> Add Product
-        </Button>
+        {can.referenceData ? (
+          <Button onClick={() => setAddOpen(true)} className="gap-2">
+            <Plus size={14} /> Add Product
+          </Button>
+        ) : (
+          <LockBadge reason="View only — admins manage products" />
+        )}
       </div>
 
       <div className="relative max-w-xs mb-4">
@@ -191,7 +198,7 @@ export function MasterDataScreen() {
                             {saving ? 'Saving…' : 'Save'}
                           </Button>
                         </div>
-                      ) : (
+                      ) : can.referenceData ? (
                         <div className="flex gap-1 justify-end">
                           <Button variant="ghost" size="sm" onClick={() => startEdit(p)}>Edit</Button>
                           <Button
@@ -203,7 +210,7 @@ export function MasterDataScreen() {
                             <Trash2 size={13} />
                           </Button>
                         </div>
-                      )}
+                      ) : null}
                     </td>
                   </tr>
                 );

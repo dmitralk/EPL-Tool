@@ -5,7 +5,8 @@ import { openDatabase, closeDatabase } from './database';
 import { registerAllIpcHandlers } from './ipc';
 import { getSavedDbPath } from './localSettings';
 import { guardDevTools, installAppMenu } from './menu';
-import { initIdentity } from './auth';
+import { getIdentity, initIdentity } from './auth';
+import { isRealUserAdmin } from './currentUser';
 
 if (started) app.quit();
 
@@ -25,7 +26,7 @@ function createWindow() {
     titleBarStyle: 'default',
     title: 'EPL Tool',
   });
-  guardDevTools(mainWindow);
+  guardDevTools(mainWindow, isRealUserAdmin);
 
   if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
     mainWindow.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
@@ -39,14 +40,15 @@ function createWindow() {
   mainWindow.on('closed', () => { mainWindow = null; });
 }
 
-app.on('ready', () => {
+app.on('ready', async () => {
   initIdentity({ allowOverride: !app.isPackaged });
   installAppMenu();
   registerAllIpcHandlers();
-  createWindow();
 
-  // Try to restore last used database
+  // Restore the last used database before the window asks for it. The identity is needed first: opening may
+  // bootstrap the first admin (Migration 7).
   try {
+    await getIdentity();
     const savedPath = getSavedDbPath();
     if (savedPath) {
       openDatabase(savedPath);
@@ -54,6 +56,8 @@ app.on('ready', () => {
   } catch {
     // ignore — user will be prompted via DatabaseSelector screen
   }
+
+  createWindow();
 });
 
 app.on('window-all-closed', () => {

@@ -6,8 +6,11 @@ import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { useToast } from '../../components/ui/toast';
 import type { Currency } from '../../../types';
+import { useCan } from '../../lib/auth';
+import { LockBadge } from '../../components/LockBadge';
 
 export function CurrenciesScreen() {
+  const can = useCan();
   const navigate = useNavigate();
   const { toast } = useToast();
   const [currencies, setCurrencies] = useState<Currency[]>([]);
@@ -97,9 +100,10 @@ export function CurrenciesScreen() {
         <CardHeader>
           <div className="flex items-center justify-between">
             <CardTitle>Other Currencies</CardTitle>
-            {!adding && (
+            {!adding && can.referenceData && (
               <Button size="sm" variant="outline" onClick={() => setAdding(true)}>+ Add Currency</Button>
             )}
+            {!can.referenceData && <LockBadge reason="View only — admins manage currencies" />}
           </div>
         </CardHeader>
         <CardContent>
@@ -117,14 +121,16 @@ export function CurrenciesScreen() {
               {otherCurrencies.map(c => (
                 <div key={c.id} className="flex items-center justify-between gap-3 py-1">
                   <span className="font-mono font-medium text-sm text-gray-900">{c.code}</span>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="text-red-500 hover:text-red-700 hover:bg-red-50 h-6 px-2 text-xs"
-                    onClick={() => handleDelete(c)}
-                  >
-                    Remove
-                  </Button>
+                  {can.referenceData && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-red-500 hover:text-red-700 hover:bg-red-50 h-6 px-2 text-xs"
+                      onClick={() => handleDelete(c)}
+                    >
+                      Remove
+                    </Button>
+                  )}
                 </div>
               ))}
             </div>

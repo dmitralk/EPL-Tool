@@ -6,17 +6,23 @@ import { SearchableSelect } from '../../../components/ui/searchable-select';
 import { Card, CardContent, CardHeader, CardTitle } from '../../../components/ui/card';
 import { todayISO, nextVersion, formatDate } from '../../../lib/utils';
 import { useWizard } from './index';
+import { useCan } from '../../../lib/auth';
 import type { Customer, PriceListFull, PriceListHeader } from '../../../../types';
 
 export function Step1SelectCustomer() {
   const { state, dispatch } = useWizard();
-  const [customers, setCustomers] = useState<Customer[]>([]);
+  const can = useCan();
+  const [allCustomers, setAllCustomers] = useState<Customer[]>([]);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loadingPrev, setLoadingPrev] = useState(false);
 
   useEffect(() => {
-    api.getCustomers().then(c => setCustomers(c as Customer[]));
+    api.getCustomers().then(c => setAllCustomers(c as Customer[]));
   }, []);
+
+  // Only the customers this user may price (Open, managed by them, or all for admins).
+  const customers = allCustomers.filter(c => can.changeCustomer(c));
+  const hiddenCount = allCustomers.length - customers.length;
 
   const selectedCustomer = state.customer;
 
@@ -96,6 +102,11 @@ export function Step1SelectCustomer() {
               placeholder="Select customer…"
               searchPlaceholder="Search customer name or SAP code…"
             />
+            {hiddenCount > 0 && (
+              <p className="text-xs text-gray-400 mt-1">
+                {hiddenCount} customer{hiddenCount === 1 ? ' is' : 's are'} not listed: you can only price customers that are Open or that you manage.
+              </p>
+            )}
             {errors.customer && <p className="text-red-500 text-xs mt-1">{errors.customer}</p>}
           </div>
 

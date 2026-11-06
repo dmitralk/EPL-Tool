@@ -1,24 +1,84 @@
-import { ipcMain, dialog } from 'electron';
+import { dialog, shell } from 'electron';
+import path from 'path';
 import { getDb, openDatabase, isOpen, getCurrentDbPath } from '../database';
 import { saveDbPath } from '../localSettings';
+import { getIdentity } from '../auth';
+import { stopPreview } from '../currentUser';
+import { audit } from '../audit';
 import { getLegacyLogoPath, getLogoDataUrl, logoFileToDataUrl, saveLogo } from '../logo';
-import type { LogoInfo, SelectLogoResult } from '../../types';
+import { handle } from './guard';
+import type { AdminEmail, LogoInfo, SelectLogoResult } from '../../types';
+
+const EMAIL_RE = /^[^\s@;,]+@[^\s@;,]+\.[^\s@;,]+$/;
+
+// Opening a database may bootstrap the first admin (Migration 7), which needs the Windows identity.
+async function open(filePath: string, opts: { create?: boolean } = {}) {
+  await getIdentity();
+  stopPreview();
+  openDatabase(filePath, opts);
+  saveDbPath(filePath);
+}
 
 export function registerSettingsHandlers() {
-  ipcMain.handle('settings:get-admin-emails', () => {
+  handle('settings:get-admin-emails', 'viewer', () => {
     return getDb().prepare('SELECT * FROM admin_emails ORDER BY email_name').all();
   });
 
-  ipcMain.handle('settings:update-admin-email', (_e, id: number, email: string) => {
-    getDb().prepare('UPDATE admin_emails SET email = ? WHERE id = ?').run(email, id);
-  });
+  handle('settings:update-admin-email', 'admin', (_e, id: number, email: string) => {
+    const db = getDb();
+    const value = String(email ?? '').trim();
+    if (!EMAIL_RE.test(value)) throw new Error('Invalid email address.');
+    const before = db.prepare('SELECT * FROM admin_emails WHERE id = ?').get(id) as AdminEmail | undefined;
+    if (!before) throw new Error('PBP email not found.');
+    db.transaction(() => {
+      db.prepare('UPDATE admin_emails SET email = ? WHERE id = ?').run(value, id);
+      audit(db, { action: 'pbp_email.update', entityType: 'pbp_email', entityKey: before.email_name,
+        summary: `PBP email ${before.email_name}: ${before.email} → ${value}` });
+    })();
+  }, 'Only admins can change PBP emails.');
+
+  handle('settings:create-admin-email', 'admin', (_e, emailName: string, email: string) => {
+    const db = getDb();
+    const name = String(emailName ?? '').trim();
+    const value = String(email ?? '').trim();
+    if (!name) throw new Error('Name is required.');
+    if (!EMAIL_RE.test(value)) throw new Error('Invalid email address.');
+    if (db.prepare('SELECT 1 FROM admin_emails WHERE email_name = ? COLLATE NOCASE').get(name)) {
+      throw new Error(`A PBP email named "${name}" already exists.`);
+    }
+    const id = db.transaction(() => {
+      const result = db.prepare('INSERT INTO admin_emails (email_name, email) VALUES (?, ?)').run(name, value);
+      audit(db, { action: 'pbp_email.create', entityType: 'pbp_email', entityKey: name, summary: `Added PBP email ${name}: ${value}` });
+      return result.lastInsertRowid;
+    })();
+    return db.prepare('SELECT * FROM admin_emails WHERE id = ?').get(id);
+  }, 'Only admins can change PBP emails.');
+
+  handle('settings:delete-admin-email', 'admin', (_e, id: number) => {
+    const db = getDb();
+    const before = db.prepare('SELECT * FROM admin_emails WHERE id = ?').get(id) as AdminEmail | undefined;
+    if (!before) return;
+    db.transaction(() => {
+      db.prepare('DELETE FROM admin_emails WHERE id = ?').run(id);
+      audit(db, { action: 'pbp_email.delete', entityType: 'pbp_email', entityKey: before.email_name,
+        summary: `Removed PBP email ${before.email_name} (${before.email})` });
+    })();
+  }, 'Only admins can change PBP emails.');
 
   // The path is per PC, so it is never stored in the (shared) database.
-  ipcMain.handle('db:get-path', () => getCurrentDbPath());
+  handle('db:get-path', 'public', () => getCurrentDbPath());
 
-  ipcMain.handle('db:is-open', () => isOpen());
+  // Folder of the shared database in Explorer (OneDrive's "Manage access" lives there).
+  handle('db:open-folder', 'viewer', async () => {
+    const current = getCurrentDbPath();
+    if (!current) return { ok: false, error: 'No database is open.' };
+    const error = await shell.openPath(path.dirname(current));
+    return error ? { ok: false, error } : { ok: true };
+  });
 
-  ipcMain.handle('db:select-file', async () => {
+  handle('db:is-open', 'public', () => isOpen());
+
+  handle('db:select-file', 'public', async () => {
     const result = await dialog.showOpenDialog({
       properties: ['openFile'],
       filters: [{ name: 'SQLite Database', extensions: ['db', 'sqlite', 'sqlite3'] }],
@@ -26,17 +86,16 @@ export function registerSettingsHandlers() {
     return result.canceled ? null : result.filePaths[0];
   });
 
-  ipcMain.handle('db:open', (_e, filePath: string) => {
+  handle('db:open', 'public', async (_e, filePath: string) => {
     try {
-      openDatabase(filePath);
-      saveDbPath(filePath);
+      await open(filePath);
       return { ok: true };
     } catch (err) {
       return { ok: false, error: (err as Error).message };
     }
   });
 
-  ipcMain.handle('db:create', async () => {
+  handle('db:create', 'public', async () => {
     const result = await dialog.showSaveDialog({
       title: 'Create New Database',
       defaultPath: 'EPL-Database.db',
@@ -45,35 +104,45 @@ export function registerSettingsHandlers() {
     if (result.canceled || !result.filePath) return { ok: false, error: 'Cancelled' };
 
     try {
-      openDatabase(result.filePath, { create: true });
-      saveDbPath(result.filePath);
+      await open(result.filePath, { create: true });
       return { ok: true, path: result.filePath };
     } catch (err) {
       return { ok: false, error: (err as Error).message };
     }
   });
 
-  ipcMain.handle('settings:get-units', () => {
+  handle('settings:get-units', 'viewer', () => {
     return getDb().prepare('SELECT * FROM units ORDER BY name').all();
   });
 
-  ipcMain.handle('settings:create-unit', (_e, name: string) => {
+  handle('settings:create-unit', 'admin', (_e, name: string) => {
     const db = getDb();
-    const result = db.prepare('INSERT INTO units (name) VALUES (?)').run(name.trim());
-    return db.prepare('SELECT * FROM units WHERE id = ?').get(result.lastInsertRowid);
-  });
+    const value = name.trim();
+    const id = db.transaction(() => {
+      const result = db.prepare('INSERT INTO units (name) VALUES (?)').run(value);
+      audit(db, { action: 'unit.create', entityType: 'unit', entityKey: value, summary: `Added unit ${value}` });
+      return result.lastInsertRowid;
+    })();
+    return db.prepare('SELECT * FROM units WHERE id = ?').get(id);
+  }, 'Only admins can change units.');
 
-  ipcMain.handle('settings:delete-unit', (_e, id: number) => {
-    getDb().prepare('DELETE FROM units WHERE id = ?').run(id);
-  });
+  handle('settings:delete-unit', 'admin', (_e, id: number) => {
+    const db = getDb();
+    const unit = db.prepare('SELECT name FROM units WHERE id = ?').get(id) as { name: string } | undefined;
+    if (!unit) return;
+    db.transaction(() => {
+      db.prepare('DELETE FROM units WHERE id = ?').run(id);
+      audit(db, { action: 'unit.delete', entityType: 'unit', entityKey: unit.name, summary: `Removed unit ${unit.name}` });
+    })();
+  }, 'Only admins can change units.');
 
-  ipcMain.handle('settings:get-logo', (): LogoInfo => {
+  handle('settings:get-logo', 'viewer', (): LogoInfo => {
     const db = getDb();
     const dataUrl = getLogoDataUrl(db);
     return { dataUrl, legacyPath: dataUrl ? null : getLegacyLogoPath(db) };
   });
 
-  ipcMain.handle('settings:select-logo', async (): Promise<SelectLogoResult> => {
+  handle('settings:select-logo', 'admin', async (): Promise<SelectLogoResult> => {
     const result = await dialog.showOpenDialog({
       properties: ['openFile'],
       filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif'] }],
@@ -81,10 +150,14 @@ export function registerSettingsHandlers() {
     if (result.canceled || !result.filePaths[0]) return null;
     try {
       const dataUrl = logoFileToDataUrl(result.filePaths[0]);
-      saveLogo(getDb(), dataUrl);
+      const db = getDb();
+      db.transaction(() => {
+        saveLogo(db, dataUrl);
+        audit(db, { action: 'settings.logo', entityType: 'settings', entityKey: 'logo', summary: 'Changed the company logo' });
+      })();
       return { ok: true, dataUrl };
     } catch (err) {
       return { ok: false, error: (err as Error).message };
     }
-  });
+  }, 'Only admins can change the logo.');
 }

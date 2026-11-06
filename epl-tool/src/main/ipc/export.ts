@@ -1,4 +1,4 @@
-import { ipcMain, dialog, shell } from 'electron';
+import { dialog, shell } from 'electron';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -8,6 +8,7 @@ import ExcelJS from 'exceljs';
 import { getDb, getLatestPublishedEplVersionId } from '../database';
 import { buildPriceListXlsx } from '../export/buildPriceListXlsx';
 import { getLogoImage } from '../logo';
+import { handle } from './guard';
 import type { PriceListFull, Customer, PackagingRow, CombinedEplRow } from '../../types';
 
 function fetchPackagingRows(db: ReturnType<typeof getDb>, version: string): PackagingRow[] {
@@ -89,7 +90,7 @@ function suggestFilename(customer: Customer, priceList: PriceListFull): string {
 }
 
 export function registerExportHandlers() {
-  ipcMain.handle('export:xlsx', async (_e, price_list_id: string) => {
+  handle('export:xlsx', 'viewer', async (_e, price_list_id: string) => {
     const db = getDb();
     const data = fetchExportData(db, price_list_id);
     const suggestedName = suggestFilename(data.customer, data.priceList);
@@ -110,7 +111,7 @@ export function registerExportHandlers() {
     }
   });
 
-  ipcMain.handle('export:xlsx-bulk', async (_e, ids: string[]) => {
+  handle('export:xlsx-bulk', 'viewer', async (_e, ids: string[]) => {
     const { filePaths, canceled } = await dialog.showOpenDialog({
       properties: ['openDirectory', 'createDirectory'],
       message: 'Choose folder to save exported price lists',
@@ -136,7 +137,7 @@ export function registerExportHandlers() {
     return { canceled: false, folder, results };
   });
 
-  ipcMain.handle('export:open-mail-bulk', async (
+  handle('export:open-mail-bulk', 'viewer', async (
     _e,
     ids: string[],
     subjectTemplate: string,
@@ -194,26 +195,7 @@ export function registerExportHandlers() {
     return { canceled: false, results };
   });
 
-  ipcMain.handle('export:open-mail-with-attachment', async (
-    _e,
-    { filePath, to, subject, body }: { filePath: string; to: string; subject: string; body: string }
-  ) => {
-    try {
-      if (process.platform === 'darwin') {
-        await openMailMac({ filePath, to, subject, body });
-      } else if (process.platform === 'win32') {
-        await openMailWin({ filePath, to, subject, body });
-      } else {
-        const url = `mailto:${to}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-        await shell.openExternal(url);
-      }
-      return { success: true };
-    } catch (err) {
-      return { success: false, error: (err as Error).message };
-    }
-  });
-
-  ipcMain.handle('export:standard-epl-xlsx', async (_e, versionId?: number) => {
+  handle('export:standard-epl-xlsx', 'viewer', async (_e, versionId?: number) => {
     const db = getDb();
     const vid = versionId ?? getLatestPublishedEplVersionId();
     const versionRow = db.prepare('SELECT version_name FROM standard_epl_versions WHERE version_id = ?')
@@ -235,7 +217,7 @@ export function registerExportHandlers() {
     }
   });
 
-  ipcMain.handle('export:packaging-xlsx', async (_e, version: string) => {
+  handle('export:packaging-xlsx', 'viewer', async (_e, version: string) => {
     const db = getDb();
     const rows = fetchPackagingRows(db, version);
     const today = new Date().toISOString().slice(0, 10);
@@ -254,7 +236,7 @@ export function registerExportHandlers() {
     }
   });
 
-  ipcMain.handle('export:packaging-mail', async (_e, version: string) => {
+  handle('export:packaging-mail', 'viewer', async (_e, version: string) => {
     const db = getDb();
     const rows = fetchPackagingRows(db, version);
     const today = new Date().toISOString().slice(0, 10);
@@ -277,7 +259,7 @@ export function registerExportHandlers() {
     }
   });
 
-  ipcMain.handle('export:standard-epl-mail', async (_e, versionId?: number) => {
+  handle('export:standard-epl-mail', 'viewer', async (_e, versionId?: number) => {
     const db = getDb();
     const vid = versionId ?? getLatestPublishedEplVersionId();
     const versionRow = db.prepare('SELECT version_name FROM standard_epl_versions WHERE version_id = ?')

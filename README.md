@@ -13,6 +13,8 @@ A desktop application for generating and managing customer Export Price Lists (E
 - Price analysis vs the Standard EPL, with Excel export
 - Bulk management of customer / internal email addresses
 - Automatic, verified database backups
+- Users and roles (Admin / User / Viewer, recognised by their Windows account — no passwords), a pricing management mode per
+  customer, an activity log visible to everybody, and built-in **Help**
 
 ---
 
@@ -34,6 +36,9 @@ npm start
 ```
 
 The app opens with Vite hot-reload for screen (renderer) changes. Main-process changes (IPC, database, export) need a restart: type `rs` in the `npm start` terminal.
+
+`npm test` runs the unit tests (the access rules in `src/shared/permissions.ts`). In development, the environment variables
+`EPL_DEV_ACCOUNT` / `EPL_DEV_EMAIL` make the app act as another person (ignored by packaged builds).
 
 **Behind the TotalEnergies corporate proxy (Windows)**, set these in the same PowerShell session before `npm install` / `npm start`:
 
@@ -76,8 +81,11 @@ The tag triggers the Windows build and publishes a GitHub Release with `EPL Tool
 
 1. Launch the app
 2. Click **Open Database** and select the existing `.db` file (normally the shared one on SharePoint)
-3. If exports show no logo, go to **Settings → Company Logo** and select the logo image (PNG, JPEG or GIF, under 1 MB). It is stored inside the database, so exports made on any computer show it — this only needs to be done once (logos chosen with older versions were only linked to a file on one computer and must be selected again)
-4. The app is ready to use
+3. The first time a database is opened with v0.6 or later, the person opening it becomes its **first admin**. That admin
+   adds the other people in **Settings → Users** (by company email, with a role) and gives them access to the SharePoint
+   folder separately (Edit for Admins and Users, Read for Viewers)
+4. If exports show no logo, an admin goes to **Settings → Company Logo** and selects the logo image (PNG, JPEG or GIF, under 1 MB). It is stored inside the database, so exports made on any computer show it — this only needs to be done once (logos chosen with older versions were only linked to a file on one computer and must be selected again)
+5. The app is ready to use
 
 The original one-off Excel import (`All_Prices.xlsx`) has been removed. A wizard for uploading historical price lists for existing customers and products is planned (see [docs/dev-plan.md](docs/dev-plan.md)).
 
@@ -88,21 +96,40 @@ The original one-off Excel import (`All_Prices.xlsx`) has been removed. A wizard
 | Section | Purpose |
 |---|---|
 | **Dashboard** | Overview stats and recent price lists |
-| **Price Lists** | Create (single or mass), view, compare, export, email, and delete price lists |
-| **Customers** | Customer details, contacts, price list history, version comparison, hide/restore |
+| **Price Lists** | Create (single or mass), view, compare, export, email, and delete price lists; *Created by* on each list |
+| **Customers** | New Customer, details, contacts, pricing management (mode + managers), history, version comparison, hide/restore |
 | **Emails** | One row per email address with all customers using it; add / remove / replace across customers in one go |
 | **Analysis** | Every price list line vs the Standard EPL (USD, EUR, or All currencies via FX); choose columns; export to Excel |
-| **Products** | Add, edit, or delete products |
-| **Standard EPL** | Versioned standard prices (USD + EUR): draft → publish, compare versions; packaging charges; export / email |
-| **Settings** | Database & backups, logo, PBP emails, units, packaging, currencies, hidden customers |
+| **Products** | Add, edit, or delete products (admins) |
+| **Standard EPL** | Versioned standard prices (USD + EUR): draft → publish (admins), compare versions; packaging charges; export / email |
+| **Help** | How the app works: roles and permissions, pricing modes, wizards, emails, FX rates, activity log, backups, what's new |
+| **Settings** | Database, users (admins), activity log, backups, logo, PBP emails, units, packaging, currencies, hidden customers |
 
 Customer pickers everywhere work like Power BI slicers: click the dropdown, type part of the name or SAP code, tick one or several customers.
 
 ---
 
+## Users, roles and access
+
+EPL Tool recognises people by their **Windows account and company email** — there is no password. Admins manage the user
+list in **Settings → Users**; anybody not on it sees a *No access* screen with a *Request access* button.
+
+| Role | In short |
+|---|---|
+| **Admin** | Everything (the PBP team) |
+| **User** | Sees everything; changes price lists, emails and master data of customers that are *Open* or that they manage; creates customers |
+| **Viewer** | Sees everything, exports to Excel and opens email drafts; changes nothing |
+
+Each customer has a **pricing management mode**: *Open* (all admins and users), *Managed by PBP* (admins only) or *Managed by*
+named users. Every change is recorded in **Settings → Activity**. Admins can check what someone else sees with
+**Preview as…** in Settings → Users. The full permission table is in **Help → Roles & permissions** (generated from the
+rules the app enforces). Design notes: [docs/access-rights-study.md](docs/access-rights-study.md).
+
+---
+
 ## Creating a price list
 
-Go to **Price Lists → New Price List** and choose **Single Customer** or **Mass Update**.
+Go to **Price Lists → New Price List** and choose **Single Customer** or **Mass Update** (Admins and Users, for the customers they may change).
 
 **Single customer**
 1. **Step 1**: Select customer, effective (application) date, mailing date, version. If the customer already has a price list with the same application date and version, you are asked to pick another date/version (or delete the existing list).
@@ -129,8 +156,8 @@ The app remembers the last opened database path between sessions (on your comput
 ## Backups
 
 - Every time the database is opened, a verified backup is written to an **`EPL-Backups`** folder next to the database file (SharePoint database → backups on SharePoint; local → local). The 20 most recent are kept.
-- **Settings → Backups**: see the list, **Back up now**, **Open folder**, or **Restore** a backup. Before restoring, the current database is saved as a "pre-restore" copy, so a restore can be undone.
-- If the database is damaged, the app does not open it and offers to restore the latest backup instead.
+- **Settings → Backups**: see the list and **Open folder** (everybody); **Back up now** and **Restore** (admins). Before restoring, the current database is saved as a "pre-restore" copy, so a restore can be undone.
+- If the database is damaged, the app does not open it and offers to restore the latest backup instead (allowed for people who are admins in that backup).
 - The database uses SQLite's rollback-journal mode so the synced `.db` file is always self-contained (the previous WAL mode was a likely cause of past corruption on OneDrive/SharePoint).
 
 ---

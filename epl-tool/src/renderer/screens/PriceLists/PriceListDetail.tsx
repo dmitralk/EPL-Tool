@@ -8,7 +8,9 @@ import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/ca
 import { Dialog } from '../../components/ui/dialog';
 import { useToast } from '../../components/ui/toast';
 import { EmailComposeDialog } from '../../components/EmailComposeDialog';
-import { formatDate, formatCurrency, priceTypeLabel } from '../../lib/utils';
+import { formatDate, formatCurrency, ipcErrorMessage, priceTypeLabel } from '../../lib/utils';
+import { useCan } from '../../lib/auth';
+import { LockBadge } from '../../components/LockBadge';
 import type { PriceListFull, Customer } from '../../../types';
 
 export function PriceListDetail() {
@@ -21,6 +23,7 @@ export function PriceListDetail() {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const [deleting, setDeleting] = useState(false);
+  const can = useCan();
 
   useEffect(() => {
     if (!id) return;
@@ -56,7 +59,7 @@ export function PriceListDetail() {
       toast(`Price list ${priceList.price_list_version} deleted`, 'info');
       navigate('/price-lists', { replace: true });
     } catch (err) {
-      toast(`Delete failed: ${(err as Error).message}`, 'error');
+      toast(`Delete failed: ${ipcErrorMessage(err)}`, 'error');
       setDeleting(false);
     }
   }
@@ -93,15 +96,25 @@ export function PriceListDetail() {
           <Mail size={15} />
           Email
         </Button>
-        <Button
-          onClick={openDelete}
-          variant="ghost"
-          className="gap-2 text-red-600 hover:bg-red-50"
-        >
-          <Trash2 size={15} />
-          Delete
-        </Button>
+        {customer && can.changeCustomer(customer) ? (
+          <Button
+            onClick={openDelete}
+            variant="ghost"
+            className="gap-2 text-red-600 hover:bg-red-50"
+          >
+            <Trash2 size={15} />
+            Delete
+          </Button>
+        ) : customer && (
+          <LockBadge reason={can.lockReason(customer) ?? ''} />
+        )}
       </div>
+
+      <p className="text-xs text-gray-500 -mt-4 mb-5">
+        {priceList.created_by_name
+          ? <>Created by <b className="font-medium text-gray-700">{priceList.created_by_name}</b>{priceList.created_at ? ` on ${formatDate(priceList.created_at)}` : ''}</>
+          : <>Created{priceList.created_at ? ` on ${formatDate(priceList.created_at)}` : ''} (before creators were recorded)</>}
+      </p>
 
       <EmailComposeDialog
         open={composeOpen}

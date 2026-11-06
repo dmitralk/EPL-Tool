@@ -1,8 +1,19 @@
 import { useNavigate } from 'react-router-dom';
 import { User, Layers } from 'lucide-react';
+import { useCan } from '../../lib/auth';
 
 export function NewPriceListGateway() {
   const navigate = useNavigate();
+  const can = useCan();
+
+  if (!can.isEditor) {
+    return (
+      <div className="p-6 max-w-2xl mx-auto text-sm text-gray-600">
+        <h1 className="text-2xl font-bold text-gray-900 mb-2">New Price List</h1>
+        Viewers can view and export price lists, but not create them.
+      </div>
+    );
+  }
 
   return (
     <div className="p-6 max-w-2xl mx-auto">

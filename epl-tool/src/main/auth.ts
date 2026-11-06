@@ -93,15 +93,25 @@ export async function detectIdentity(
 }
 
 let identity: Promise<Identity> | null = null;
+let resolved: Identity | null = null;
 let allowOverride = false;
+
+function start(): Promise<Identity> {
+  identity = detectIdentity({ allowOverride }).then(id => (resolved = id));
+  return identity;
+}
 
 // Called once at start-up; the detection runs in the background and is awaited by getIdentity().
 export function initIdentity(opts: { allowOverride: boolean }): void {
   allowOverride = opts.allowOverride;
-  identity = detectIdentity({ allowOverride });
+  start();
 }
 
 export function getIdentity(): Promise<Identity> {
-  if (!identity) identity = detectIdentity({ allowOverride });
-  return identity;
+  return identity ?? start();
+}
+
+// The identity once detection has finished (await getIdentity() before opening a database), else null.
+export function getResolvedIdentity(): Identity | null {
+  return resolved;
 }

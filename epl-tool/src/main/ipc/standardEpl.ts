@@ -1,6 +1,9 @@
-import { ipcMain } from 'electron';
 import { getDb, getLatestPublishedEplVersionId } from '../database';
+import { audit } from '../audit';
+import { handle } from './guard';
 import type { StandardEplRow, CombinedEplRow, StandardEplVersion } from '../../types';
+
+const DENIED = 'Only admins can change the Standard EPL.';
 
 function getDraftVersion(db: ReturnType<typeof getDb>): StandardEplVersion | undefined {
   return db.prepare(
@@ -8,8 +11,13 @@ function getDraftVersion(db: ReturnType<typeof getDb>): StandardEplVersion | und
   ).get() as StandardEplVersion | undefined;
 }
 
+function versionName(db: ReturnType<typeof getDb>, versionId: number): string {
+  return (db.prepare('SELECT version_name FROM standard_epl_versions WHERE version_id = ?').get(versionId) as
+    { version_name: string } | undefined)?.version_name ?? `#${versionId}`;
+}
+
 export function registerStandardEplHandlers() {
-  ipcMain.handle('standard-epl:list-versions', () => {
+  handle('standard-epl:list-versions', 'viewer', () => {
     return getDb().prepare(`
       SELECT v.*,
         (SELECT COUNT(*) FROM standard_epl WHERE version_id = v.version_id) AS row_count
@@ -20,7 +28,7 @@ export function registerStandardEplHandlers() {
     `).all() as (StandardEplVersion & { row_count: number })[];
   });
 
-  ipcMain.handle('standard-epl:list', (_e, currency?: 'USD' | 'EUR', versionId?: number) => {
+  handle('standard-epl:list', 'viewer', (_e, currency?: 'USD' | 'EUR', versionId?: number) => {
     const db = getDb();
     const vid = versionId ?? getLatestPublishedEplVersionId();
     if (currency) {
@@ -33,7 +41,7 @@ export function registerStandardEplHandlers() {
       .all(vid) as StandardEplRow[];
   });
 
-  ipcMain.handle('standard-epl:list-combined', (_e, versionId?: number) => {
+  handle('standard-epl:list-combined', 'viewer', (_e, versionId?: number) => {
     const db = getDb();
     const vid = versionId ?? getLatestPublishedEplVersionId();
     return db.prepare(`
@@ -49,89 +57,102 @@ export function registerStandardEplHandlers() {
     `).all(vid, vid) as CombinedEplRow[];
   });
 
-  ipcMain.handle('standard-epl:update-price', (_e, id: number, net_price: number) => {
+  handle('standard-epl:update-price', 'admin', (_e, id: number, net_price: number) => {
     const db = getDb();
     const row = db.prepare(`
-      SELECT v.status FROM standard_epl e
+      SELECT e.*, v.status, v.version_name FROM standard_epl e
       JOIN standard_epl_versions v ON e.version_id = v.version_id
       WHERE e.id = ?
-    `).get(id) as { status: string } | undefined;
+    `).get(id) as (StandardEplRow & { status: string; version_name: string }) | undefined;
     if (!row) throw new Error('Row not found');
     if (row.status !== 'draft') throw new Error('Cannot edit a published version');
-    db.prepare('UPDATE standard_epl SET net_price = ? WHERE id = ?').run(net_price, id);
-  });
+    if (row.net_price === net_price) return;
+    db.transaction(() => {
+      db.prepare('UPDATE standard_epl SET net_price = ? WHERE id = ?').run(net_price, id);
+      audit(db, { action: 'epl.price', entityType: 'standard_epl', entityKey: row.version_id,
+        summary: `EPL draft ${row.version_name}: ${row.rip_code} ${row.currency} ${row.net_price} → ${net_price}` });
+    })();
+  }, DENIED);
 
-  ipcMain.handle('standard-epl:upsert', (_e, data: {
+  handle('standard-epl:upsert', 'admin', (_e, data: {
     version_id: number;
     rip_code: string; product_type: string; product_name: string;
     currency: 'USD' | 'EUR'; net_price: number; unit: string;
   }) => {
     const db = getDb();
-    const version = db.prepare('SELECT status FROM standard_epl_versions WHERE version_id = ?')
-      .get(data.version_id) as { status: string } | undefined;
+    const version = db.prepare('SELECT status, version_name FROM standard_epl_versions WHERE version_id = ?')
+      .get(data.version_id) as { status: string; version_name: string } | undefined;
     if (!version) throw new Error('Version not found');
     if (version.status !== 'draft') throw new Error('Cannot edit a published version');
-    db.prepare(`
-      INSERT INTO standard_epl (version_id, currency, product_type, rip_code, product_name, net_price, unit)
-      VALUES (@version_id, @currency, @product_type, @rip_code, @product_name, @net_price, @unit)
-      ON CONFLICT (version_id, currency, rip_code) DO UPDATE SET
-        net_price = excluded.net_price,
-        unit = excluded.unit,
-        product_name = excluded.product_name,
-        product_type = excluded.product_type
-    `).run(data);
-  });
+    db.transaction(() => {
+      db.prepare(`
+        INSERT INTO standard_epl (version_id, currency, product_type, rip_code, product_name, net_price, unit)
+        VALUES (@version_id, @currency, @product_type, @rip_code, @product_name, @net_price, @unit)
+        ON CONFLICT (version_id, currency, rip_code) DO UPDATE SET
+          net_price = excluded.net_price,
+          unit = excluded.unit,
+          product_name = excluded.product_name,
+          product_type = excluded.product_type
+      `).run(data);
+      audit(db, { action: 'epl.upsert', entityType: 'standard_epl', entityKey: data.version_id,
+        summary: `EPL draft ${version.version_name}: set ${data.rip_code} ${data.currency} to ${data.net_price} / ${data.unit}` });
+    })();
+  }, DENIED);
 
-  ipcMain.handle('standard-epl:create-draft', (_e, {
-    sourceVersionId, versionName, notes,
+  handle('standard-epl:create-draft', 'admin', (_e, {
+    sourceVersionId, versionName: name, notes,
   }: { sourceVersionId: number; versionName: string; notes?: string }) => {
     const db = getDb();
     const existing = getDraftVersion(db);
     if (existing) throw new Error('A draft already exists. Discard it before creating a new one.');
 
-    const { lastInsertRowid } = db.prepare(
-      `INSERT INTO standard_epl_versions (version_name, status, notes) VALUES (?, 'draft', ?)`
-    ).run(versionName, notes ?? null);
-    const newVersionId = lastInsertRowid as number;
-
-    db.prepare(`
-      INSERT INTO standard_epl (version_id, currency, product_type, rip_code, product_name, net_price, unit)
-      SELECT ?, currency, product_type, rip_code, product_name, net_price, unit
-      FROM standard_epl WHERE version_id = ?
-    `).run(newVersionId, sourceVersionId);
+    const newVersionId = db.transaction(() => {
+      const { lastInsertRowid } = db.prepare(
+        `INSERT INTO standard_epl_versions (version_name, status, notes) VALUES (?, 'draft', ?)`
+      ).run(name, notes ?? null);
+      const vid = lastInsertRowid as number;
+      db.prepare(`
+        INSERT INTO standard_epl (version_id, currency, product_type, rip_code, product_name, net_price, unit)
+        SELECT ?, currency, product_type, rip_code, product_name, net_price, unit
+        FROM standard_epl WHERE version_id = ?
+      `).run(vid, sourceVersionId);
+      audit(db, { action: 'epl.draft-create', entityType: 'standard_epl', entityKey: vid,
+        summary: `Created EPL draft ${name} from ${versionName(db, sourceVersionId)}` });
+      return vid;
+    })();
 
     return db.prepare('SELECT * FROM standard_epl_versions WHERE version_id = ?')
       .get(newVersionId) as StandardEplVersion;
-  });
+  }, DENIED);
 
-  ipcMain.handle('standard-epl:publish-draft', (_e, {
-    effectiveFrom, notes, versionName,
+  handle('standard-epl:publish-draft', 'admin', (_e, {
+    effectiveFrom, notes, versionName: name,
   }: { effectiveFrom: string; notes?: string; versionName?: string }) => {
     const db = getDb();
     const draft = getDraftVersion(db);
     if (!draft) throw new Error('No draft to publish');
     if (!effectiveFrom) throw new Error('Effective date is required');
 
-    db.prepare(`
-      UPDATE standard_epl_versions
-      SET status = 'published',
-          effective_from = ?,
-          published_at = datetime('now'),
-          notes = ?,
-          version_name = ?
-      WHERE version_id = ?
-    `).run(
-      effectiveFrom,
-      notes !== undefined ? notes : draft.notes,
-      versionName !== undefined ? versionName : draft.version_name,
-      draft.version_id,
-    );
+    const finalName = name !== undefined ? name : draft.version_name;
+    db.transaction(() => {
+      db.prepare(`
+        UPDATE standard_epl_versions
+        SET status = 'published',
+            effective_from = ?,
+            published_at = datetime('now'),
+            notes = ?,
+            version_name = ?
+        WHERE version_id = ?
+      `).run(effectiveFrom, notes !== undefined ? notes : draft.notes, finalName, draft.version_id);
+      audit(db, { action: 'epl.publish', entityType: 'standard_epl', entityKey: draft.version_id,
+        summary: `Published Standard EPL ${finalName} (effective ${effectiveFrom})` });
+    })();
 
     return db.prepare('SELECT * FROM standard_epl_versions WHERE version_id = ?')
       .get(draft.version_id) as StandardEplVersion;
-  });
+  }, DENIED);
 
-  ipcMain.handle('standard-epl:delete-draft', () => {
+  handle('standard-epl:delete-draft', 'admin', () => {
     const db = getDb();
     const draft = getDraftVersion(db);
     if (!draft) throw new Error('No draft to discard');
@@ -139,36 +160,43 @@ export function registerStandardEplHandlers() {
     db.transaction(() => {
       db.prepare('DELETE FROM standard_epl WHERE version_id = ?').run(draft.version_id);
       db.prepare('DELETE FROM standard_epl_versions WHERE version_id = ?').run(draft.version_id);
+      audit(db, { action: 'epl.draft-discard', entityType: 'standard_epl', entityKey: draft.version_id,
+        summary: `Discarded EPL draft ${draft.version_name}` });
     })();
-  });
+  }, DENIED);
 
-  ipcMain.handle('standard-epl:update-draft-meta', (_e, {
-    versionName, notes,
+  handle('standard-epl:update-draft-meta', 'admin', (_e, {
+    versionName: name, notes,
   }: { versionName?: string; notes?: string }) => {
     const db = getDb();
     const draft = getDraftVersion(db);
     if (!draft) throw new Error('No draft exists');
 
-    if (versionName !== undefined) {
-      db.prepare('UPDATE standard_epl_versions SET version_name = ? WHERE version_id = ?')
-        .run(versionName, draft.version_id);
-    }
-    if (notes !== undefined) {
-      db.prepare('UPDATE standard_epl_versions SET notes = ? WHERE version_id = ?')
-        .run(notes, draft.version_id);
-    }
-  });
+    db.transaction(() => {
+      if (name !== undefined) {
+        db.prepare('UPDATE standard_epl_versions SET version_name = ? WHERE version_id = ?').run(name, draft.version_id);
+      }
+      if (notes !== undefined) {
+        db.prepare('UPDATE standard_epl_versions SET notes = ? WHERE version_id = ?').run(notes, draft.version_id);
+      }
+      audit(db, { action: 'epl.draft-update', entityType: 'standard_epl', entityKey: draft.version_id,
+        summary: `Updated EPL draft ${draft.version_name}${name !== undefined && name !== draft.version_name ? ` (renamed ${name})` : ''}` });
+    })();
+  }, DENIED);
 
-  ipcMain.handle('standard-epl:delete-row', (_e, {
+  handle('standard-epl:delete-row', 'admin', (_e, {
     versionId, ripCode,
   }: { versionId: number; ripCode: string }) => {
     const db = getDb();
-    const version = db.prepare('SELECT status FROM standard_epl_versions WHERE version_id = ?')
-      .get(versionId) as { status: string } | undefined;
+    const version = db.prepare('SELECT status, version_name FROM standard_epl_versions WHERE version_id = ?')
+      .get(versionId) as { status: string; version_name: string } | undefined;
     if (!version) throw new Error('Version not found');
     if (version.status !== 'draft') throw new Error('Cannot delete rows from a published version');
 
-    db.prepare('DELETE FROM standard_epl WHERE version_id = ? AND rip_code = ?')
-      .run(versionId, ripCode);
-  });
+    db.transaction(() => {
+      db.prepare('DELETE FROM standard_epl WHERE version_id = ? AND rip_code = ?').run(versionId, ripCode);
+      audit(db, { action: 'epl.row-delete', entityType: 'standard_epl', entityKey: versionId,
+        summary: `EPL draft ${version.version_name}: removed ${ripCode}` });
+    })();
+  }, DENIED);
 }

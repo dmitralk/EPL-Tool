@@ -17,7 +17,8 @@ function fmtSize(bytes: number): string {
   return bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
 }
 
-export function BackupPanel({ canCreate, onRestored }: { canCreate: boolean; onRestored: () => void }) {
+// canRestore defaults to true: on the damaged-database screen the main process checks the backup's own user list.
+export function BackupPanel({ canCreate, canRestore = true, onRestored }: { canCreate: boolean; canRestore?: boolean; onRestored: () => void }) {
   const { toast } = useToast();
   const [data, setData] = useState<BackupListResult | null>(null);
   const [busy, setBusy] = useState(false);
@@ -100,9 +101,11 @@ export function BackupPanel({ canCreate, onRestored }: { canCreate: boolean; onR
                   </td>
                   <td className="px-3 py-2 text-gray-500 text-xs text-right">{fmtSize(b.size)}</td>
                   <td className="px-3 py-2 text-right w-28">
-                    <Button variant="ghost" size="sm" onClick={() => setRestoreTarget(b)} disabled={busy}>
-                      <RotateCcw size={13} className="mr-1" /> Restore
-                    </Button>
+                    {canRestore && (
+                      <Button variant="ghost" size="sm" onClick={() => setRestoreTarget(b)} disabled={busy}>
+                        <RotateCcw size={13} className="mr-1" /> Restore
+                      </Button>
+                    )}
                   </td>
                 </tr>
               ))}

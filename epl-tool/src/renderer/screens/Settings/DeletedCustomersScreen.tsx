@@ -7,10 +7,14 @@ import { Badge } from '../../components/ui/badge';
 import { ConfirmDialog } from '../../components/ui/dialog';
 import { useToast } from '../../components/ui/toast';
 import type { Customer } from '../../../types';
+import { useCan } from '../../lib/auth';
+import { LockBadge } from '../../components/LockBadge';
+import { ipcErrorMessage } from '../../lib/utils';
 
 export function DeletedCustomersScreen() {
   const navigate = useNavigate();
   const { toast } = useToast();
+  const can = useCan();
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
   const [confirmDelete, setConfirmDelete] = useState<Customer | null>(null);
@@ -23,13 +27,23 @@ export function DeletedCustomersScreen() {
   }, []);
 
   async function handleRestore(ref: string) {
-    await api.restoreCustomer(ref);
+    try {
+      await api.restoreCustomer(ref);
+    } catch (err) {
+      toast(ipcErrorMessage(err), 'error');
+      return;
+    }
     setCustomers(prev => prev.filter(c => c.customer_ref_sap !== ref));
     toast('Customer restored', 'success');
   }
 
   async function handleDeletePermanent(ref: string) {
-    await api.deleteCustomerPermanent(ref);
+    try {
+      await api.deleteCustomerPermanent(ref);
+    } catch (err) {
+      toast(ipcErrorMessage(err), 'error');
+      return;
+    }
     setCustomers(prev => prev.filter(c => c.customer_ref_sap !== ref));
     setConfirmDelete(null);
     toast('Customer permanently deleted', 'info');
@@ -80,23 +94,27 @@ export function DeletedCustomersScreen() {
                     <Badge variant={c.currency === 'USD' ? 'default' : 'secondary'}>{c.currency}</Badge>
                   </td>
                   <td className="px-4 py-3">
-                    <div className="flex gap-2 justify-end">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleRestore(c.customer_ref_sap)}
-                      >
-                        Restore
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setConfirmDelete(c)}
-                        className="text-red-500 hover:text-red-700 hover:bg-red-50"
-                      >
-                        Delete Permanently
-                      </Button>
-                    </div>
+                    {can.restoreCustomers ? (
+                      <div className="flex gap-2 justify-end">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleRestore(c.customer_ref_sap)}
+                        >
+                          Restore
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setConfirmDelete(c)}
+                          className="text-red-500 hover:text-red-700 hover:bg-red-50"
+                        >
+                          Delete Permanently
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="flex justify-end"><LockBadge reason="Admins restore or delete" /></div>
+                    )}
                   </td>
                 </tr>
               ))}

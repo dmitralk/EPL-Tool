@@ -9,6 +9,10 @@ import { ConfirmDialog } from '../../components/ui/dialog';
 import { useToast } from '../../components/ui/toast';
 import { formatDate, ipcErrorMessage, priceTypeLabel } from '../../lib/utils';
 import { ComparisonPanel } from './ComparisonPanel';
+import { PricingManagementCard } from './PricingManagementCard';
+import { CustomerHistory } from './CustomerHistory';
+import { LockBadge } from '../../components/LockBadge';
+import { useCan } from '../../lib/auth';
 import { CUSTOMER_EDITABLE_FIELDS, type CustomerEditableField } from '../../../shared/customerFields';
 import type { AdminEmail, Currency, Customer, PackagingVersion, PriceListHeader } from '../../../types';
 
@@ -31,6 +35,8 @@ export function CustomerDetail() {
   const [draft, setDraft] = useState<Customer | null>(null);
   const [saving, setSaving] = useState(false);
   const [hideConfirmOpen, setHideConfirmOpen] = useState(false);
+  const [historyKey, setHistoryKey] = useState(0);
+  const can = useCan();
 
   useEffect(() => {
     if (!ref) return;
@@ -108,6 +114,7 @@ export function CustomerDetail() {
       setCustomer(updated as Customer);
       setEditing(false);
       setDraft(null);
+      setHistoryKey(k => k + 1);
       toast('Customer updated', 'success');
     } catch (err) {
       toast(`Failed to save changes: ${ipcErrorMessage(err)}`, 'error');
@@ -118,9 +125,13 @@ export function CustomerDetail() {
 
   async function handleHideCustomer() {
     if (!customer) return;
-    await api.softDeleteCustomer(customer.customer_ref_sap);
-    toast('Customer hidden', 'info');
-    navigate('/customers');
+    try {
+      await api.softDeleteCustomer(customer.customer_ref_sap);
+      toast('Customer hidden', 'info');
+      navigate('/customers');
+    } catch (err) {
+      toast(ipcErrorMessage(err), 'error');
+    }
   }
 
   function set<K extends keyof Customer>(key: K, value: Customer[K]) {
@@ -130,6 +141,7 @@ export function CustomerDetail() {
   if (!customer) return <div className="p-6 text-center text-gray-400">Loading…</div>;
 
   const d = draft ?? customer;
+  const lockReason = can.lockReason(customer);
 
   return (
     <div className="p-6 max-w-5xl mx-auto">
@@ -156,22 +168,27 @@ export function CustomerDetail() {
             <Button onClick={saveEdit} disabled={saving}>{saving ? 'Saving…' : 'Save'}</Button>
           </div>
         ) : (
-          <div className="flex gap-2">
+          <div className="flex gap-2 items-center">
             {selected.size === 2 && (
               <Button variant="outline" onClick={openComparison} className="gap-2">
                 <GitCompareArrows size={15} /> Compare Selected
               </Button>
             )}
-            <Button variant="outline" onClick={startEdit} className="gap-2">
-              <Pencil size={14} /> Edit
-            </Button>
-            <Button
-              variant="ghost"
-              onClick={() => setHideConfirmOpen(true)}
-              className="gap-2 text-red-500 hover:text-red-700 hover:bg-red-50"
-            >
-              <EyeOff size={14} /> Hide
-            </Button>
+            {lockReason && <LockBadge reason={lockReason} />}
+            {!lockReason && (
+              <Button variant="outline" onClick={startEdit} className="gap-2">
+                <Pencil size={14} /> Edit
+              </Button>
+            )}
+            {can.hideCustomer(customer) && (
+              <Button
+                variant="ghost"
+                onClick={() => setHideConfirmOpen(true)}
+                className="gap-2 text-red-500 hover:text-red-700 hover:bg-red-50"
+              >
+                <EyeOff size={14} /> Hide
+              </Button>
+            )}
           </div>
         )}
       </div>
@@ -263,8 +280,6 @@ export function CustomerDetail() {
               </div>
               <ERow label="SPOC" value={d.customer_spoc ?? ''} editing={editing}
                 onChange={v => set('customer_spoc', v || null)} />
-              <ERow label="Managed by" value={d.price_list_managed_by ?? ''} editing={editing}
-                onChange={v => set('price_list_managed_by', v || null)} />
             </dl>
           </CardContent>
         </Card>
@@ -296,6 +311,11 @@ export function CustomerDetail() {
           </CardContent>
         </Card>
       </div>
+
+      <PricingManagementCard
+        customer={customer}
+        onChanged={c => { setCustomer(c); setHistoryKey(k => k + 1); }}
+      />
 
       {/* Price Lists */}
       <Card className="mb-6">
@@ -377,6 +397,8 @@ export function CustomerDetail() {
           onClose={() => setComparing(null)}
         />
       )}
+
+      <CustomerHistory customerRef={customer.customer_ref_sap} reloadKey={historyKey} />
 
       <ConfirmDialog
         open={hideConfirmOpen}

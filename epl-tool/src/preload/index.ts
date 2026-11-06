@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type { PrefKey } from '../shared/prefs';
+import type { AuditFilters, NewCustomerInput, PricingMode, UserInput } from '../types';
 
 const api = {
   // DB management
@@ -7,6 +8,7 @@ const api = {
   dbOpen: (filePath: string) => ipcRenderer.invoke('db:open', filePath),
   dbCreate: () => ipcRenderer.invoke('db:create'),
   dbGetPath: () => ipcRenderer.invoke('db:get-path'),
+  dbOpenFolder: () => ipcRenderer.invoke('db:open-folder'),
   dbIsOpen: () => ipcRenderer.invoke('db:is-open'),
   dbLastOpenError: () => ipcRenderer.invoke('db:last-open-error'),
 
@@ -19,9 +21,10 @@ const api = {
   // Customers
   getCustomers: () => ipcRenderer.invoke('customers:list'),
   getCustomer: (ref: string) => ipcRenderer.invoke('customers:get', ref),
-  createCustomer: (data: unknown) => ipcRenderer.invoke('customers:create', data),
+  createCustomer: (data: NewCustomerInput) => ipcRenderer.invoke('customers:create', data),
   updateCustomer: (ref: string, data: unknown) => ipcRenderer.invoke('customers:update', ref, data),
-  deleteCustomer: (ref: string) => ipcRenderer.invoke('customers:delete', ref),
+  setCustomerAccess: (ref: string, access: { pricing_mode: PricingMode; manager_ids: number[] }) =>
+    ipcRenderer.invoke('customers:set-access', ref, access),
   softDeleteCustomer: (ref: string) => ipcRenderer.invoke('customers:soft-delete', ref),
   restoreCustomer: (ref: string) => ipcRenderer.invoke('customers:restore', ref),
   getDeletedCustomers: () => ipcRenderer.invoke('customers:list-deleted'),
@@ -47,7 +50,6 @@ const api = {
 
   // Packaging
   getPackaging: (version?: string) => ipcRenderer.invoke('packaging:list', version),
-  updatePackagingPrice: (id: number, price: number) => ipcRenderer.invoke('packaging:update-price', id, price),
   listPackagingVersions: () => ipcRenderer.invoke('packaging:list-versions'),
   createPackagingVersion: (name: string, cloneFrom?: string) => ipcRenderer.invoke('packaging:create-version', name, cloneFrom),
   deletePackagingVersion: (version: string) => ipcRenderer.invoke('packaging:delete-version', version),
@@ -66,8 +68,6 @@ const api = {
   // Export
   exportXlsx: (price_list_id: string) => ipcRenderer.invoke('export:xlsx', price_list_id),
   exportXlsxBulk: (ids: string[]) => ipcRenderer.invoke('export:xlsx-bulk', ids),
-  openMailWithAttachment: (params: { filePath: string; to: string; subject: string; body: string }) =>
-    ipcRenderer.invoke('export:open-mail-with-attachment', params),
   openMailBulk: (ids: string[], subject: string, body: string) => ipcRenderer.invoke('export:open-mail-bulk', ids, subject, body),
   exportStandardEplXlsx: (versionId?: number) => ipcRenderer.invoke('export:standard-epl-xlsx', versionId),
   exportStandardEplMail: (versionId?: number) => ipcRenderer.invoke('export:standard-epl-mail', versionId),
@@ -77,16 +77,29 @@ const api = {
   // Settings
   getAdminEmails: () => ipcRenderer.invoke('settings:get-admin-emails'),
   updateAdminEmail: (id: number, email: string) => ipcRenderer.invoke('settings:update-admin-email', id, email),
+  createAdminEmail: (name: string, email: string) => ipcRenderer.invoke('settings:create-admin-email', name, email),
+  deleteAdminEmail: (id: number) => ipcRenderer.invoke('settings:delete-admin-email', id),
   getUnits: () => ipcRenderer.invoke('settings:get-units'),
   createUnit: (name: string) => ipcRenderer.invoke('settings:create-unit', name),
   deleteUnit: (id: number) => ipcRenderer.invoke('settings:delete-unit', id),
   getLogo: () => ipcRenderer.invoke('settings:get-logo'),
   selectLogo: () => ipcRenderer.invoke('settings:select-logo'),
 
-  // Identity and local (per-user) preferences
+  // Identity, access and local (per-user) preferences
   whoami: () => ipcRenderer.invoke('auth:whoami'),
+  getAuthState: () => ipcRenderer.invoke('auth:me'),
+  startPreview: (userId: number) => ipcRenderer.invoke('auth:preview-start', userId),
+  stopPreview: () => ipcRenderer.invoke('auth:preview-stop'),
+  requestAccess: (kind?: 'access' | 'change') => ipcRenderer.invoke('auth:request-access', kind),
   getPref: (key: PrefKey) => ipcRenderer.invoke('prefs:get', key),
   setPref: (key: PrefKey, value: string) => ipcRenderer.invoke('prefs:set', key, value),
+
+  // Users and activity log
+  listUsers: () => ipcRenderer.invoke('users:list'),
+  createUser: (data: UserInput) => ipcRenderer.invoke('users:create', data),
+  updateUser: (id: number, data: UserInput) => ipcRenderer.invoke('users:update', id, data),
+  listAudit: (filters?: AuditFilters) => ipcRenderer.invoke('audit:list', filters),
+  exportAuditXlsx: (filters?: AuditFilters) => ipcRenderer.invoke('audit:export-xlsx', filters),
 
   // Currencies
   getCurrencies: () => ipcRenderer.invoke('currencies:list'),
@@ -96,7 +109,7 @@ const api = {
   // Analysis
   getAnalysisRows: (comparisonVersionId?: number) => ipcRenderer.invoke('analysis:list-rows', comparisonVersionId),
   getFxRates: () => ipcRenderer.invoke('fx:list'),
-  setFxRate: (code: string, rate: number) => ipcRenderer.invoke('fx:set', code, rate),
+  setDefaultFxRates: (rates: { currency_code: string; rate_to_usd: number }[]) => ipcRenderer.invoke('fx:set-defaults', rates),
   exportAnalysisXlsx: (payload: unknown) => ipcRenderer.invoke('analysis:export-xlsx', payload),
 
   // Email management

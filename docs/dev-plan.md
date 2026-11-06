@@ -1,6 +1,6 @@
 # EPL Tool — Development plan: access rights + multi-user
 
-*Status: decisions recorded · Phase A done · updated 6 Nov 2026 · current version v0.5.2*
+*Status: decisions recorded · Phase A done · Phase B built (in review) · updated 6 Nov 2026 · current version v0.5.2*
 *Studies: [access-rights-study.md](./access-rights-study.md) · [multi-user-study.md](./multi-user-study.md)*
 
 ---
@@ -130,69 +130,87 @@ dialog, FX popover, import wizard). It is written for users; the files in `docs/
 
 Checked on copies of the databases, by running the real main-process code outside the app (no app launch).
 
-### Phase B — Access rights + Help (5.5–6.5 d) → release v0.6
+### Phase B — Access rights + Help (5.5–6.5 d) → release v0.6 — **built 6 Nov 2026, in review**
 
-- [ ] **Database:** Migration 7.
-  - [ ] Add `users`, `customers.pricing_mode` (all → `pbp`), `customer_managers`, `price_lists.created_by_user_id` and
+- [x] **Database:** Migration 7.
+  - [x] Add `users`, `customers.pricing_mode` (all → `pbp`), `customer_managers`, `price_lists.created_by_user_id` and
         `audit_log`.
-  - [ ] Drop `customers.price_list_managed_by` and remove it from types, the customer page and `customers:create`.
-  - [ ] Make the current Windows user the first admin.
-- [ ] **`shared/permissions.ts`:** the permission functions used by both sides, plus unit tests (`node:test` via `tsx`, the first
+  - [x] Drop `customers.price_list_managed_by` and remove it from types, the customer page and `customers:create`.
+  - [x] Make the current Windows user the first admin.
+- [x] **`shared/permissions.ts`:** the permission functions used by both sides, plus unit tests (`node:test` via `tsx`, the first
       automated tests in the repo; add `npm test`).
-- [ ] **A check on every action:** one helper for all channels.
-  - [ ] Each channel declares its rule; anything not declared is refused.
-  - [ ] Users who are not on the list can only use `db:*` / `auth:*`.
-  - [ ] Clear refusal messages.
-- [ ] **Per-customer checks** in:
-  - [ ] `price-lists:create` / `price-lists:delete`
-  - [ ] `customers:update`, hide / restore / permanent delete
-  - [ ] `emails:set-assignments` / `emails:replace` / `emails:remove` (change only allowed customers, report the skipped ones)
-  - [ ] new `customers:create` (the creator becomes manager)
-  - [ ] new `customers:set-access`
-- [ ] **Activity log:** an `audit()` helper called in the same transaction as every change; `audit:list` with filters.
-- [ ] **FX rates:**
-  - [ ] `fx:set` becomes admin-only and saves the **default** rates.
-  - [ ] The Analysis screen keeps **session rates** in memory only (forgotten when the app closes — decided): start from the
+- [x] **A check on every action:** one helper for all channels.
+  - [x] Each channel declares its rule; anything not declared is refused.
+  - [x] Users who are not on the list can only use `db:*` / `auth:*`.
+  - [x] Clear refusal messages.
+- [x] **Per-customer checks** in:
+  - [x] `price-lists:create` / `price-lists:delete`
+  - [x] `customers:update`, hide / restore / permanent delete
+  - [x] `emails:set-assignments` / `emails:replace` / `emails:remove` (change only allowed customers, report the skipped ones)
+  - [x] new `customers:create` (the creator becomes manager)
+  - [x] new `customers:set-access`
+- [x] **Activity log:** an `audit()` helper called in the same transaction as every change; `audit:list` with filters.
+- [x] **FX rates:**
+  - [x] `fx:set` becomes admin-only and saves the **default** rates.
+  - [x] The Analysis screen keeps **session rates** in memory only (forgotten when the app closes — decided): start from the
         defaults, *"Your rates (this session)"* label, *Reset to defaults*, and *Save as default rates* for admins.
-- [ ] **PBP Emails:** admins can add, edit and remove entries. The old import was the only way to fill a new database.
-- [ ] **Screens:**
-  - [ ] **Basics:** `AuthContext`, `useCan()`, `LockBadge`, and a route guard that sends unknown users to `/no-access`.
-  - [ ] **No-access screen:** admin contacts, a *Request access* email, and a short help text.
-  - [ ] **Sidebar:** name and role.
-  - [ ] **Settings → Users:**
-    - [ ] add, edit role, deactivate
-    - [ ] the last admin can't be removed
-    - [ ] warning about customers left without an active manager
-    - [ ] **SharePoint reminder** (Edit for Admin/User, Read for Viewer) and an *Open shared folder* button
-    - [ ] **Preview as…**
-  - [ ] **Customers:**
-    - [ ] Customers list: mode badges and a *My customers* filter.
-    - [ ] Customer detail: **Pricing management** card (mode + managers) and a **History** section.
-    - [ ] **New Customer** dialog: SAP ref (required, unique), names, currency, packaging, region, etc.; the creator becomes
+- [x] **PBP Emails:** admins can add, edit and remove entries. The old import was the only way to fill a new database.
+- [x] **Screens:**
+  - [x] **Basics:** `AuthContext`, `useCan()`, `LockBadge`, and a route guard that sends unknown users to `/no-access`.
+  - [x] **No-access screen:** admin contacts, a *Request access* email, and a short help text.
+  - [x] **Sidebar:** name and role.
+  - [x] **Settings → Users:**
+    - [x] add, edit role, deactivate
+    - [x] the last admin can't be removed
+    - [x] warning about customers left without an active manager
+    - [x] **SharePoint reminder** (Edit for Admin/User, Read for Viewer) and an *Open shared folder* button
+    - [x] **Preview as…**
+  - [x] **Customers:**
+    - [x] Customers list: mode badges and a *My customers* filter.
+    - [x] Customer detail: **Pricing management** card (mode + managers) and a **History** section.
+    - [x] **New Customer** dialog: SAP ref (required, unique), names, currency, packaging, region, etc.; the creator becomes
           manager; admins choose the mode.
-  - [ ] **Wizards:**
-    - [ ] Single wizard Step 1: lists only the user's own customers.
-    - [ ] Mass update Step 1: other customers are locked, with the reason.
-  - [ ] **Emails tab:**
-    - [ ] Edit dialog: only allowed customers can be ticked.
-    - [ ] Replace / Remove: change only allowed customers, with an *"x of y"* message.
-  - [ ] **Price lists:**
-    - [ ] Delete only where allowed.
-    - [ ] *"Created by"* shown on the price list page.
-  - [ ] **Read-only for non-admins:** Products, Standard EPL (export stays available), Packaging, Currencies, Units, PBP Emails,
+  - [x] **Wizards:**
+    - [x] Single wizard Step 1: lists only the user's own customers.
+    - [x] Mass update Step 1: other customers are locked, with the reason.
+  - [x] **Emails tab:**
+    - [x] Edit dialog: only allowed customers can be ticked.
+    - [x] Replace / Remove: change only allowed customers, with an *"x of y"* message.
+  - [x] **Price lists:**
+    - [x] Delete only where allowed.
+    - [x] *"Created by"* shown on the price list page.
+  - [x] **Read-only for non-admins:** Products, Standard EPL (export stays available), Packaging, Currencies, Units, PBP Emails,
         logo and backup actions.
-  - [ ] **Settings → Activity:** visible to all, with filters and export to Excel.
-- [ ] **Help v1** (§3): the screen and the v0.6 topics.
-- [ ] **Developer Tools:** allowed for admins only in releases.
-- [ ] **Docs:** README and CLAUDE.md.
+  - [x] **Settings → Activity:** visible to all, with filters and export to Excel.
+- [x] **Help v1** (§3): the screen and the v0.6 topics.
+- [x] **Developer Tools:** allowed for admins only in releases.
+- [x] **Docs:** README and CLAUDE.md.
 
 **Done when:**
 
-- the permission unit tests pass
-- every row of the permission matrix (access-rights study §3.2) has been checked manually with *Preview as…* for User and Viewer
-- calling a forbidden channel through Developer Tools is refused
-- every change appears in the activity log
-- the matrix shown in Help matches the enforced rules
+- [x] the permission unit tests pass — `npm test`: 49 tests (every role × mode × action, and the generated matrix against §3.2)
+- [ ] every row of the permission matrix (access-rights study §3.2) has been checked manually with *Preview as…* for User and
+      Viewer — **to do by you in the app** (the rules themselves were checked programmatically, see below)
+- [x] calling a forbidden channel through Developer Tools is refused — every channel goes through the guard; checked by
+      calling the real handlers as Admin, User, Viewer, unknown and deactivated people on copies of the database
+- [x] every change appears in the activity log
+- [x] the matrix shown in Help matches the enforced rules — it is generated from `shared/permissions.ts`
+
+**Implementation notes (6 Nov 2026):**
+
+- Guard: `main/ipc/guard.ts` — every channel is registered with `handle(channel, rule, fn)`, rule `public` / `viewer` /
+  `editor` / `admin`; `ipcMain.handle` itself is disabled, so a channel can't exist without a rule. Public channels: `db:*`,
+  `auth:*` and the backup recovery channels (`backup:list`, `backup:open-folder`, `backup:restore`).
+- Restore from the damaged-database screen is allowed when the current Windows identity is an active admin **in the
+  backup** (backups older than the user list are allowed) — decided 6 Nov.
+- New customers get PBP copy / PBP common from Settings → PBP Emails (decided 6 Nov). Managers may be active Users or
+  Admins (decided 6 Nov).
+- Removed unused channels (decided 6 Nov): `customers:delete`, `packaging:update-price`, `export:open-mail-with-attachment`;
+  `fx:set` became `fx:set-defaults` (admins, one audited call).
+- Checked outside the app on copies of both database files: 105 checks for Phase B (Migration 7, bootstrap, guard, rules,
+  preview, emails, audit, restore) and the 52 Phase A checks.
+- An independent code review found two issues, both fixed: `price-lists:create` now inserts only the line fields (a crafted
+  entry could carry another list's id), and lists of customers that no longer exist (orphans) can be deleted by admins.
 
 ### Phase C — Read copy + publish (3–4 d) → release v0.7
 
@@ -340,4 +358,5 @@ All decisions are recorded (the last two on 5 Nov 2026):
 - **Historical import:** Admins plus Users, for the customers they may change.
 - **Session FX rates:** forgotten when the app closes.
 
-**Next step:** Phase B (access rights + Help), towards release v0.6. Phase A was completed on 6 Nov 2026.
+**Next step:** review Phase B (built 6 Nov 2026), check the permission matrix with *Preview as…*, then release v0.6. Phase C
+(read copy + publish) follows.

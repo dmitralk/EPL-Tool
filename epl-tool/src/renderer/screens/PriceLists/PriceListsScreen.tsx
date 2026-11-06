@@ -8,9 +8,17 @@ import { Badge } from '../../components/ui/badge';
 import { ConfirmDialog } from '../../components/ui/dialog';
 import { useToast } from '../../components/ui/toast';
 import { EmailComposeDialog } from '../../components/EmailComposeDialog';
-import { formatDate, priceTypeLabel } from '../../lib/utils';
+import { formatDate, ipcErrorMessage, priceTypeLabel } from '../../lib/utils';
+import { useCan } from '../../lib/auth';
+import { LockBadge } from '../../components/LockBadge';
 import { ComparisonPanel } from '../Customers/ComparisonPanel';
 import type { PriceListHeader, Customer } from '../../../types';
+import type { PermCustomer } from '../../../shared/permissions';
+
+// Lists of customers without a row (orphaned lists) behave as Managed by PBP.
+const access = (pl: PriceListHeader): PermCustomer => ({
+  pricing_mode: pl.pricing_mode ?? 'pbp', manager_ids: pl.manager_ids ?? [], manager_names: pl.manager_names ?? [],
+});
 
 export function PriceListsScreen() {
   const navigate = useNavigate();
@@ -26,6 +34,8 @@ export function PriceListsScreen() {
   const [comparing, setComparing] = useState<{ idA: string; idB: string } | null>(null);
   const selectAllRef = useRef<HTMLInputElement>(null);
   const comparisonRef = useRef<HTMLDivElement>(null);
+  const can = useCan();
+  const canDelete = (pl: PriceListHeader) => can.changeCustomer(access(pl));
 
   useEffect(() => {
     async function load() {
@@ -77,7 +87,12 @@ export function PriceListsScreen() {
   }
 
   async function handleDelete(id: string) {
-    await api.deletePriceList(id);
+    try {
+      await api.deletePriceList(id);
+    } catch (err) {
+      toast(ipcErrorMessage(err), 'error');
+      return;
+    }
     setLists(prev => prev.filter(p => p.price_list_id !== id));
     setSelected(prev => { const next = new Set(prev); next.delete(id); return next; });
     toast('Price list deleted', 'info');
@@ -124,10 +139,12 @@ export function PriceListsScreen() {
             {showLatestOnly ? `${filtered.length} customers` : `${filtered.length} of ${lists.length} price lists`}
           </p>
         </div>
-        <Button onClick={() => navigate('/price-lists/new')} className="gap-2">
-          <Plus size={15} />
-          New Price List
-        </Button>
+        {can.isEditor && (
+          <Button onClick={() => navigate('/price-lists/new')} className="gap-2">
+            <Plus size={15} />
+            New Price List
+          </Button>
+        )}
       </div>
 
       {/* Filters */}
@@ -267,14 +284,20 @@ export function PriceListsScreen() {
                       <Button variant="outline" size="sm" onClick={() => handleExport(pl.price_list_id)}>
                         Export
                       </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setDeleteId(pl.price_list_id)}
-                        className="text-red-500 hover:text-red-700 hover:bg-red-50"
-                      >
-                        Delete
-                      </Button>
+                      {canDelete(pl) ? (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setDeleteId(pl.price_list_id)}
+                          className="text-red-500 hover:text-red-700 hover:bg-red-50"
+                        >
+                          Delete
+                        </Button>
+                      ) : (
+                        <span className="w-[58px] flex items-center justify-center">
+                          <LockBadge compact reason={can.lockReason(access(pl)) ?? ''} />
+                        </span>
+                      )}
                     </div>
                   </td>
                 </tr>

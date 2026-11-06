@@ -12,7 +12,8 @@
     "premake": "electron-rebuild -o better-sqlite3",
     "make": "electron-forge make",
     "publish": "electron-forge publish",
-    "lint": "eslint --ext .ts,.tsx ."
+    "lint": "eslint --ext .ts,.tsx .",
+    "test": "tsx --test src/**/*.test.ts"
   },
   "keywords": [],
   "author": {

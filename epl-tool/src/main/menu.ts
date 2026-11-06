@@ -12,13 +12,20 @@ export function installAppMenu(): void {
   }
 }
 
-function isDevToolsAllowed(): boolean {
-  return !app.isPackaged;
-}
-
-// Second line of defence: DevTools opened by any other route in a release are closed again.
-export function guardDevTools(win: BrowserWindow): void {
+// Releases: DevTools only for admins (Ctrl+Shift+I / F12); opened any other way by someone else, they are closed again.
+// The checks in the main process remain the real protection.
+export function guardDevTools(win: BrowserWindow, isAdmin: () => boolean): void {
+  const allowed = () => !app.isPackaged || isAdmin();
   win.webContents.on('devtools-opened', () => {
-    if (!isDevToolsAllowed()) win.webContents.closeDevTools();
+    if (!allowed()) win.webContents.closeDevTools();
+  });
+  if (!app.isPackaged) return;
+  win.webContents.on('before-input-event', (event, input) => {
+    if (input.type !== 'keyDown') return;
+    const shortcut = input.key === 'F12' || ((input.control || input.meta) && input.shift && input.key.toLowerCase() === 'i');
+    if (shortcut && allowed()) {
+      event.preventDefault();
+      win.webContents.toggleDevTools();
+    }
   });
 }

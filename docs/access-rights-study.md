@@ -1,6 +1,6 @@
 # EPL Tool — User access rights study
 
-*Status: decisions recorded (§9) · Phase A items done 6 Nov 2026 · based on EPL Tool v0.5.2*
+*Status: decisions recorded (§9) · Phase A items done 6 Nov 2026 · Phase B built 6 Nov 2026 (in review) · based on EPL Tool v0.5.2*
 *Related: [multi-user-study.md](./multi-user-study.md) (several users sharing one database) · [dev-plan.md](./dev-plan.md)
 (combined development plan)*
 
@@ -229,8 +229,8 @@ lock badges, disabled UI ─┘                  handler: per-customer checks + 
    - **Done in Phase A (6 Nov 2026):** `customers:update` accepts only the master-data and email fields listed in
      [`shared/customerFields.ts`](../epl-tool/src/shared/customerFields.ts) and refuses anything else; `is_deleted` is only
      changed through hide / restore.
-   - Phase B: a new `customers:set-access` changes the mode and managers (and `price_list_managed_by` leaves the allow-list
-     when Migration 7 drops it).
+   - **Done in Phase B (6 Nov 2026):** `customers:set-access` changes the mode and managers; `price_list_managed_by` was
+     dropped by Migration 7 and left the allow-list.
 6. **The old Excel import has been removed (5 Nov 2026).** It replaced customer rows
    (`INSERT OR REPLACE INTO customers`), which would have reset the access mode and deleted the managers, and already reset
    *Supply Region* and *hidden*. The new historical import (§3.7) only creates price lists and never touches customers.
@@ -377,5 +377,10 @@ Notes:
 | Mode/managers changes (§3.3), master data of *Open* customers by any User, hiding by Admins + managers | Accepted as proposed (no objection) |
 | Historical import rights | Admins, plus Users for the customers they may change (same rule as creating a price list) |
 | Session FX rates | Kept only while the app is open; forgotten when it closes |
+| Restore on the "damaged database" screen (6 Nov 2026) | Allowed only if the current Windows identity is an active admin **in the backup** being restored; backups older than the user list are allowed |
+| PBP copy / PBP common of new customers (6 Nov 2026) | Filled from Settings → PBP Emails when the customer is created |
+| Who can be named manager (6 Nov 2026) | Active Users and Admins |
+| Unused channels (6 Nov 2026) | Removed instead of guarded: `customers:delete`, `packaging:update-price`, `export:open-mail-with-attachment` |
 
-All decisions are recorded; nothing is open. Development starts with Phase A ([dev-plan.md](./dev-plan.md)).
+All decisions are recorded; nothing is open. Phase A and Phase B are built ([dev-plan.md](./dev-plan.md)); the manual check of
+the matrix with *Preview as…* is the remaining step before release v0.6.

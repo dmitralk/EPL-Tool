@@ -1,3 +1,8 @@
+export type Role = 'admin' | 'user' | 'viewer';
+
+// Who may change a customer's price lists, emails and master data (access-rights study §3.1).
+export type PricingMode = 'open' | 'pbp' | 'managed';
+
 export interface Customer {
   id: number;
   zone: string | null;
@@ -10,7 +15,6 @@ export interface Customer {
   customer_full_name: string;
   currency: string;
   packaging_version: string;
-  price_list_managed_by: string | null;
   customer_spoc: string | null;
   effective: string | null;
   mailing_date: string | null;
@@ -22,6 +26,72 @@ export interface Customer {
   email_pbp_common: string | null;
   main_supply_region: 'ASIA' | 'EUROPE' | 'AMERICA' | null;
   is_deleted: 0 | 1;
+  pricing_mode: PricingMode;
+  manager_ids: number[];      // customer_managers, filled by the customers:* handlers
+  manager_names: string[];
+}
+
+export type NewCustomerInput = Partial<Omit<Customer, 'id' | 'is_deleted' | 'manager_ids' | 'manager_names'>> & {
+  customer_ref_sap: string;
+  manager_ids?: number[];
+};
+
+export interface AppUser {
+  id: number;
+  display_name: string;
+  email: string | null;
+  account: string | null;
+  role: Role;
+  is_active: 0 | 1;
+  created_at: string;
+}
+
+export interface UserInput {
+  display_name?: string;
+  email?: string | null;
+  account?: string | null;
+  role?: Role;
+  is_active?: 0 | 1;
+}
+
+export interface AuthState {
+  identity: Identity;
+  dbOpen: boolean;
+  realUser: AppUser | null;        // the person at the keyboard (may be inactive)
+  user: AppUser | null;            // effective active user: the previewed user while an admin previews
+  previewing: boolean;
+  managedCustomerRefs: string[];   // customers the effective user manages
+  admins: { display_name: string; email: string | null }[];  // active admins, shown as contacts
+}
+
+export interface AuditEntry {
+  id: number;
+  at: string;                      // ISO UTC
+  user_id: number | null;
+  user_label: string;
+  action: string;
+  entity_type: string | null;
+  entity_key: string | null;
+  customer_ref_sap: string | null;
+  summary: string;
+  details: string | null;          // JSON
+}
+
+export interface AuditFilters {
+  userId?: number;
+  action?: string;                 // exact action or a prefix ending with '.' (e.g. 'customer.')
+  customerRef?: string;
+  from?: string;                   // YYYY-MM-DD, inclusive
+  to?: string;                     // YYYY-MM-DD, inclusive
+  search?: string;
+  limit?: number;
+}
+
+export interface AuditListResult {
+  entries: AuditEntry[];
+  total: number;
+  users: { user_id: number | null; user_label: string }[];
+  actions: string[];
 }
 
 export interface Product {
@@ -78,6 +148,11 @@ export interface PriceListHeader {
   price_type: 'Discount' | 'Net Price' | 'PrevPercent' | 'PrevAbsolute';
   discount_percent: number | null;
   created_at?: string;
+  created_by_user_id?: number | null;
+  created_by_name?: string | null;   // null for lists created before v0.6
+  pricing_mode?: PricingMode;        // the customer's, for delete gating
+  manager_ids?: number[];
+  manager_names?: string[];
 }
 
 export interface PriceListEntry {
@@ -118,6 +193,16 @@ export interface EmailCustomerLink {
   is_deleted: boolean;
   to: boolean;        // present in email_to_customer
   internal: boolean;  // present in email_internal_copy
+  pricing_mode: PricingMode;
+  manager_ids: number[];
+  manager_names: string[];
+}
+
+export interface EmailBulkResult {
+  ok: boolean;
+  error?: string;
+  updated?: number;
+  skipped?: { customer_ref_sap: string; customer_short_name: string }[];  // not allowed for this user
 }
 
 export interface EmailAssignmentChange {

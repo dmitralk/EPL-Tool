@@ -7,6 +7,8 @@ import { Button } from '../../components/ui/button';
 import { Dialog } from '../../components/ui/dialog';
 import { useToast } from '../../components/ui/toast';
 import type { PackagingRow } from '../../../types';
+import { useCan } from '../../lib/auth';
+import { LockBadge } from '../../components/LockBadge';
 
 type NewRow = Omit<PackagingRow, 'id'>;
 
@@ -14,6 +16,7 @@ export function PackagingVersionScreen() {
   const { version } = useParams<{ version: string }>();
   const navigate = useNavigate();
   const { toast } = useToast();
+  const can = useCan();
   const decodedVersion = decodeURIComponent(version ?? '');
 
   const [rows, setRows] = useState<PackagingRow[]>([]);
@@ -119,7 +122,7 @@ export function PackagingVersionScreen() {
         </button>
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-bold text-gray-900">{decodedVersion}</h1>
-          <Button variant="outline" onClick={openAddDialog}>+ Add Row</Button>
+          {can.referenceData ? <Button variant="outline" onClick={openAddDialog}>+ Add Row</Button> : <LockBadge reason="View only — admins manage packaging" />}
         </div>
         <p className="text-xs text-gray-400 mt-1">
           Rows without a price are treated as section labels in the export and won't appear as line items.
@@ -222,22 +225,26 @@ export function PackagingVersionScreen() {
                         <td className="px-4 py-3 text-gray-500 text-xs">{row.unit ?? '—'}</td>
                         <td className="px-4 py-3 text-right text-gray-300 text-xs">{row.sort_order}</td>
                         <td className="px-4 py-3 text-right whitespace-nowrap">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => startEdit(row)}
-                            className="mr-1"
-                          >
-                            Edit
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="text-red-400 hover:text-red-600 hover:bg-red-50 px-2"
-                            onClick={() => handleDelete(row.id)}
-                          >
-                            <Trash2 size={13} />
-                          </Button>
+                          {can.referenceData && (
+                            <>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => startEdit(row)}
+                                className="mr-1"
+                              >
+                                Edit
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="text-red-400 hover:text-red-600 hover:bg-red-50 px-2"
+                                onClick={() => handleDelete(row.id)}
+                              >
+                                <Trash2 size={13} />
+                              </Button>
+                            </>
+                          )}
                         </td>
                       </>
                     )}
