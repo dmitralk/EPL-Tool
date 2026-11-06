@@ -1,6 +1,6 @@
 # EPL Tool — Development plan: access rights + multi-user
 
-*Status: decisions recorded · Phase A done · Phase B built (in review) · updated 6 Nov 2026 · current version v0.5.2*
+*Status: decisions recorded · Phases A + B done · v0.6 released as v0.6.1 · updated 6 Nov 2026 · current version v0.6.1*
 *Studies: [access-rights-study.md](./access-rights-study.md) · [multi-user-study.md](./multi-user-study.md)*
 
 ---
@@ -69,7 +69,8 @@ place before anybody else opens the tool.
 
 ## 3. In-app Help (built up across releases)
 
-A **Help** entry in the sidebar (all roles), plus "?" links from the relevant controls (Pricing management card, *Start editing*
+A **Guides & Help** entry in the sidebar (all roles; above *Change Database*, renamed from "Help" on 6 Nov 2026 so it reads
+as documentation and guides), plus "?" links from the relevant controls (Pricing management card, *Start editing*
 dialog, FX popover, import wizard). It is written for users; the files in `docs/` stay the design notes.
 
 **How it's built**
@@ -130,7 +131,7 @@ dialog, FX popover, import wizard). It is written for users; the files in `docs/
 
 Checked on copies of the databases, by running the real main-process code outside the app (no app launch).
 
-### Phase B — Access rights + Help (5.5–6.5 d) → release v0.6 — **built 6 Nov 2026, in review**
+### Phase B — Access rights + Help (5.5–6.5 d) → release v0.6 — **done, released as v0.6.1 on 6 Nov 2026**
 
 - [x] **Database:** Migration 7.
   - [x] Add `users`, `customers.pricing_mode` (all → `pbp`), `customer_managers`, `price_lists.created_by_user_id` and
@@ -189,8 +190,8 @@ Checked on copies of the databases, by running the real main-process code outsid
 **Done when:**
 
 - [x] the permission unit tests pass — `npm test`: 49 tests (every role × mode × action, and the generated matrix against §3.2)
-- [ ] every row of the permission matrix (access-rights study §3.2) has been checked manually with *Preview as…* for User and
-      Viewer — **to do by you in the app** (the rules themselves were checked programmatically, see below)
+- [x] every row of the permission matrix (access-rights study §3.2) has been checked manually with *Preview as…* for User and
+      Viewer — done in the app on 6 Nov 2026 ("all is working well")
 - [x] calling a forbidden channel through Developer Tools is refused — every channel goes through the guard; checked by
       calling the real handlers as Admin, User, Viewer, unknown and deactivated people on copies of the database
 - [x] every change appears in the activity log
@@ -358,5 +359,5 @@ All decisions are recorded (the last two on 5 Nov 2026):
 - **Historical import:** Admins plus Users, for the customers they may change.
 - **Session FX rates:** forgotten when the app closes.
 
-**Next step:** review Phase B (built 6 Nov 2026), check the permission matrix with *Preview as…*, then release v0.6. Phase C
-(read copy + publish) follows.
+**Next step:** Phase C (read copy + publish) → release v0.7. Phases A and B were released as **v0.6.1** on 6 Nov 2026
+(v0.6.0 was not released separately).

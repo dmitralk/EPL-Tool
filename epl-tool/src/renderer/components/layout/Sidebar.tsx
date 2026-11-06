@@ -15,10 +15,15 @@ const navItems = [
   { to: '/standard-epl', label: 'Standard EPL', icon: BookOpen },
 ];
 
-const bottomItems = [
-  { to: '/help', label: 'Help', icon: HelpCircle },
-  { to: '/settings', label: 'Settings', icon: Settings },
-];
+// Shown as "Guides & Help": documentation and guides for every role (route /help).
+const helpItem = { to: '/help', label: 'Guides & Help', icon: HelpCircle };
+const settingsItem = { to: '/settings', label: 'Settings', icon: Settings };
+
+const linkClass = ({ isActive }: { isActive: boolean }) =>
+  cn(
+    'flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors',
+    isActive ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-800 hover:text-white',
+  );
 
 export function Sidebar() {
   const navigate = useNavigate();
@@ -62,8 +67,12 @@ export function Sidebar() {
         ))}
       </nav>
 
-      {/* Bottom nav */}
+      {/* Bottom nav: Guides & Help, Change Database, Settings */}
       <div className="px-2 py-4 border-t border-gray-700 space-y-1">
+        <NavLink to={helpItem.to} className={linkClass}>
+          <helpItem.icon size={16} />
+          {helpItem.label}
+        </NavLink>
         <button
           onClick={handleChangeDb}
           className="flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium text-gray-300 hover:bg-gray-800 hover:text-white w-full transition-colors"
@@ -71,23 +80,10 @@ export function Sidebar() {
           <Database size={16} />
           Change Database
         </button>
-        {bottomItems.map(({ to, label, icon: Icon }) => (
-          <NavLink
-            key={to}
-            to={to}
-            className={({ isActive }) =>
-              cn(
-                'flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors',
-                isActive
-                  ? 'bg-blue-600 text-white'
-                  : 'text-gray-300 hover:bg-gray-800 hover:text-white',
-              )
-            }
-          >
-            <Icon size={16} />
-            {label}
-          </NavLink>
-        ))}
+        <NavLink to={settingsItem.to} className={linkClass}>
+          <settingsItem.icon size={16} />
+          {settingsItem.label}
+        </NavLink>
         {state?.user && (
           <div className="flex items-center gap-2 px-3 pt-3 mt-2 border-t border-gray-800 text-xs" title={state.realUser?.email ?? ''}>
             <UserCircle size={16} className="text-gray-400 shrink-0" />

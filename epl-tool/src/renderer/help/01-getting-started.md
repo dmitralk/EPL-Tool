@@ -16,8 +16,8 @@ Windows, and looks you up in the user list stored in the database. The user list
 - For each customer, its **pricing management mode** decides who may change it: see
   [Pricing management modes](help:pricing-modes).
 
-Your name and role are shown at the bottom of the sidebar. The box at the top of this Help page shows your access,
-the customers you manage and the admins to contact.
+Your name and role are shown at the bottom of the sidebar. The box at the top of this **Guides & Help** page shows your
+access, the customers you manage and the admins to contact.
 
 ## The main screens
 

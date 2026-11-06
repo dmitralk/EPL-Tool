@@ -110,10 +110,11 @@ export function HelpScreen() {
   return (
     <div className="p-6 flex gap-6 max-w-6xl mx-auto">
       <aside className="w-60 shrink-0">
-        <h1 className="text-xl font-bold text-gray-900 mb-3">Help</h1>
+        <h1 className="text-xl font-bold text-gray-900">Guides & Help</h1>
+        <p className="text-xs text-gray-500 mb-3">Documentation, how-to guides and answers</p>
         <div className="relative mb-3">
           <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
-          <Input placeholder="Search help…" value={search} onChange={e => setSearch(e.target.value)} className="pl-8" />
+          <Input placeholder="Search guides & help…" value={search} onChange={e => setSearch(e.target.value)} className="pl-8" />
         </div>
         <nav className="space-y-0.5">
           {matches.map(t => (

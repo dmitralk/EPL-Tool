@@ -1,6 +1,6 @@
 # EPL Tool — User access rights study
 
-*Status: decisions recorded (§9) · Phase A items done 6 Nov 2026 · Phase B built 6 Nov 2026 (in review) · based on EPL Tool v0.5.2*
+*Status: decisions recorded (§9) · Phases A + B done, released as v0.6.1 on 6 Nov 2026 · based on EPL Tool v0.5.2*
 *Related: [multi-user-study.md](./multi-user-study.md) (several users sharing one database) · [dev-plan.md](./dev-plan.md)
 (combined development plan)*
 
@@ -382,5 +382,5 @@ Notes:
 | Who can be named manager (6 Nov 2026) | Active Users and Admins |
 | Unused channels (6 Nov 2026) | Removed instead of guarded: `customers:delete`, `packaging:update-price`, `export:open-mail-with-attachment` |
 
-All decisions are recorded; nothing is open. Phase A and Phase B are built ([dev-plan.md](./dev-plan.md)); the manual check of
-the matrix with *Preview as…* is the remaining step before release v0.6.
+All decisions are recorded; nothing is open. Phases A and B are built and were released as **v0.6.1** on 6 Nov 2026, after
+the matrix was checked with *Preview as…* ([dev-plan.md](./dev-plan.md)). The in-app Help is shown as **Guides & Help**.

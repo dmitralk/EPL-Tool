@@ -14,7 +14,7 @@ A desktop application for generating and managing customer Export Price Lists (E
 - Bulk management of customer / internal email addresses
 - Automatic, verified database backups
 - Users and roles (Admin / User / Viewer, recognised by their Windows account — no passwords), a pricing management mode per
-  customer, an activity log visible to everybody, and built-in **Help**
+  customer, an activity log visible to everybody, and built-in **Guides & Help**
 
 ---
 
@@ -102,7 +102,7 @@ The original one-off Excel import (`All_Prices.xlsx`) has been removed. A wizard
 | **Analysis** | Every price list line vs the Standard EPL (USD, EUR, or All currencies via FX); choose columns; export to Excel |
 | **Products** | Add, edit, or delete products (admins) |
 | **Standard EPL** | Versioned standard prices (USD + EUR): draft → publish (admins), compare versions; packaging charges; export / email |
-| **Help** | How the app works: roles and permissions, pricing modes, wizards, emails, FX rates, activity log, backups, what's new |
+| **Guides & Help** | Documentation and how-to guides: roles and permissions, pricing modes, wizards, emails, FX rates, activity log, backups, what's new (sidebar, above *Change Database*) |
 | **Settings** | Database, users (admins), activity log, backups, logo, PBP emails, units, packaging, currencies, hidden customers |
 
 Customer pickers everywhere work like Power BI slicers: click the dropdown, type part of the name or SAP code, tick one or several customers.
@@ -122,7 +122,7 @@ list in **Settings → Users**; anybody not on it sees a *No access* screen with
 
 Each customer has a **pricing management mode**: *Open* (all admins and users), *Managed by PBP* (admins only) or *Managed by*
 named users. Every change is recorded in **Settings → Activity**. Admins can check what someone else sees with
-**Preview as…** in Settings → Users. The full permission table is in **Help → Roles & permissions** (generated from the
+**Preview as…** in Settings → Users. The full permission table is in **Guides & Help → Roles & permissions** (generated from the
 rules the app enforces). Design notes: [docs/access-rights-study.md](docs/access-rights-study.md).
 
 ---
