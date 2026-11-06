@@ -5,7 +5,6 @@ import { registerStandardEplHandlers } from './standardEpl';
 import { registerPackagingHandlers } from './packaging';
 import { registerSettingsHandlers } from './settings';
 import { registerExportHandlers } from './export';
-import { registerMigrationHandlers } from './migration';
 import { registerCurrencyHandlers } from './currencies';
 import { registerAnalysisHandlers } from './analysis';
 import { registerEmailHandlers } from './emails';
@@ -19,7 +18,6 @@ export function registerAllIpcHandlers() {
   registerPackagingHandlers();
   registerSettingsHandlers();
   registerExportHandlers();
-  registerMigrationHandlers();
   registerCurrencyHandlers();
   registerAnalysisHandlers();
   registerEmailHandlers();

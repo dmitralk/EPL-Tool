@@ -13,7 +13,6 @@ A desktop application for generating and managing customer Export Price Lists (E
 - Price analysis vs the Standard EPL, with Excel export
 - Bulk management of customer / internal email addresses
 - Automatic, verified database backups
-- Imports master data from the `All_Prices.xlsx` source file
 
 ---
 
@@ -76,10 +75,11 @@ The tag triggers the Windows build and publishes a GitHub Release with `EPL Tool
 ## First-time setup
 
 1. Launch the app
-2. Click **Create New Database** (or **Open Database** if you have an existing `.db` file)
-3. Go to **Settings → Company Logo** and select the company logo image
-4. Go to **Settings → Import Data from Excel** and select `All_Prices.xlsx`
-5. The app is ready to use
+2. Click **Open Database** and select the existing `.db` file (normally the shared one on SharePoint)
+3. If exports show no logo, go to **Settings → Company Logo** and select the logo image (today the app stores only the file's path, so the image must exist on your computer)
+4. The app is ready to use
+
+The original one-off Excel import (`All_Prices.xlsx`) has been removed. A wizard for uploading historical price lists for existing customers and products is planned (see [docs/dev-plan.md](docs/dev-plan.md)).
 
 ---
 
@@ -94,7 +94,7 @@ The tag triggers the Windows build and publishes a GitHub Release with `EPL Tool
 | **Analysis** | Every price list line vs the Standard EPL (USD, EUR, or All currencies via FX); choose columns; export to Excel |
 | **Products** | Add, edit, or delete products |
 | **Standard EPL** | Versioned standard prices (USD + EUR): draft → publish, compare versions; packaging charges; export / email |
-| **Settings** | Database & backups, logo, PBP admin emails, units, packaging, currencies, hidden customers, data import |
+| **Settings** | Database & backups, logo, PBP emails, units, packaging, currencies, hidden customers |
 
 Customer pickers everywhere work like Power BI slicers: click the dropdown, type part of the name or SAP code, tick one or several customers.
 
@@ -115,22 +115,6 @@ Products are pre-populated from the customer's most recent price list. If no pre
 **Mass update**: filter and tick customers (USD or EUR), choose one change for all (with optional per-type / per-product overrides), preview, then create. Each customer gets the next version number automatically.
 
 **Deleting**: open a price list and click **Delete**; you must type the version (e.g. `V3`) to confirm. The customer's "latest price list" falls back to the previous one.
-
----
-
-## Importing data
-
-Go to **Settings → Import Data from Excel** and select your `All_Prices.xlsx` file.
-
-The file must contain these sheets:
-- `Admin` — admin email addresses
-- `Customers Masterdata` — customer records
-- `Products Masterdata` — product catalogue
-- `Standard EPL` — standard prices (USD cols 0-5, EUR cols 8-13)
-- `Packaging Masterdata` — packaging charges and pallets
-- `Prices Database` — historical price list records
-
-Import is idempotent — running it again updates existing records and adds new ones.
 
 ---
 

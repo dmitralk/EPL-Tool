@@ -76,7 +76,7 @@ export function PackagingScreen() {
       {versions.length === 0 ? (
         <Card>
           <CardContent className="py-8 text-center text-gray-400 text-sm">
-            No packaging versions found. Import from Excel or create one manually.
+            No packaging versions found. Create one with + New Version.
           </CardContent>
         </Card>
       ) : (

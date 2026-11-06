@@ -282,7 +282,7 @@ export function CustomerDetail() {
               />
             </dl>
             <p className="text-xs text-gray-400 mt-4 flex items-center gap-1">
-              <Lock size={10} /> PBP emails are shared across all customers and managed in Settings → Admin Email Addresses.
+              <Lock size={10} /> PBP emails are shared across all customers and managed in Settings → PBP Emails.
             </p>
           </CardContent>
         </Card>

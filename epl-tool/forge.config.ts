@@ -11,8 +11,7 @@ import fs from 'fs';
 
 // Modules that must be copied into the packaged app alongside the asar.
 // better-sqlite3/bindings/file-uri-to-path: contain compiled .node binaries.
-// xlsx: uses require('fs') internally; bundling via Vite breaks that call.
-const NATIVE_MODULES = ['better-sqlite3', 'bindings', 'file-uri-to-path', 'xlsx'];
+const NATIVE_MODULES = ['better-sqlite3', 'bindings', 'file-uri-to-path'];
 
 function copyDirSync(src: string, dest: string) {
   if (!fs.existsSync(src)) return;

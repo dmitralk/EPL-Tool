@@ -99,11 +99,6 @@ const api = {
   setEmailAssignments: (email: string, changes: unknown) => ipcRenderer.invoke('emails:set-assignments', email, changes),
   replaceEmail: (oldEmail: string, newEmail: string) => ipcRenderer.invoke('emails:replace', oldEmail, newEmail),
   removeEmail: (email: string) => ipcRenderer.invoke('emails:remove', email),
-
-  // Migration
-  migrationSelectFile: () => ipcRenderer.invoke('migration:select-file'),
-  migrationPreview: (filePath: string) => ipcRenderer.invoke('migration:preview-excel', filePath),
-  migrationImport: (filePath: string, options?: unknown) => ipcRenderer.invoke('migration:import-excel', filePath, options),
 };
 
 contextBridge.exposeInMainWorld('api', api);

@@ -11,7 +11,6 @@ import { NewPriceListGateway } from './screens/PriceLists/NewPriceListGateway';
 import { MassCreatePriceList } from './screens/PriceLists/MassPriceList/index';
 import { SettingsScreen } from './screens/Settings/SettingsScreen';
 import { DeletedCustomersScreen } from './screens/Settings/DeletedCustomersScreen';
-import { ImportScreen } from './screens/Settings/ImportScreen';
 import { CurrenciesScreen } from './screens/Settings/CurrenciesScreen';
 import { PackagingScreen } from './screens/Settings/PackagingScreen';
 import { PackagingVersionScreen } from './screens/Settings/PackagingVersionScreen';
@@ -67,7 +66,6 @@ export function App() {
             <Route path="standard-epl" element={<StandardEplScreen />} />
             <Route path="settings" element={<SettingsScreen />} />
             <Route path="settings/deleted-customers" element={<DeletedCustomersScreen />} />
-            <Route path="settings/import" element={<ImportScreen />} />
             <Route path="settings/currencies" element={<CurrenciesScreen />} />
             <Route path="settings/packaging" element={<PackagingScreen />} />
             <Route path="settings/packaging/:version" element={<PackagingVersionScreen />} />

@@ -95,7 +95,7 @@ export function EmailsScreen() {
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Email Addresses</h1>
           <p className="text-gray-500 text-sm mt-0.5">
-            {loading ? 'Loading…' : `${usages.length} customer/internal address${usages.length === 1 ? '' : 'es'} · ${adminEmails.length} PBP admin`}
+            {loading ? 'Loading…' : `${usages.length} customer/internal address${usages.length === 1 ? '' : 'es'} · ${adminEmails.length} PBP`}
           </p>
         </div>
         <Button size="sm" onClick={() => setAssignTarget({ email: '', isNew: true })}>
@@ -106,7 +106,7 @@ export function EmailsScreen() {
 
       <div className="flex items-center gap-3 mb-3 flex-wrap">
         <div className="inline-flex rounded-md border border-gray-300 overflow-hidden">
-          {([['all', 'All'], ['to', 'Customer'], ['internal', 'Internal'], ['admin', 'PBP admin']] as [RoleFilter, string][]).map(([k, label]) => (
+          {([['all', 'All'], ['to', 'Customer'], ['internal', 'Internal'], ['admin', 'PBP']] as [RoleFilter, string][]).map(([k, label]) => (
             <button
               key={k}
               onClick={() => setRole(k)}
@@ -148,12 +148,12 @@ export function EmailsScreen() {
                   <tr key={`admin-${a.id}`} className="bg-gray-50/50">
                     <td className="px-4 py-2.5 font-medium text-gray-900">{a.email}</td>
                     <td className="px-3 py-2.5">
-                      <Badge variant="success">PBP admin</Badge>
+                      <Badge variant="success">PBP</Badge>
                       <div className="text-[11px] text-gray-400 mt-0.5">{a.email_name}</div>
                     </td>
                     <td className="px-3 py-2.5"><Badge variant="outline">All customers</Badge></td>
                     <td className="px-4 py-2.5 text-right">
-                      <Button variant="ghost" size="sm" onClick={() => navigate('/settings')} title="PBP admin emails are managed in Settings">
+                      <Button variant="ghost" size="sm" onClick={() => navigate('/settings')} title="PBP emails are managed in Settings → PBP Emails">
                         <Lock size={12} className="mr-1" /> Settings
                       </Button>
                     </td>

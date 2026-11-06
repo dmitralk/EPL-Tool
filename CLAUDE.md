@@ -22,8 +22,7 @@ This file is read automatically by Claude Code at conversation start. It gives f
 |---|---|---|
 | App framework | Electron Forge + Vite + React + TypeScript | Portable builds, no admin install |
 | SQLite | better-sqlite3 | Synchronous, fast; rebuilt for Electron via `packageAfterCopy` hook |
-| Excel write | ExcelJS | Free image embedding + full styling |
-| Excel read | xlsx (SheetJS) | Best reader; must be external to Vite bundle |
+| Excel write | ExcelJS | Free image embedding + full styling (also the planned reader for the historical import wizard; SheetJS was removed with the old import) |
 | UI | Tailwind CSS + shadcn/ui-style components | Copy-owned components in `src/renderer/components/ui/` |
 | Email macOS | osascript (AppleScript → Mail.app) | Requires NSAppleEventsUsageDescription in Info.plist |
 | Email Windows | PowerShell + Outlook COM | No SMTP needed |
@@ -48,12 +47,11 @@ This file is read automatically by Claude Code at conversation start. It gives f
 │   │   │   │   ├── standardEpl.ts    ← versioned EPL: list-versions, create-draft, publish-draft, delete-draft, delete-row, list-combined, upsert
 │   │   │   │   ├── packaging.ts
 │   │   │   │   ├── currencies.ts
-│   │   │   │   ├── settings.ts       ← DB open/create, logo, admin emails, units
+│   │   │   │   ├── settings.ts       ← DB open/create, logo, PBP emails (admin_emails table), units
 │   │   │   │   ├── export.ts         ← xlsx single/bulk, mail single/bulk; standard EPL xlsx + mail
 │   │   │   │   ├── analysis.ts       ← analysis:list-rows, fx rates, analysis:export-xlsx
 │   │   │   │   ├── emails.ts         ← email management (index/replace/remove addresses across customers)
-│   │   │   │   ├── backup.ts         ← backup:* channels + db:last-open-error
-│   │   │   │   └── migration.ts      ← Excel import from All_Prices.xlsx
+│   │   │   │   └── backup.ts         ← backup:* channels + db:last-open-error
 │   │   │   └── export/
 │   │   │       └── buildPriceListXlsx.ts ← ExcelJS builder, replicates reference format
 │   │   ├── preload/
@@ -75,12 +73,11 @@ This file is read automatically by Claude Code at conversation start. It gives f
 │   │           ├── DatabaseSelector.tsx        ← route /setup: open/create DB; shows restore UI when the DB failed its integrity check
 │   │           ├── Dashboard.tsx               ← stats cards, recent price lists table; "+ New Price List" routes to /price-lists/new (gateway)
 │   │           ├── Settings/
-│   │           │   ├── SettingsScreen.tsx      ← DB path, Backups card, logo, admin emails, units, packaging/currencies/hidden customers links, import button
+│   │           │   ├── SettingsScreen.tsx      ← DB path, Backups card, logo, PBP Emails card, units, packaging/currencies/hidden customers links
 │   │           │   ├── DeletedCustomersScreen.tsx ← lists soft-deleted customers; Restore or Delete Permanently per row
 │   │           │   ├── CurrenciesScreen.tsx    ← route /settings/currencies: main currencies (USD/EUR, read-only) + other currencies (add/remove)
 │   │           │   ├── PackagingScreen.tsx     ← route /settings/packaging: version list with row/customer counts; New Version dialog (clone-from support); Delete blocked if customers assigned
-│   │           │   ├── PackagingVersionScreen.tsx ← route /settings/packaging/:version: per-row inline editor (type, name, price, currency, unit, sort); Add Row dialog; label rows (null price) shown as italic "label"
-│   │           │   └── ImportScreen.tsx        ← dedicated import screen (route /settings/import): file picker, per-entity preview cards with checkboxes, selective import, results
+│   │           │   └── PackagingVersionScreen.tsx ← route /settings/packaging/:version: per-row inline editor (type, name, price, currency, unit, sort); Add Row dialog; label rows (null price) shown as italic "label"
 │   │           ├── Customers/
 │   │           │   ├── CustomersScreen.tsx     ← active customers; searchable multi-select customer filter (name / SAP / full name)
 │   │           │   ├── CustomerDetail.tsx      ← inline editing, price list table, Hide Customer button; Packaging field is a dropdown (fetches packaging:list-versions)
@@ -109,11 +106,12 @@ This file is read automatically by Claude Code at conversation start. It gives f
 │   │               └── StandardEplComparisonPanel.tsx ← side-by-side diff of two EPL versions (Changed / Added / Removed sections)
 │   ├── forge.config.ts     ← IMPORTANT: contains packageAfterCopy for better-sqlite3
 │   └── package.json
-├── All_Prices.xlsx         ← original master data file for import
+├── All_Prices.xlsx         ← original master data file (source of the initial DB load; the in-app import was removed)
 ├── All_PricesTest.xlsx     ← test dataset
 ├── EPL-Database.db         ← sample/test database (see Known issues: data files in the repo)
 ├── .gitignore              ← ignores EPL-Backups/ and SQLite temp files
 ├── README.md               ← user-facing guide
+├── docs/                   ← design studies (not implemented yet): multi-user-study.md, access-rights-study.md, dev-plan.md (combined plan)
 └── CLAUDE.md               ← this file
 ```
 
@@ -131,7 +129,7 @@ standard_epl         -- standard prices; UNIQUE(version_id, currency, rip_code);
 packaging            -- packaging charges + pallets; groups by packaging_version; null price = label/section header row (excluded from export output)
 price_lists          -- price list headers; price_type IN ('Discount','Net Price','PrevPercent','PrevAbsolute'); has created_at DEFAULT datetime('now')
 price_list_entries   -- one row per product per price list
-admin_emails         -- shared email addresses (PBP Costing, PBP Common)
+admin_emails         -- shared PBP email addresses (PBP Costing, PBP Common); shown as "PBP Emails" in the UI (renamed from "Admin Email Addresses" to avoid confusion with admin users)
 app_settings         -- key/value store (logo_path, db_path, email_subject_template, email_body_template)
                      -- note: standard_epl_editable key may exist in older DBs but is no longer used by the UI (replaced by draft/publish model)
 units                -- configurable unit list; seeded with '100 KG', '100 L' on DB open
@@ -194,7 +192,6 @@ settings:get-units, settings:create-unit, settings:delete-unit, settings:select-
 currencies:list, currencies:create, currencies:delete
 analysis:list-rows, fx:list, fx:set, analysis:export-xlsx
 emails:list, emails:set-assignments, emails:replace, emails:remove
-migration:select-file, migration:preview-excel, migration:import-excel
 ```
 
 ---
@@ -241,51 +238,11 @@ Route `/emails` (nav after Customers). No schema change: `customers.email_to_cus
 - `emails:replace(old, new)` — swap everywhere, de-duplicating if `new` already present (merge)
 - `emails:remove(email)` — remove from all customers
 
-PBP admin emails (`admin_emails`) are shown read-only with an "All customers" tag and link to Settings.
+PBP emails (`admin_emails`, Settings → PBP Emails) are shown read-only with a "PBP" badge and an "All customers" tag, and link to Settings.
 
-### Migration (migration.ts)
+### Old Excel import (removed 5 Nov 2026)
 
-Two IPC handlers:
-- **`migration:preview-excel`** — read-only scan; reads the file and returns a `ImportPreview` object (one `SheetPreview` per entity) with counts, sample names, and notes. **No DB writes.** Used by `ImportScreen` before the user commits.
-- **`migration:import-excel`** — accepts `(filePath, options?: ImportOptions)`. `ImportOptions` has one boolean per entity (`adminEmails`, `customers`, `products`, `standardEpl`, `packaging`, `priceLists`); defaults all to `true` for backwards compatibility. Only the selected entities are written.
-
-Both handlers share the same parsing logic (column indices, `clean()`, `trimOnly()`, `safeFloat()`, `excelDateToISO()`).
-
-Critical bugs that were fixed — do not revert:
-1. **EUR column indices in Standard EPL sheet**: USD is cols 0-5, EUR is cols **8-13** (cols 6-7 are NULL separators). Old code used 6-11 → all EUR rows silently skipped.
-2. **Packaging currency operator precedence**: `clean(r[4]) ?? (version.includes('EUR') ? 'EUR' : 'USD')` — the parentheses are required. Without them JS parses it as `(clean(r[4]) ?? version.includes('EUR')) ? 'EUR' : 'USD'` which always returns `'EUR'`.
-3. **Packaging header detection**: `clean()` removes spaces, so compare against `'PackaginVersion'` and `'PackagingVersion'` (not the original strings with spaces).
-4. **Duplicate entries on re-import**: Before inserting price list entries, `DELETE FROM price_list_entries WHERE price_list_id = ?` is called within `seenPriceLists` guard.
-5. **isOpen() guard**: migration handler returns a friendly error if no DB is open instead of throwing raw SQLite error.
-6. **Packaging name/type spaces stripped**: `clean()` strips all ASCII spaces, so "Packaging Charge" → `"PackagingCharge"`. Fixed by using `trimOnly()` for `packaging_name` (col2) and `product_type` (col1). Same root cause as the admin email doubling bug (bug #7 below). Rule: **never use `clean()` on human-readable display names**.
-7. **Admin email display name spaces stripped**: `email_name` field passed through `clean()` → "PBP Common Mail Box" → `"PBPCommonMailBox"`, creating a new unique key on each import and doubling rows. Fixed by using `String(row[0] ?? '').trim()` (i.e. `trimOnly`) for `email_name`, plus DELETE-all + re-insert pattern for admin emails.
-8. **Customers/Products/Standard EPL/Price Lists display names stripped**: Same `clean()` bug propagated to customers (`customer_short_name`, `customer_full_name`, `country`, `customer_type`, `comment_on_business_model`, `price_list_managed_by`, `customer_spoc`), products (`product_type`, `product_name`), standard_epl (`product_type`, `product_name`, `unit`), and price_list_entries (`product_type`, `product_name`, `unit`, `comments_about_changes`). All fixed by switching these display name fields to `trimOnly()`.
-
-### clean() and trimOnly() functions (migration.ts)
-```typescript
-function clean(v: unknown): string | null {
-  if (v === null || v === undefined) return null;
-  const s = String(v).trim().replace(/ /g, '');  // removes regular spaces only
-  return s === '' ? null : s;
-}
-// Note: .trim() does remove \xa0 (non-breaking space) in JavaScript
-// Note: .replace(/ /g, '') removes regular ASCII spaces — results have no spaces
-// Consequence: cleaned strings must be compared against space-stripped versions
-// USE FOR: identifiers and codes (SAP refs, RIP codes, currency codes, version names for detection)
-// DO NOT USE FOR: human-readable display names — use trimOnly() instead
-
-function trimOnly(v: unknown): string | null {
-  if (v === null || v === undefined) return null;
-  const s = String(v).trim();
-  return s === '' ? null : s;
-}
-// USE FOR: display names that must preserve internal spaces:
-//   - packaging_name (e.g. "Packaging Charge", "IBC 1000L")
-//   - product_type display labels (e.g. "Base Oils")
-//   - admin email_name (e.g. "PBP Common Mail Box")
-// Past bugs: using clean() on these fields stripped spaces, creating new unique keys
-// on each import and either corrupting data or doubling rows.
-```
+The one-off `All_Prices.xlsx` import (`ipc/migration.ts`, `ImportScreen.tsx`, `migration:*` channels, `SheetPreview`/`ImportPreview`/`ImportOptions`/`MigrationResult` types) and the SheetJS `xlsx` dependency were deleted: it was only needed for the initial database load, and its `INSERT OR REPLACE INTO customers` reset columns it didn't import (`main_supply_region`, `is_deleted`). A replacement **historical price-list import wizard** (existing customers/products only, ExcelJS for reading) is planned — see `docs/dev-plan.md`. Lessons to carry over: never strip internal spaces from display names (the old `clean()` did and corrupted names / doubled rows); convert Excel serial dates yourself (`(serial - 25569) * 86400 * 1000`) to avoid timezone drift; never use `INSERT OR REPLACE` on rows other tables or columns depend on.
 
 ### Price list creation wizard (CreatePriceList/)
 4-step flow with shared `WizardContext` reducer:
@@ -504,7 +461,7 @@ The Standard EPL uses a **draft/publish versioning model** — all published ver
 - `standard-epl:publish-draft` — requires `effectiveFrom`; sets status/published_at/effective_from/notes/name
 - `standard-epl:delete-draft` — transaction: deletes all standard_epl rows then version row
 - `standard-epl:delete-row` — deletes all rows for `(versionId, ripCode)` (both USD and EUR); draft only
-- `getLatestPublishedEplVersionId()` — exported helper from `database.ts`; resolves current active version for export handlers and migration import
+- `getLatestPublishedEplVersionId()` — exported helper from `database.ts`; resolves current active version for export handlers and price-list creation
 
 **Comparison panel (`StandardEplComparisonPanel.tsx`):**
 - Props: `versionIdA`, `versionIdB`, `versions`, `onClose`
@@ -563,11 +520,6 @@ buildPackagingXlsx(version, rows) — ExcelJS table: columns Type / Name / Price
 ### products:update cascade
 When a product's `product_name` or `product_type` is updated, the handler also updates matching rows in `standard_epl`. When a product is deleted, its `standard_epl` rows are deleted first (no FK cascade in SQLite without `ON DELETE CASCADE` — handled manually).
 
-### Migration helpers (migration.ts)
-- `excelDateToISO()` handles both Excel serial numbers (`(serial - 25569) * 86400 * 1000`) and strings already in `YYYY-MM-DD` or parseable format — returns `null` for empty/unparseable values.
-- `safeFloat()` parses numeric values safely, returning `null` on failure.
-- `XLSX.readFile(filePath, { cellDates: false })` — `cellDates: false` is intentional; we handle date conversion ourselves to avoid timezone drift from SheetJS Date objects.
-
 ---
 
 ## Build commands
@@ -602,11 +554,9 @@ Git uses the same proxy via the repo-local config (`git config --local http.prox
 
 ### forge.config.ts — native module packaging
 
-`NATIVE_MODULES = ['better-sqlite3', 'bindings', 'file-uri-to-path', 'xlsx']`
+`NATIVE_MODULES = ['better-sqlite3', 'bindings', 'file-uri-to-path']`
 
-The `packageAfterCopy` hook copies these into the packaged app's `node_modules/` alongside the asar:
-- `better-sqlite3`, `bindings`, `file-uri-to-path` — contain compiled `.node` binaries (native addons)
-- `xlsx` — uses `require('fs')` internally; Vite bundling breaks that call, so it must remain external
+The `packageAfterCopy` hook copies these into the packaged app's `node_modules/` alongside the asar; they contain compiled `.node` binaries (native addons) that Vite cannot bundle (`better-sqlite3` is also `external` in `vite.main.config.ts`). SheetJS (`xlsx`) used to be in this list; it was removed together with the old Excel import.
 
 Additionally: `asar.unpack: '**/*.node'` unpacks `.node` binaries from the asar so Electron can `dlopen` them at runtime.
 
@@ -634,31 +584,6 @@ Both are updated together when a DB is opened or created. The `userData` file pe
 
 ---
 
-## Data import workflow
-
-**Entry point**: Settings → "Import from Excel…" button → navigates to `/settings/import` (`ImportScreen.tsx`).
-
-**Three-phase flow on one page:**
-
-1. **File selection** — "Select File…" button calls `migration:select-file`; on pick immediately calls `migration:preview-excel` (read-only, no DB writes).
-
-2. **Preview** — per-entity cards appear, each with:
-   - Checkbox (all enabled by default); disabled if the sheet is not present in the file
-   - Record count badge from the preview scan
-   - Sample names (first 3 identifiers)
-   - Entity-specific notes: USD/EUR split for Standard EPL; version list for Packaging; customer count + date range for Price Lists
-   - Amber warning for rows that would be skipped (missing key field) and for packaging full-replacement
-
-3. **Import** — "Import Selected (N)" calls `migration:import-excel(filePath, options)` where `options` is the `ImportOptions` object built from the checkboxes. Results appear inline on each card (green "✓ N imported" or red "Failed").
-
-**Import order** (within a single call, only selected entities run): `admin_emails` → `customers` → `products` → `standard_epl` → `packaging` → `price_lists` + `price_list_entries`. All operations are `INSERT OR REPLACE` (idempotent) except packaging which `DELETE`s first.
-
-**Standard EPL import targets the latest published version** — the import handler calls `getLatestPublishedEplVersionId()` and upserts all EPL rows into that version (not a draft). This is intentional: import is a privileged admin operation that writes directly to the active baseline. If a draft exists, it is not affected by the import.
-
-**Types** (`src/types/index.ts`): `SheetPreview` (per-entity scan result), `ImportPreview` (all six sheets), `ImportOptions` (six booleans).
-
----
-
 ## Decisions not to revisit without good reason
 
 - **Two tables (products + standard_epl)**: standard_epl has currency-specific rows (same rip_code appears twice for USD and EUR). Merging into one table would require price_usd/price_eur columns, which breaks partial pricing and different currencies.
@@ -674,4 +599,5 @@ Both are updated together when a DB is opened or created. The `userData` file pe
 - **PBP emails in drafts**: the customer page displays PBP copy/common from `admin_emails` (Settings), but drafts use each customer's own `email_pbp_copy` / `email_pbp_common` columns. Changing an admin email in Settings does not change existing customers' drafts. Candidate fix: build recipients from `admin_emails` in `export:open-mail-bulk`.
 - **Data files in the repo**: `EPL-Database.db`, `EPL-Database BackUp.db`, `All_Prices.xlsx`, `All_PricesTest.xlsx` are tracked in git and contain customer names, emails and prices. If the repo is public, make it private or untrack them (history keeps old copies unless rewritten).
 - **Pre-existing type/lint errors**: see Build commands → Type check / lint.
+- **Multi-user access + user access rights (designed, not implemented; single-user only today)**: `docs/multi-user-study.md` (local read copy + single "edit slot" via claim files next to the DB on SharePoint + atomic publish with a generation check), `docs/access-rights-study.md` (Windows-account identity, Admin/User/Viewer roles, per-customer pricing mode Open / Managed by PBP / Managed by named users, server-side IPC guard, audit log) and `docs/dev-plan.md` (phases A–F, releases v0.6–v0.8.1, in-app Help plan, historical price-list import spec). Decisions are recorded in each study (none open as of 5 Nov 2026); development starts with dev-plan Phase A. Until implemented, only one person should edit the central DB.
 - **Open product questions (not yet decided by the user)**: (1) mass wizard Step 1 customer dropdown currently only *filters* the table — the user may prefer that ticking in the dropdown also selects rows for repricing; (2) after deleting a price list, the customer falls back to the remaining list with the latest *effective* date (not the most recently *created*) — confirm if this is the desired rule.

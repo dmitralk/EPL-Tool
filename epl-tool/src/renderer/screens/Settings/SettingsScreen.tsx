@@ -141,12 +141,12 @@ export function SettingsScreen() {
         </CardContent>
       </Card>
 
-      {/* Admin Emails */}
+      {/* PBP Emails */}
       <Card>
-        <CardHeader><CardTitle>Admin Email Addresses</CardTitle></CardHeader>
+        <CardHeader><CardTitle>PBP Emails</CardTitle></CardHeader>
         <CardContent>
           {adminEmails.length === 0 ? (
-            <p className="text-sm text-gray-400">No admin emails configured. Import from Excel to populate.</p>
+            <p className="text-sm text-gray-400">No PBP emails configured.</p>
           ) : (
             <div className="space-y-3">
               {adminEmails.map(e => (
@@ -245,22 +245,6 @@ export function SettingsScreen() {
           <Button variant="outline" onClick={() => navigate('/settings/deleted-customers')}>
             Manage Hidden Customers →
           </Button>
-        </CardContent>
-      </Card>
-
-      {/* Import */}
-      <Card>
-        <CardHeader><CardTitle>Import Data from Excel</CardTitle></CardHeader>
-        <CardContent>
-          <p className="text-sm text-gray-600 mb-3">
-            Import customers, products, standard EPL prices, packaging, and price list history from your <strong>All_Prices.xlsx</strong> file. Choose exactly what to import and preview the data before committing.
-          </p>
-          <Button onClick={() => navigate('/settings/import')} variant="outline" disabled={!dbOpen}>
-            Import from Excel…
-          </Button>
-          {!dbOpen && (
-            <p className="text-xs text-amber-600 mt-1">Open a database first.</p>
-          )}
         </CardContent>
       </Card>
 

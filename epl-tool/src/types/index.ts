@@ -178,51 +178,9 @@ export interface CombinedEplRow {
   eur_unit: string | null;
 }
 
-export interface MigrationResult {
-  success: boolean;
-  counts: {
-    customers: number;
-    products: number;
-    standardEpl: number;
-    packaging: number;
-    priceLists: number;
-    priceListEntries: number;
-    adminEmails: number;
-  };
-  error?: string;
-}
-
 export interface DbOpenResult {
   ok: boolean;
   error?: string;
-}
-
-export interface SheetPreview {
-  available: boolean;
-  count: number;
-  skipped: number;
-  notes: string[];
-  samples: string[];
-}
-
-export interface ImportPreview {
-  success: boolean;
-  error?: string;
-  adminEmails: SheetPreview;
-  customers: SheetPreview;
-  products: SheetPreview;
-  standardEpl: SheetPreview;
-  packaging: SheetPreview;
-  priceLists: SheetPreview;
-}
-
-export interface ImportOptions {
-  adminEmails: boolean;
-  customers: boolean;
-  products: boolean;
-  standardEpl: boolean;
-  packaging: boolean;
-  priceLists: boolean;
 }
 
 export interface Currency {
