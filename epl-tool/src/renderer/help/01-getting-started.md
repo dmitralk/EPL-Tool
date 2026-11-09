@@ -1,6 +1,6 @@
 # Getting started & your access
 
-EPL Tool keeps Lubmarine's export price lists in one database: customers, products, the Standard EPL, packaging charges
+EPL Tool keeps the export price lists in one database: customers, products, the Standard EPL, packaging charges
 and every price list sent. You create price lists with a wizard, export them to Excel in the standard format, and open
 email drafts with the file attached.
 

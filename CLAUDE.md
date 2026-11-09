@@ -18,8 +18,9 @@ steps 3–5 are **local commits, not pushed** (the user pushes later). Commit `a
 docs-only pointer to a local-only AI study (`docs/local/`, excluded via `.git/info/exclude`).
 
 **Next:**
-1. Before pushing, review with the user what goes public (see the public-repo rule below): the pending commits, and whether
-   `aff14b5`'s wording and existing corporate details in tracked files (proxy host in this file, sample data files) may stay.
+1. Before pushing, review with the user what goes public (see the public-repo rule below): the pending commits and the wording
+   of `aff14b5`. Company/proxy details were moved to `docs/local/corporate-network.md` on 9 Nov (they remain in the already
+   public git history); the tracked sample data files are still an open item (Known issues).
 2. The **two-PC test** with a colleague on a separate SharePoint **test** folder holding a copy of the database (decision 10;
    scenarios in multi-user study §7 for read/publish, not the edit slot). Install a build on the colleague's PC.
 3. Release **v0.7.0** (`npm version 0.7.0 --no-git-tag-version`, What's new already describes it, tag, push). Then Phase D
@@ -42,8 +43,9 @@ docs-only pointer to a local-only AI study (`docs/local/`, excluded via `.git/in
   internal links, user paths, real emails); sensitive notes stay in `docs/local/` (excluded via `.git/info/exclude`). Stage
   files explicitly and scan the diff before each commit; ask before pushing.
 
-**Verify after changes** (from `epl-tool/`; for anything that downloads — npm, packaging — first set in the same PowerShell call:
-`$env:HTTP_PROXY='http://cloudproxy-emea.corp.local:8080'; $env:HTTPS_PROXY=$env:HTTP_PROXY; $env:NODE_OPTIONS='--use-system-ca'; $env:ELECTRON_GET_USE_PROXY='1'; $env:GLOBAL_AGENT_HTTPS_PROXY=$env:HTTP_PROXY`):
+**Verify after changes** (from `epl-tool/`; for anything that downloads — npm, packaging — first set the corporate proxy
+variables in the same PowerShell call: the one-liner is in `docs/local/corporate-network.md`, local only — see *Corporate
+network* below):
 `npx tsc --noEmit -p .` (exactly 4 known errors: `export.ts` ×2, `Step2ConfigurePricing.tsx`, `Step3ReviewProducts.tsx`),
 `npx eslint <changed files>`, `npm test` (55 tests), `npm run test:main` (main-process checks, see below), and packaging into a temp folder (`out/` is often locked by OneDrive):
 `node -e "require('@electron-forge/core').api.package({dir:process.cwd(),outDir:process.env.TEMP+'\\epl-pkg-check',interactive:false})"`,
@@ -82,7 +84,7 @@ annotated tag, push `main` + tag; CI runs `npm test`, builds and publishes).
 
 ## What this project is
 
-**EPL Tool** — an Electron desktop app for Lubmarine that replaces an Excel-based workflow for generating customer Export Price Lists (EPL). It stores all pricing data in a SQLite database, lets users create formatted price lists per customer, exports them to Excel in a standard format, and opens email drafts with the file attached.
+**EPL Tool** — an Electron desktop app for the PBP team that replaces an Excel-based workflow for generating customer Export Price Lists (EPL). It stores all pricing data in a SQLite database, lets users create formatted price lists per customer, exports them to Excel in a standard format, and opens email drafts with the file attached.
 
 **Key constraints that drove all architectural decisions:**
 - No admin rights on corporate machines (no IT-managed servers, no PostgreSQL)
@@ -109,7 +111,7 @@ annotated tag, push `main` + tag; CI runs `npm test`, builds and publishes).
 ## Project root layout
 
 ```
-<repo root>/                ← GitHub: dmitralk/EPL-Tool (macOS dev: /Users/yadmitrieva/EPL Tool, Windows dev: SharePoint-synced folder)
+<repo root>/                ← GitHub: dmitralk/EPL-Tool (development folders on macOS and in the SharePoint-synced folder on Windows: see docs/local/corporate-network.md)
 ├── epl-tool/               ← the Electron app (all code here)
 │   ├── src/
 │   │   ├── main/           ← Electron main process
@@ -700,14 +702,13 @@ A packaged app does not pick up source changes — rebuild it after every change
 
 **Testing main-process code without launching the app** (launching opens the real SharePoint DB and writes a startup backup): **`npm run test:main`** runs `epl-tool/scripts/main-checks/*.checks.ts`. `run.js` bundles each file with esbuild (`platform: 'node'`, `external: ['better-sqlite3', 'exceljs']`, `alias: { electron: electron-stub.js }` — the stub captures `ipcMain.handle` into a Map, fakes `app.getPath` / `dialog`, and records `shell.openExternal` so mailto drafts don't open Outlook) and runs it with Electron's own Node (`ELECTRON_RUN_AS_NODE=1`, `NODE_PATH=epl-tool/node_modules`) — `better-sqlite3` is built for Electron's ABI, so plain `node` can't load it. `harness.ts` has the helpers (`invoke(channel, …)` calls the real handlers, `check`, `expectError`, `allowed`, `sha`, `userVersion`, `setupTemp`, `finish`). The checks only work on **copies** of the repo-root sample DBs in `%TEMP%`. `phase-a.checks.ts` (51: migrations, byte-identical re-open, allow-list, logo export, prefs, identity — the UPN/OneDrive checks are skipped off Windows work PCs) and `phase-b.checks.ts` (105: Migration 7 on both DB files, bootstrap, guard declarations, Admin/User/Viewer/unknown/deactivated rules via `EPL_DEV_*` + `initIdentity({ allowOverride: true })`, preview, email skip-reporting, audit entries, orphan/crafted-entry price-list cases, damaged-DB restore). `npm run test:main -- phase-b` runs one file; `EPL_CHECKS_VERBOSE=1` prints passing checks too. Not in CI (needs the local sample DBs). The scripts are type-checked by `tsc` (tsconfig includes `scripts/**/*`).
 
-### Corporate network (TotalEnergies Windows machines)
-Direct access to GitHub/npm/Electron downloads is blocked and HTTPS is SSL-inspected. Working setup (session env vars, run in `epl-tool/` before `npm ci` / `npm start`):
-```powershell
-$env:HTTP_PROXY='http://cloudproxy-emea.corp.local:8080'; $env:HTTPS_PROXY=$env:HTTP_PROXY
-$env:NODE_OPTIONS='--use-system-ca'          # trust the corporate root CA (Node 22+)
-$env:ELECTRON_GET_USE_PROXY='1'; $env:GLOBAL_AGENT_HTTPS_PROXY=$env:HTTP_PROXY   # Electron binary download
-```
-Git uses the same proxy via the repo-local config (`git config --local http.proxy http://cloudproxy-emea.corp.local:8080`).
+### Corporate network (company Windows machines)
+Direct access to GitHub/npm/Electron downloads is blocked and HTTPS is SSL-inspected. The working setup — session environment
+variables `HTTP_PROXY` / `HTTPS_PROXY`, `NODE_OPTIONS=--use-system-ca` (trust the corporate root CA, Node 22+),
+`ELECTRON_GET_USE_PROXY=1` + `GLOBAL_AGENT_HTTPS_PROXY` (Electron binary download), set in `epl-tool/` before `npm ci` /
+`npm start` / packaging — and the repo-local git proxy (`git config --local http.proxy …`) are in
+**`docs/local/corporate-network.md`** (local only: excluded via `.git/info/exclude`, the repo is public; it exists only in the
+SharePoint-synced working folder).
 
 ### forge.config.ts — native module packaging
 

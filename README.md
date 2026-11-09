@@ -44,10 +44,11 @@ checks (`scripts/main-checks/`): the real IPC handlers on temporary copies of th
 development, the environment variables `EPL_DEV_ACCOUNT` / `EPL_DEV_EMAIL` make the app act as another person (ignored by
 packaged builds).
 
-**Behind the TotalEnergies corporate proxy (Windows)**, set these in the same PowerShell session before `npm install` / `npm start`:
+**Behind a corporate proxy (Windows)**, set these in the same PowerShell session before `npm install` / `npm start` (use your
+company's proxy address):
 
 ```powershell
-$env:HTTP_PROXY='http://cloudproxy-emea.corp.local:8080'; $env:HTTPS_PROXY=$env:HTTP_PROXY
+$env:HTTP_PROXY='http://<proxy-host>:<port>'; $env:HTTPS_PROXY=$env:HTTP_PROXY
 $env:NODE_OPTIONS='--use-system-ca'
 $env:ELECTRON_GET_USE_PROXY='1'; $env:GLOBAL_AGENT_HTTPS_PROXY=$env:HTTP_PROXY
 ```
