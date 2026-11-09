@@ -44,9 +44,11 @@ run(async () => {
   for (const gone of ['customers:delete', 'packaging:update-price', 'export:open-mail-with-attachment', 'fx:set', 'settings:get', 'settings:set']) {
     check(`removed channel ${gone}`, !handlers.has(gone));
   }
-  const publicOnes = [...decl].filter(([, r]) => r === 'public').map(([c]) => c).sort();
-  check('public channels are only db:*, auth:* and backup recovery',
-    publicOnes.every(c => /^(db|auth):/.test(c) || ['backup:list', 'backup:open-folder', 'backup:restore'].includes(c)), publicOnes);
+  const publicOnes = [...decl].filter(([, r]) => r.rule === 'public').map(([c]) => c).sort();
+  check('public channels are only db:*, auth:*, sync:* and backup recovery',
+    publicOnes.every(c => /^(db|auth|sync):/.test(c) || ['backup:list', 'backup:open-folder', 'backup:restore'].includes(c)), publicOnes);
+  const notWriting = [...decl].filter(([, r]) => (r.rule === 'editor' || r.rule === 'admin') && !r.writes).map(([c]) => c);
+  check('every editor/admin channel is refused on a read-only copy (writes flag)', notWriting.length === 0, notWriting);
 
   // ── Migration 7 on copies of both sample databases ──
   const realId = await signInAs(null, null);

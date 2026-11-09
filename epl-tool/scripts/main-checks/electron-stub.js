@@ -19,6 +19,6 @@ module.exports = {
     showSaveDialog: async () => (state.nextSave ? { canceled: false, filePath: state.nextSave } : { canceled: true }),
   },
   shell: { openPath: async () => '', openExternal: async url => { state.opened.push(url); } },
-  BrowserWindow: class {},
+  BrowserWindow: class { static getAllWindows() { return []; } },
   Menu: { setApplicationMenu() {}, buildFromTemplate() { return {}; } },
 };

@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import type { PricingMode, Role } from '../types';
 import {
   PERMISSION_MATRIX, accessChangeError, canBackup, canChangeCustomer, canChangeCustomerAccess, canCreateCustomer,
-  canEditReferenceData, canExport, canHideCustomer, canManageUsers, canRestoreCustomer, canView, canViewActivity,
-  customerChangeError, customerLockReason, hideCustomerError, isEditor, managesCustomer, pricingModeLabel,
-  type PermCustomer, type PermUser,
+  canEditReferenceData, canExport, canHideCustomer, canManageUsers, canRestoreCustomer, canStartEditing, canView,
+  canViewActivity, customerChangeError, customerLockReason, hideCustomerError, isEditor, managesCustomer, pricingModeLabel,
+  readOnlyMessage, type PermCustomer, type PermUser,
 } from './permissions';
 
 const ME = 7;
@@ -76,6 +76,7 @@ describe('global rules', () => {
     referenceData: [canEditReferenceData, ['admin']],
     users: [canManageUsers, ['admin']],
     backup: [canBackup, ['admin']],
+    startEditing: [canStartEditing, ['admin']],
   };
   for (const [name, [fn, roles]] of Object.entries(expect)) {
     it(name, () => {
@@ -137,6 +138,13 @@ describe('messages and labels', () => {
     assert.equal(pricingModeLabel(customers.pbp), 'Managed by PBP');
     assert.equal(pricingModeLabel({ ...customers.shared, manager_names: ['A', 'B'] }), 'Managed by A, B');
   });
+
+  it('explains read-only copies of the shared database', () => {
+    assert.equal(readOnlyMessage(user('admin'), 'read'), 'Read-only — click Start editing to make changes.');
+    assert.equal(readOnlyMessage(user('user'), 'read'), 'Read-only — only admins can change the shared database in this version.');
+    assert.equal(readOnlyMessage(user('admin'), 'offline'), 'Offline copy — changes need the shared database.');
+    assert.equal(readOnlyMessage(user('admin'), 'update', '0.8.0'), 'Update EPL Tool to 0.8.0 to make changes.');
+  });
 });
 
 describe('generated permission matrix (Help) matches the study §3.2', () => {
@@ -159,6 +167,7 @@ describe('generated permission matrix (Help) matches the study §3.2', () => {
     ['Standard EPL, products', 'yes', 'no', 'no'],
     ['Try own FX rates', 'yes', 'yes', 'yes'],
     ['Back up now', 'yes', 'no', 'no'],
+    ['Start editing the shared database', 'yes', 'no', 'no'],
     ['Manage users', 'yes', 'no', 'no'],
     ['View the activity log', 'yes', 'yes', 'yes'],
   ];

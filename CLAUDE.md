@@ -12,7 +12,8 @@ https://github.com/dmitralk/EPL-Tool/releases/tag/v0.6.1
 **In progress: Phase C — read copy + publish → v0.7** (`docs/dev-plan.md` Phase C). The kickoff answers (9 Nov: all proposals
 accepted, cache in `%LOCALAPPDATA%`) and the **approved technical design** are recorded in the dev-plan's Phase C section — follow
 that design. Build steps, one commit each after asking the user: 1) Migration 8 `sync_meta` + `CentralStore`/`SyncedFolderStore`
-(`main/sync/`) — **done** · 2) read mode (`query_only`, change detection, offline, guard `writes` flag) · 3) admin edit mode
+(`main/sync/`) — **done** · 2) read mode (`query_only`, change detection, offline, guard `writes` flag; `main/sync/sync.ts`,
+`ipc/sync.ts`) — **done (main process)** · 3) admin edit mode
 (auto-publish, generation check, `EPL-Conflicts/`, unpublished-changes recovery) · 4) setup screen, sidebar status line, banners ·
 5) Guides & Help v0.7 topics + docs → release v0.7.0.
 
@@ -29,15 +30,22 @@ that design. Build steps, one commit each after asking the user: 1) Migration 8 
 **Verify after changes** (from `epl-tool/`; for anything that downloads — npm, packaging — first set in the same PowerShell call:
 `$env:HTTP_PROXY='http://cloudproxy-emea.corp.local:8080'; $env:HTTPS_PROXY=$env:HTTP_PROXY; $env:NODE_OPTIONS='--use-system-ca'; $env:ELECTRON_GET_USE_PROXY='1'; $env:GLOBAL_AGENT_HTTPS_PROXY=$env:HTTP_PROXY`):
 `npx tsc --noEmit -p .` (exactly 4 known errors: `export.ts` ×2, `Step2ConfigurePricing.tsx`, `Step3ReviewProducts.tsx`),
-`npx eslint <changed files>`, `npm test` (51 tests), `npm run test:main` (main-process checks, see below), and packaging into a temp folder (`out/` is often locked by OneDrive):
+`npx eslint <changed files>`, `npm test` (54 tests), `npm run test:main` (main-process checks, see below), and packaging into a temp folder (`out/` is often locked by OneDrive):
 `node -e "require('@electron-forge/core').api.package({dir:process.cwd(),outDir:process.env.TEMP+'\\epl-pkg-check',interactive:false})"`,
 then delete that folder. Release procedure: see *GitHub Actions* below (`npm version X.Y.Z --no-git-tag-version`, commit, BOM-free
 annotated tag, push `main` + tag; CI runs `npm test`, builds and publishes).
 
 **Facts worth remembering**
 - Schema is at `user_version` 8 (Migration 8 = `sync_meta`, Phase C). New schema changes = numbered entries in `MIGRATIONS` (`database.ts`), never edits of `SCHEMA_SQL`.
-- Every IPC channel is registered with `handle(channel, rule, fn)` from `main/ipc/guard.ts`; rules live in `src/shared/permissions.ts`;
-  every write calls `audit()` inside its transaction.
+- Every IPC channel is registered with `handle(channel, rule, fn, options?)` from `main/ipc/guard.ts`; rules live in `src/shared/permissions.ts`;
+  every write calls `audit()` inside its transaction. `editor`/`admin` channels carry the `writes` flag (default): refused on a
+  read-only copy of the shared database (`writeBlockMessage` in `main/sync/sync.ts`), after the role check; `SQLITE_READONLY`
+  errors are translated to the same message.
+- Phase C connection logic lives in `main/sync/sync.ts`: `openLocal` (local mode; refuses a DB with `<name>.manifest.json`
+  next to it), `connectShared` (copy to `%LOCALAPPDATA%\epl-tool\cache`, opened with `query_only`), `startup` (settings.json
+  `connection`, or the v0.6 `lastDbPath` → `legacySuggestion` when in a synced folder), `checkNow`/`applyUpdate`, `getStatus`
+  (`SyncStatus`, pushed to the window as `sync:status`). `dataPath()` = the central DB in shared mode (used by `db:get-path`,
+  backups). Two-PC simulation: `phase-c.checks.ts` forks itself into worker "PCs" (`EPL_PC` env).
 - On the Windows dev PC, `whoami /upn` resolves to one of the named admins' accounts (relevant for first-admin bootstrap tests).
 - The stored legacy logo path was a macOS path; the logo must be selected once in Settings (done by the user or still to do —
   ask if exports lack a logo).
@@ -273,6 +281,7 @@ All channels follow `entity:action`. The preload (`src/preload/index.ts`) expose
 P  auth:whoami, auth:me, auth:preview-start (checks real admin), auth:preview-stop, auth:request-access
 V  prefs:get, prefs:set
 P  db:select-file, db:open, db:create, db:get-path, db:is-open, db:last-open-error      V  db:open-folder
+P  sync:status, sync:select-central, sync:connect, sync:check, sync:apply-update, sync:refresh   (+ event sync:status → window)
 P  backup:list, backup:open-folder, backup:restore (A when a DB is open; else admin in the backup)      A  backup:create
 V  users:list      A  users:create, users:update
 V  audit:list, audit:export-xlsx
@@ -652,7 +661,7 @@ npm install          # install dependencies
 npm start            # dev mode with Vite HMR (DevTools auto-open in dev)
 npm run package      # build unpackaged app (dev/testing only, no installer); prepackage prepares better-sqlite3 for Electron
 npm run make         # build distributable installers (Squirrel .exe + ZIP for Windows); premake does the same
-npm test             # unit tests (node:test via tsx): src/**/*.test.ts — shared/permissions.test.ts + shared/sync.test.ts (51 tests); also run in CI
+npm test             # unit tests (node:test via tsx): src/**/*.test.ts — shared/permissions.test.ts + shared/sync.test.ts (54 tests); also run in CI
 npm run test:main    # main-process checks (scripts/main-checks/*.checks.ts) on temp copies of the sample DBs; local only
 ```
 

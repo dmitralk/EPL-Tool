@@ -363,12 +363,14 @@ shared mode, OneDrive conflict copies.
   - [x] publishing with the generation check
   - [x] spotting OneDrive conflict copies
 - [x] **Generation number:** stored in the database (Migration 8: `sync_meta`).
-- [ ] **Read mode:**
-  - [ ] Open the local copy with `PRAGMA query_only`; in read mode, "read-only" errors become the message *"Read-only — click
+- [ ] **Read mode** (main process done 9 Nov 2026 — `main/sync/sync.ts`, `ipc/sync.ts`, guard `writes` flag; the screens
+      follow in step 4):
+  - [x] Open the local copy with `PRAGMA query_only`; in read mode, "read-only" errors become the message *"Read-only — click
         Start editing"* (the role check runs first).
-  - [ ] Check for changes every 30 s; refresh automatically or show a banner.
-  - [ ] Offline mode using the last copy.
-  - [ ] Block editing when the database needs a newer app version (`minAppVersion` / schema version).
+  - [ ] Check for changes every 30 s; refresh automatically or show a banner. *(Detection, download and `sync:apply-update`
+        done; the automatic apply / banner is in the screens, step 4.)*
+  - [x] Offline mode using the last copy.
+  - [x] Block editing when the database needs a newer app version (`minAppVersion` / schema version).
 - [ ] **Edit mode, first version (Admins only, no edit slot yet):**
   - [ ] *Start editing* copies the fresh database to a working copy.
   - [ ] Auto-publish about 60 s after the last change; *Finish editing*.

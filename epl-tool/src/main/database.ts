@@ -8,6 +8,8 @@ import type { DbOpenError } from '../types';
 let db: Database.Database | null = null;
 let currentPath: string | null = null;
 let lastOpenError: DbOpenError | null = null;
+let openCount = 0;
+let newerSchema: number | null = null;
 
 const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS customers (
@@ -196,18 +198,30 @@ function schemaVersion(db: Database.Database): number {
   return db.pragma('user_version', { simple: true }) as number;
 }
 
-export function openDatabase(filePath: string, opts: { skipBackup?: boolean; create?: boolean } = {}): void {
+export interface OpenOptions {
+  skipBackup?: boolean;
+  create?: boolean;
+  // Shared database (Phase C): local copies are migrated, then opened with PRAGMA query_only, so SQLite itself refuses
+  // changes. A copy published by a newer app (higher schema) is opened as it is, read-only, without migrations.
+  readOnly?: boolean;
+  allowNewerSchema?: boolean;
+  // false = never make the person opening it the first admin (read mode, decided 9 Nov 2026).
+  bootstrap?: boolean;
+}
+
+export function openDatabase(filePath: string, opts: OpenOptions = {}): void {
   if (currentPath && path.resolve(currentPath) === path.resolve(filePath)) closeDatabase();
   const existed = fs.existsSync(filePath) && fs.statSync(filePath).size > 0;
   let next: Database.Database | null = null;
+  let fileVersion = 0;
   try {
     // Without fileMustExist a not-yet-synced SharePoint file would be silently replaced by an empty DB.
     next = new Database(filePath, { fileMustExist: !opts.create });
     // Rollback journal keeps the .db self-contained; WAL's separate -wal file breaks under OneDrive/SharePoint sync.
     next.pragma('journal_mode = DELETE');
     if (!isHealthy(next)) throw new Error('Database integrity check failed (PRAGMA quick_check).');
-    const fileVersion = schemaVersion(next);
-    if (fileVersion > SCHEMA_VERSION) {
+    fileVersion = schemaVersion(next);
+    if (fileVersion > SCHEMA_VERSION && !opts.allowNewerSchema) {
       throw new Error(
         `This database needs a newer version of EPL Tool (database schema ${fileVersion}, this app supports up to ` +
         `${SCHEMA_VERSION}). Please update EPL Tool.`,
@@ -229,9 +243,17 @@ export function openDatabase(filePath: string, opts: { skipBackup?: boolean; cre
   db = next;
   currentPath = filePath;
   lastOpenError = null;
+  openCount++;
 
   db.pragma('foreign_keys = ON');
   db.pragma('synchronous = FULL');
+
+  if (fileVersion > SCHEMA_VERSION) {
+    newerSchema = fileVersion;
+    db.pragma('query_only = ON');
+    return;
+  }
+  newerSchema = null;
 
   if (existed && !opts.skipBackup) {
     try {
@@ -244,7 +266,28 @@ export function openDatabase(filePath: string, opts: { skipBackup?: boolean; cre
   db.exec(SCHEMA_SQL);
   db.exec(SEED_SQL);
   migrate(db);
-  bootstrapFirstAdmin(db);
+  if (opts.bootstrap !== false && !opts.readOnly) bootstrapFirstAdmin(db);
+  if (opts.readOnly) db.pragma('query_only = ON');
+}
+
+// Whether SQLite refuses changes on the open database (read copy of a shared database).
+export function isReadOnly(): boolean {
+  return !!db && db.pragma('query_only', { simple: true }) === 1;
+}
+
+// Schema of the open database when it is newer than this app (opened read-only, not migrated), else null.
+export function getNewerSchema(): number | null {
+  return db ? newerSchema : null;
+}
+
+// Changes each time a database (or another copy of it) is opened, so screens know to reload their data.
+export function getOpenCount(): number {
+  return openCount;
+}
+
+// Rows changed through this connection since it was opened (SQLite total_changes()); used to notice unpublished changes.
+export function totalChanges(): number {
+  return db ? (db.prepare('SELECT total_changes() AS n').get() as { n: number }).n : 0;
 }
 
 // A database without any user (just upgraded by Migration 7, or new) makes the person opening it the first admin.

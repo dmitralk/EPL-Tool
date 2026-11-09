@@ -1,5 +1,5 @@
 import type Database from 'better-sqlite3';
-import { getDb, isOpen, userLabel } from './database';
+import { getDb, isOpen, isReadOnly, userLabel } from './database';
 import { getResolvedIdentity } from './auth';
 import type { AppUser, AuthState, Identity } from '../types';
 
@@ -16,8 +16,9 @@ function findUser(db: Database.Database, identity: Identity): AppUser | null {
   if (identity.email) {
     const byEmail = db.prepare('SELECT * FROM users WHERE email = ? COLLATE NOCASE').get(identity.email) as AppUser | undefined;
     if (byEmail) {
-      // Added by email only: remember the Windows account at the first sign-in.
-      if (!byEmail.account && identity.account) {
+      // Added by email only: remember the Windows account at the first sign-in. Not in read mode (shared database): the
+      // person is recognised by email and the account is recorded the next time they edit.
+      if (!byEmail.account && identity.account && !isReadOnly()) {
         db.transaction(() => {
           db.prepare('UPDATE users SET account = ? WHERE id = ?').run(identity.account, byEmail.id);
           db.prepare(`
@@ -59,6 +60,14 @@ export function getActor(): AppUser | null {
 export function isRealUserAdmin(): boolean {
   const real = getRealUser();
   return !!real && real.is_active === 1 && real.role === 'admin';
+}
+
+// A database without users (before Migration 7's bootstrap ran): whoever starts editing becomes the first admin.
+export function userListEmpty(): boolean {
+  if (!isOpen()) return false;
+  const db = getDb();
+  if (!db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'users'").get()) return true;
+  return (db.prepare('SELECT COUNT(*) AS n FROM users').get() as { n: number }).n === 0;
 }
 
 export function startPreview(userId: number): void {

@@ -1,22 +1,20 @@
 import { dialog, shell } from 'electron';
 import path from 'path';
-import { getDb, openDatabase, isOpen, getCurrentDbPath } from '../database';
-import { saveDbPath } from '../localSettings';
+import { getDb, isOpen } from '../database';
 import { getIdentity } from '../auth';
-import { stopPreview } from '../currentUser';
 import { audit } from '../audit';
 import { getLegacyLogoPath, getLogoDataUrl, logoFileToDataUrl, saveLogo } from '../logo';
+import { dataPath, openLocal } from '../sync/sync';
 import { handle } from './guard';
 import type { AdminEmail, LogoInfo, SelectLogoResult } from '../../types';
 
 const EMAIL_RE = /^[^\s@;,]+@[^\s@;,]+\.[^\s@;,]+$/;
 
-// Opening a database may bootstrap the first admin (Migration 7), which needs the Windows identity.
+// A database file opened directly (local mode). Opening may bootstrap the first admin (Migration 7), which needs the
+// Windows identity.
 async function open(filePath: string, opts: { create?: boolean } = {}) {
   await getIdentity();
-  stopPreview();
-  openDatabase(filePath, opts);
-  saveDbPath(filePath);
+  await openLocal(filePath, opts);
 }
 
 export function registerSettingsHandlers() {
@@ -65,12 +63,12 @@ export function registerSettingsHandlers() {
     })();
   }, 'Only admins can change PBP emails.');
 
-  // The path is per PC, so it is never stored in the (shared) database.
-  handle('db:get-path', 'public', () => getCurrentDbPath());
+  // The path is per PC, so it is never stored in the (shared) database. Shared mode: the central database, not the copy.
+  handle('db:get-path', 'public', () => dataPath());
 
   // Folder of the shared database in Explorer (OneDrive's "Manage access" lives there).
   handle('db:open-folder', 'viewer', async () => {
-    const current = getCurrentDbPath();
+    const current = dataPath();
     if (!current) return { ok: false, error: 'No database is open.' };
     const error = await shell.openPath(path.dirname(current));
     return error ? { ok: false, error } : { ok: true };

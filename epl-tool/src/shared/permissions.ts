@@ -101,6 +101,22 @@ export function canBackup(u: U): boolean {
   return isAdmin(u);
 }
 
+// Shared database (Phase C): who may click Start editing. Admins only in v0.7; Users follow with the edit slot (v0.8).
+export function canStartEditing(u: U): boolean {
+  return isAdmin(u);
+}
+
+// Why the open copy of a shared database can't be changed: read mode, offline copy, or a newer app is needed.
+export type WriteBlock = 'read' | 'offline' | 'update';
+
+export function readOnlyMessage(u: U, block: WriteBlock, minVersion?: string | null): string {
+  if (block === 'offline') return 'Offline copy — changes need the shared database.';
+  if (block === 'update') return `Update EPL Tool${minVersion ? ` to ${minVersion}` : ''} to make changes.`;
+  return canStartEditing(u)
+    ? 'Read-only — click Start editing to make changes.'
+    : 'Read-only — only admins can change the shared database in this version.';
+}
+
 export function canExport(u: U): boolean {
   return canView(u);
 }
@@ -213,6 +229,7 @@ export const PERMISSION_MATRIX: readonly MatrixRow[] = [
   { action: 'Standard EPL, products, packaging, currencies, units, PBP emails, logo, default FX rates', cells: global(canEditReferenceData) },
   { action: 'Try own FX rates on the Analysis screen for the current session', cells: global(canUseSessionFxRates) },
   { action: 'Back up now, restore a backup', cells: global(canBackup) },
+  { action: 'Start editing the shared database (changes are then published for everybody)', cells: global(canStartEditing) },
   { action: 'Manage users', cells: global(canManageUsers) },
   { action: 'View the activity log', cells: global(canViewActivity) },
 ];

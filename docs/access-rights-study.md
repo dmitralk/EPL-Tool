@@ -137,7 +137,11 @@ own version history show who changed what (§8).
 | Manage users | ✓ | ✗ | ✗ | ✗ |
 | View the activity log | ✓ | ✓ | ✓ | ✗ |
 | Read the in-app Help | ✓ | ✓ | ✓ | short version on the "No access" screen |
-| *Start editing* (multi-user edit slot) | ✓ | ✓ | ✗ | ✗ |
+| *Start editing* (multi-user edit slot) | ✓ | ✓ from v0.8 (v0.7: ✗, decided 9 Nov 2026) | ✗ | ✗ |
+
+With a shared database (v0.7+), every change above also needs **edit mode**: the app works on a read-only copy until an
+admin clicks *Start editing*. Refusals then say *"Read-only — click Start editing to make changes."* (admins) or *"Read-only —
+only admins can change the shared database in this version."* (Users), after the role check.
 
 ### 3.3 Changing the mode and managers — accepted (no objection on 5 Nov)
 

@@ -282,6 +282,46 @@ export interface LogoInfo {
   legacyPath: string | null;        // old per-PC file path, only reported when no logo is stored yet
 }
 
+// Shared database (Phase C, multi-user study §5): what the app is connected to and what the open copy is.
+export interface SyncPublishInfo {
+  generation: number;
+  publishedBy: string | null;
+  publishedAt: string | null;       // ISO UTC
+}
+
+export interface SyncStatus {
+  mode: 'none' | 'local' | 'shared';
+  phase: 'connecting' | 'read' | 'edit' | null;  // shared mode only
+  path: string | null;              // the local database, or the central database of the shared folder
+  openId: number;                   // changes whenever another copy is opened: screens reload their data
+  writable: boolean;                // changes allowed (local mode, or editing)
+  writeBlock: 'read' | 'offline' | 'update' | null;
+  data: (SyncPublishInfo & { copiedAt: string | null; fileTime: string | null }) | null;  // the open copy
+  offline: { since: string; reason: string } | null;
+  syncing: SyncPublishInfo | null;  // newer data announced by the manifest, not yet on this PC
+  pendingUpdate: SyncPublishInfo | null;  // newer data downloaded, waiting to be applied
+  newerApp: { schemaVersion: number; minAppVersion: string | null } | null;  // update EPL Tool to edit
+  centralDamaged: boolean;          // the shared file failed the integrity check (last good copy in use)
+  conflictCopies: string[];         // OneDrive conflict copies next to the central database
+  lastCheckAt: string | null;
+  error: string | null;
+  canStartEditing: boolean;
+  startEditingBlocked: string | null;  // why Start editing is not possible right now
+  edit: {
+    since: string;
+    dirty: boolean;                 // changes not yet published
+    publishing: boolean;
+    lastPublishedAt: string | null;
+    lastPublishedGeneration: number | null;
+    nextPublishAt: string | null;
+    error: string | null;
+    centralChanged: string | null;  // someone else published meanwhile: the next publish will be refused
+  } | null;
+  conflict: { savedTo: string | null; at: string; message: string } | null;  // last refused publish
+  recovery: { since: string; changedAt: string | null } | null;  // unpublished changes from a previous run
+  legacySuggestion: { path: string } | null;  // v0.6 database in a synced folder: offer to connect as shared
+}
+
 export type SelectLogoResult = { ok: true; dataUrl: string } | { ok: false; error: string } | null;
 
 export interface Currency {

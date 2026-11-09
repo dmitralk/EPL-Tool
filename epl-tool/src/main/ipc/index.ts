@@ -13,9 +13,11 @@ import { registerAuthHandlers } from './auth';
 import { registerPrefsHandlers } from './prefs';
 import { registerUserHandlers } from './users';
 import { registerAuditHandlers } from './audit';
+import { registerSyncHandlers } from './sync';
 
 export function registerAllIpcHandlers() {
   registerAuthHandlers();
+  registerSyncHandlers();
   registerPrefsHandlers();
   registerUserHandlers();
   registerAuditHandlers();

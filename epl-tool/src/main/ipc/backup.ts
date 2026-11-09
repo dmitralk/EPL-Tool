@@ -2,21 +2,22 @@ import fs from 'fs';
 import path from 'path';
 import { shell } from 'electron';
 import Database from 'better-sqlite3';
-import { closeDatabase, getCurrentDbPath, getDb, getLastOpenError, isOpen, openDatabase } from '../database';
+import { closeDatabase, getDb, getLastOpenError, isOpen, openDatabase } from '../database';
 import {
   backupDirFor, createBackup, createPreRestoreCopy, getLastBackupStatus, isBackupOf, isFileHealthy, listBackups, pruneBackups,
 } from '../backup';
 import { getIdentity } from '../auth';
-import { stopPreview } from '../currentUser';
+import { getActor, stopPreview } from '../currentUser';
 import { audit } from '../audit';
+import { dataPath, isShared, writeBlockMessage } from '../sync/sync';
 import { handle, requireRule } from './guard';
 import type { BackupListResult } from '../../types';
 
 const RESTORE_DENIED = 'Only admins can restore a backup.';
 
-// Backups belong to the open database, or to the one that just failed to open (so it can be restored).
+// Backups belong to the open database (the central one in shared mode), or to the one that just failed to open.
 function targetDbPath(): string | null {
-  return getCurrentDbPath() ?? getLastOpenError()?.path ?? null;
+  return dataPath() ?? getLastOpenError()?.path ?? null;
 }
 
 // With a damaged database nobody can be looked up in it, so the backup's own user list decides
@@ -46,7 +47,7 @@ export function registerBackupHandlers() {
   });
 
   handle('backup:create', 'admin', () => {
-    const target = getCurrentDbPath();
+    const target = dataPath();
     if (!target) return { ok: false, error: 'No database is open.' };
     try {
       return { ok: true, path: createBackup(getDb(), target) };
@@ -72,6 +73,10 @@ export function registerBackupHandlers() {
     }
     try {
       if (isOpen()) requireRule('admin', RESTORE_DENIED);
+      if (isShared()) {
+        // Never replace the central file directly; restoring through the working copy comes with edit mode.
+        return { ok: false, error: writeBlockMessage(getActor()) ?? 'Restore is not available here.' };
+      }
       if (!isFileHealthy(backupPath)) return { ok: false, error: 'This backup failed the integrity check.' };
       if (!isOpen()) await requireAdminInBackup(backupPath);
 

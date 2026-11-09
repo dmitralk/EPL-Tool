@@ -4,8 +4,14 @@ import { app } from 'electron';
 import type { PrefKey } from '../shared/prefs';
 
 // Per-PC file (%APPDATA%\epl-tool\settings.json). Holds nothing that grants rights; rights live in the database.
+export interface Connection {
+  mode: 'local' | 'shared';   // a database file opened directly, or the central database of a shared folder (Phase C)
+  path: string;
+}
+
 interface LocalSettings {
-  lastDbPath?: string;
+  lastDbPath?: string;         // database opened directly (local mode; also what v0.6.x used)
+  connection?: Connection;
   prefs?: Partial<Record<PrefKey, string>>;
 }
 
@@ -41,9 +47,23 @@ export function getSavedDbPath(): string | null {
 
 export function saveDbPath(dbPath: string): void {
   try {
-    writeSettings({ ...readSettings(), lastDbPath: dbPath });
+    writeSettings({ ...readSettings(), lastDbPath: dbPath, connection: { mode: 'local', path: dbPath } });
   } catch {
     // not fatal: the user will pick the database again next time
+  }
+}
+
+// How this PC reached its database last time, or null before the first choice made with v0.7 (see getSavedDbPath).
+export function getConnection(): Connection | null {
+  const c = readSettings().connection;
+  return c && (c.mode === 'local' || c.mode === 'shared') && typeof c.path === 'string' && c.path ? c : null;
+}
+
+export function saveSharedConnection(centralPath: string): void {
+  try {
+    writeSettings({ ...readSettings(), connection: { mode: 'shared', path: centralPath } });
+  } catch {
+    // not fatal: the user will connect again next time
   }
 }
 

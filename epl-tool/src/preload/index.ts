@@ -1,6 +1,6 @@
-import { contextBridge, ipcRenderer } from 'electron';
+import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron';
 import type { PrefKey } from '../shared/prefs';
-import type { AuditFilters, NewCustomerInput, PricingMode, UserInput } from '../types';
+import type { AuditFilters, NewCustomerInput, PricingMode, SyncStatus, UserInput } from '../types';
 
 const api = {
   // DB management
@@ -11,6 +11,19 @@ const api = {
   dbOpenFolder: () => ipcRenderer.invoke('db:open-folder'),
   dbIsOpen: () => ipcRenderer.invoke('db:is-open'),
   dbLastOpenError: () => ipcRenderer.invoke('db:last-open-error'),
+
+  // Shared database (read copy, refresh)
+  getSyncStatus: () => ipcRenderer.invoke('sync:status'),
+  selectSharedDb: () => ipcRenderer.invoke('sync:select-central'),
+  connectShared: (centralPath: string) => ipcRenderer.invoke('sync:connect', centralPath),
+  checkSync: () => ipcRenderer.invoke('sync:check'),
+  applySyncUpdate: () => ipcRenderer.invoke('sync:apply-update'),
+  refreshSync: () => ipcRenderer.invoke('sync:refresh'),
+  onSyncStatus: (listener: (status: SyncStatus) => void) => {
+    const wrapped = (_e: IpcRendererEvent, status: SyncStatus) => listener(status);
+    ipcRenderer.on('sync:status', wrapped);
+    return () => { ipcRenderer.removeListener('sync:status', wrapped); };
+  },
 
   // Backups
   listBackups: () => ipcRenderer.invoke('backup:list'),
