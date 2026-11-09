@@ -76,7 +76,7 @@ describe('global rules', () => {
     referenceData: [canEditReferenceData, ['admin']],
     users: [canManageUsers, ['admin']],
     backup: [canBackup, ['admin']],
-    startEditing: [canStartEditing, ['admin']],
+    startEditing: [canStartEditing, ['admin', 'user']],
   };
   for (const [name, [fn, roles]] of Object.entries(expect)) {
     it(name, () => {
@@ -141,7 +141,8 @@ describe('messages and labels', () => {
 
   it('explains read-only copies of the shared database', () => {
     assert.equal(readOnlyMessage(user('admin'), 'read'), 'Read-only — click Start editing to make changes.');
-    assert.equal(readOnlyMessage(user('user'), 'read'), 'Read-only — only admins can change the shared database in this version.');
+    assert.equal(readOnlyMessage(user('user'), 'read'), 'Read-only — click Start editing to make changes.');
+    assert.equal(readOnlyMessage(user('viewer'), 'read'), 'Viewers can only view and export.');
     assert.equal(readOnlyMessage(user('admin'), 'offline'), 'Offline copy — changes need the shared database.');
     assert.equal(readOnlyMessage(user('admin'), 'update', '0.8.0'), 'Update EPL Tool to 0.8.0 to make changes.');
   });
@@ -167,7 +168,7 @@ describe('generated permission matrix (Help) matches the study §3.2', () => {
     ['Standard EPL, products', 'yes', 'no', 'no'],
     ['Try own FX rates', 'yes', 'yes', 'yes'],
     ['Back up now', 'yes', 'no', 'no'],
-    ['Start editing the shared database', 'yes', 'no', 'no'],
+    ['Start editing the shared database', 'yes', 'yes', 'no'],
     ['Manage users', 'yes', 'no', 'no'],
     ['View the activity log', 'yes', 'yes', 'yes'],
   ];

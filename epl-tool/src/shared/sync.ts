@@ -16,7 +16,16 @@ export function describeSeconds(seconds: number): string {
 
 // Oldest app version allowed to edit a database published by this version (written to the manifest as minAppVersion).
 // Raise it when older versions must stop editing (e.g. they would write data this version can't read).
-export const MIN_EDIT_APP_VERSION = '0.7.0';
+// 0.8.0: v0.7 apps don't know the edit slot, so they must not edit next to it (decided 9 Nov 2026).
+export const MIN_EDIT_APP_VERSION = '0.8.0';
+
+// Edit slot (multi-user study §5.5, decided 5 + 9 Nov 2026).
+export const SLOT_HEARTBEAT_SECONDS = 180;       // the holder rewrites its claim this often
+export const SLOT_WAIT_SECONDS = 45;             // waiting window after writing a claim (OneDrive carries competing claims)
+export const SLOT_TAKEOVER_MINUTES = 15;         // a claim without heartbeat for this long is inactive (others may take over)
+export const IDLE_RELEASE_MINUTES = 30;          // no change and nothing open for this long → publish and release
+export const IDLE_WARNING_MINUTES = 2;           // warning shown this long before the release
+export const CLAIM_CLEANUP_DAYS = 7;             // other people's claims without heartbeat for this long are deleted
 
 // Compares dotted version numbers ("0.10.1" > "0.9.3"); missing parts count as 0, anything after "-" is ignored.
 export function compareVersions(a: string, b: string): number {

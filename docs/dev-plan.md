@@ -404,14 +404,105 @@ parallel.
 
 ### Phase D — Edit slot (3–4 d)
 
+**Kickoff decisions (confirmed by the user on 9 Nov 2026 — all proposals accepted).** Design in the multi-user study
+§5.5–5.7; timeouts decided earlier (§8: take-over after 15 min without heartbeat, release after 30 min without changes).
+
+1. **Who edits from v0.8:** Admins and Users (Users only change what their rights allow); Viewers never.
+2. **v0.7 apps:** the minimum editing version becomes **0.8.0** — once v0.8 publishes, v0.7 apps are read-only with *"Update
+   EPL Tool to 0.8.0 to make changes"*.
+3. **Waiting:** dialog *"Anna has been editing since 10:02 (last change 10:41)"* [Wait] [Cancel]; while waiting the app checks
+   every 30 s; when the slot is free: a Windows notification + a banner with **Start editing** — nobody gets the slot
+   automatically.
+4. **Release after 30 min** with no change **and** no open wizard or dialog, with a warning 2 min before [Keep editing].
+5. **Take-over** of an inactive slot (15 min without heartbeat) by anyone who may edit; the inactive editor's unpublished work
+   goes to `EPL-Conflicts/` when their app wakes up. Admins also get *Force release* in Phase E.
+6. **Timings:** heartbeat every 3 min, waiting window ~45 s, earliest claim wins (smaller slot id on a tie).
+7. **Restart with unpublished changes:** [Resume editing] [Publish now] [Discard]; if someone else took over meanwhile, the
+   conflict path + the rescue tool.
+8. **Rescue tool:** a *Conflict copies* screen (Settings) listing `EPL-Conflicts/` and OneDrive conflict copies. *Review* shows
+   the new price lists (tick → *Re-apply*, in edit mode, same checks as creating a price list incl. per-customer rights) and a
+   read-only report of other differences. Admins can archive a reviewed copy.
+9. **Windows notifications:** yes (slot free, released after 30 min, publish refused); banners in any case.
+10. **Release:** as planned, v0.8.0 = Phase D + Phase E.
+11. **Tests:** `phase-d.checks.ts` on simulated PCs with shortened timings, then the two-PC test.
+
+**Technical design (approved by the user on 9 Nov 2026, with: other people's claims deleted after 7 days without heartbeat,
+an expired claim never revived, re-applied price lists logged as normal creations with "re-applied from …")**
+
+*Main process:*
+
+- `main/sync/editSlot.ts` — the claim rules, pure and unit-tested: a claim is **active** while its heartbeat is less than 15 min
+  old; the **holder** is the active claim with the earliest `claimedAt` (smaller `slotId` on a tie). A claim file:
+  `{ slotId, db, user, account, machine, claimedAt, heartbeatAt, lastChangeAt, state: 'claiming' | 'holding', appVersion }`.
+- `CentralStore` gains `listClaims()`, `writeClaim()` (`EPL-EditSlot/<slotId>.json`, `.tmp` + rename) and `deleteClaim()`.
+  Nobody writes another person's claim; expired claims of others are ignored (and deleted when older than 7 days, so the folder
+  doesn't fill up).
+- **Take-over record (added in step 1 and accepted by the user, 9 Nov 2026, to make "an expired claim is never revived" hold
+  on every PC):** the claim of someone who takes over lists the inactive sessions in `takesOver`, and the taker deletes their
+  files once the slot is theirs.
+  A session listed there never holds the slot again, for anybody — also when its claim comes back with a fresh heartbeat
+  (a laptop whose OneDrive was paused kept rewriting it locally); its owner gives up at its next check (*"Ola took over the
+  edit slot"*). Without it, the revived older claim would win again and the person who took over would lose the slot.
+- `sync.ts` — *Start editing* becomes: checks → claims of others? → **active holder**: return `waiting` (holder, since, last
+  change) · **only an inactive one**: return `takeOver` (asks first) · **free**: write my claim (`claiming`, phase
+  `claiming`) → wait ~45 s (cancellable) → read the claims again → **holder = me**: fresh copy, backup, working copy (as in
+  v0.7), claim `holding` · **holder = someone else**: delete my claim, return `waiting`.
+- **Heartbeat** every 3 min (claim rewritten with `heartbeatAt` and `lastChangeAt`). **Lost slot:** if my claim is gone, another
+  claim became the holder, or my own heartbeat gap exceeded 15 min (laptop asleep — an expired claim is never revived) → the
+  working copy goes to `EPL-Conflicts/` if it has unpublished changes, back to read mode, banner *"Ben took over the edit slot
+  at 11:02"*. Every publish first checks that I still hold the slot (study §5.6 step 1).
+- **Finish editing / quit / 30-min release** = publish, delete my claim, read mode. **Idle:** the screens report "busy" (open
+  dialog or wizard, as in v0.7); the timer counts from the later of the last change and the end of busy; warning at 28 min
+  (`edit.releaseAt` in the status, [Keep editing] = `sync:keep-editing`).
+- **Waiting:** `sync:wait-for-slot` / `sync:stop-waiting`; the 30 s check lists the claims (a folder listing + a few small JSON
+  files) for everybody, so the status line shows *"Anna is editing"*; when a waiting person's slot becomes free → notification
+  + `slot.free`.
+- **Recovery:** `session.json` keeps the `slotId`. *Resume editing* = my claim still active and holder → continue at once;
+  otherwise claim again (waiting window / waiting) and continue on the kept working copy (the generation check decides at the
+  next publish). *Publish now* = resume + Finish editing.
+- `MIN_EDIT_APP_VERSION = '0.8.0'`; `canStartEditing` = Admin or User (the matrix row in Help follows; unit tests updated).
+- **Notifications** (`main/notify.ts`): Electron `Notification`, with the app's Windows id set for the installed app (Squirrel
+  `com.squirrel.EPLTool.<exe>`); silently skipped where not supported.
+- **Rescue tool** (`ipc/conflicts.ts`, `main/sync/rescue.ts`): `conflicts:list` (EPL-Conflicts + OneDrive copies with date,
+  person, generation), `conflicts:analyze(file)` (the copy is first copied to a temp file — the shared folder is never opened
+  with SQLite — then compared with the open database: price lists whose id is missing, and per table counts/rows of added,
+  removed and changed records for customers, products, Standard EPL, packaging, PBP emails, units, currencies, users),
+  `conflicts:reapply(file, ids)` (editor, edit mode: the same function as `price-lists:create`, refactored out of
+  `ipc/priceLists.ts`, with its per-customer check and duplicate guard; audited as `price_list.create` with *re-applied from …*),
+  `conflicts:archive(file)` (admins: moved to `EPL-Conflicts/archive/`).
+
+*Screens:* *Start editing* opens a small dialog that follows the claim: *"Reserving the edit slot…"* (countdown, Cancel) → done
+· or *"Anna has been editing since 10:02 (last change 10:41)"* [Wait] [Cancel] · or *"Anna's session has been inactive since
+10:41. Take over? …"* [Take over] [Wait]. Status line: *"Anna is editing"* while someone holds the slot; banners: slot free
+[Start editing], lost slot, release warning [Keep editing], restart with [Resume editing] [Publish now] [Discard]. Settings →
+**Conflict copies** (count badge) → review screen with the price-list list, *Re-apply* and the difference report.
+
+*Checks (`phase-d.checks.ts`):* the PC helpers of `phase-c.checks.ts` move to a shared `scripts/main-checks/pcs.ts`; timings are
+shortened per PC. Scenarios: claim + hold; a second PC waits and sees the holder; slot free after Finish; two PCs claiming at
+the same time (one wins, the other waits); a claim arriving late (OneDrive delay, written by the orchestrator) → the later
+holder loses at its next check; take-over after a killed process, then the old PC restarts (resume → slot lost → conflict
+copy); a sleeping PC (heartbeat gap) gives up; 30-min release (shortened) and busy keeping the slot; a User edits within their
+rights, a Viewer can't; a v0.7 app becomes read-only; rescue: review a conflict copy, re-apply a price list (rights and
+duplicate checks), archive.
+
+*Build order (one commit each, asking first):* 1) slot core (claims, waiting window, heartbeat, lost slot, Users edit, 0.8.0)
+· 2) idle release, waiting/slot free, take-over, notifications · 3) recovery with the slot + rescue tool · 4) screens · 5) Help
+(editing topics) + docs. Then Phase E → v0.8.0.
+
+**Progress:** step 1 (slot core) done 9 Nov 2026 — `editSlot.ts` (rules + unit tests), claim files, waiting window with
+cancel, heartbeat (`heartbeatNow`, timer while editing), lost slot → `EPL-Conflicts/`, take-over question and record, publish
+and recovery go through the slot, Users may start editing, `MIN_EDIT_APP_VERSION` 0.8.0; `phase-d.checks.ts` (71 checks) on
+the PC helpers now in `scripts/main-checks/pcs.ts` (each simulated PC has its own computer name). The screens still use the
+v0.7 *Start editing* button (waiting / take-over answers show as messages) until step 4; Help follows in step 5.
+
 - [ ] **Edit slot:**
-  - [ ] a claim file per editing session in `EPL-EditSlot/`
-  - [ ] heartbeat every 3 min
-  - [ ] about 45 s waiting window; the earliest claim wins
-  - [ ] take-over after 15 min without activity
+  - [x] a claim file per editing session in `EPL-EditSlot/`
+  - [x] heartbeat every 3 min
+  - [x] about 45 s waiting window; the earliest claim wins
+  - [x] take-over after 15 min without activity (question first; screens in step 4)
   - [ ] automatic publish and release after 30 min without changes
 - [ ] **Waiting:** a waiting dialog, and a Windows notification when the slot is free.
-- [ ] ***Start editing* for Users** as well (role check: Admin or User).
+- [x] ***Start editing* for Users** as well (role check: Admin or User).
 - [ ] **Recovery:**
   - [ ] crash recovery (`work\session.json`)
   - [ ] the `EPL-Conflicts/` folder
@@ -519,5 +610,6 @@ All decisions are recorded (the last two on 5 Nov 2026):
 - **Session FX rates:** forgotten when the app closes.
 
 **Next step:** Phase D (edit slot) — started 9 Nov 2026 right after the v0.7.0 release, while the two-PC test of v0.7.0 runs
-with a colleague (separate SharePoint test folder with a copy of the database). Phases A and B were released as **v0.6.1** on
-6 Nov 2026 (v0.6.0 was not released separately); Phase C as **v0.7.0** on 9 Nov 2026.
+with a colleague (separate SharePoint test folder with a copy of the database). Step 1 (slot core) is done; next is step 2
+(idle release, waiting / slot free, notifications). Phases A and B were released as **v0.6.1** on 6 Nov 2026 (v0.6.0 was not
+released separately); Phase C as **v0.7.0** on 9 Nov 2026.

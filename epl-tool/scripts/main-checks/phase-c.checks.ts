@@ -5,21 +5,20 @@
 // The orchestrator plays "someone else" by publishing new versions into the central folder with the CentralStore.
 import fs from 'fs';
 import path from 'path';
-import { fork, type ChildProcess } from 'child_process';
 import Database from 'better-sqlite3';
-import { closeDatabase, getDb, openDatabase, SCHEMA_VERSION } from '../../src/main/database';
+import { closeDatabase, openDatabase, SCHEMA_VERSION } from '../../src/main/database';
 import { getIdentity, initIdentity } from '../../src/main/auth';
 import {
   CentralError, SyncedFolderStore, describeDbFile, inspectDbFile, sha256File, type DbFileInfo,
 } from '../../src/main/sync/centralStore';
 import { isInSyncedFolder, isUnder } from '../../src/main/sync/oneDrive';
 import { cacheDir, localDataDir, workDir } from '../../src/main/sync/paths';
-import { getStatus, startBackgroundChecks, startup } from '../../src/main/sync/sync';
 import { MIN_EDIT_APP_VERSION } from '../../src/shared/sync';
-import { registerAllIpcHandlers } from '../../src/main/ipc/index';
-import { SAMPLE_DBS, allowed, check, expectError, finish, invoke, run, sample, setupTemp, sha, sleep, stub, userVersion } from './harness';
-
-const ls = (dir: string) => (fs.existsSync(dir) ? fs.readdirSync(dir).sort() : []);
+import { SAMPLE_DBS, allowed, check, expectError, finish, run, sample, setupTemp, sha, sleep, userVersion } from './harness';
+import {
+  PEOPLE, Pc, backupsOf, centralQuery, corrupt, generationOf, ls, manifestOf, prepareCentral, publishAs, spocOf, worker,
+  type Central,
+} from './pcs';
 
 async function expectCentralError(name: string, fn: () => Promise<unknown>, kind: string) {
   try {
@@ -199,187 +198,7 @@ async function storeChecks(tmp: string) {
   check('OneDrive conflict copies are found (and nothing else)', copies.join() === 'EPL-Database-LAPTOP-AB12-2.db,EPL-Database-LAPTOP-AB12.db', copies);
 }
 
-// ── Part 2: the app on simulated PCs ──────────────────────────────────────────────────────────────────────────────
-
-interface Person { account: string; email: string }
-const PEOPLE = {
-  anna: { account: 'adm-a', email: 'anna.admin@example.com' },   // admin (first admin of the prepared database)
-  ben: { account: 'adm-b', email: 'ben.admin@example.com' },     // admin
-  uma: { account: 'usr-u', email: 'uma.user@example.com' },      // user
-  vic: { account: 'vw-v', email: 'vic.viewer@example.com' },     // viewer
-  eve: { account: 'usr-e', email: 'eve.email@example.com' },     // user added by email only
-  fay: { account: 'adm-f', email: 'fay.admin@example.com' },     // admin added by email only
-  boot: { account: 'boot-x', email: 'boot.strap@example.com' },  // nobody's user yet (database without users)
-};
-
-// Worker side: a "PC" running the real IPC handlers, driven by messages from the orchestrator. It reports the version
-// of the coming release (package.json is bumped at release time).
-function worker(): void {
-  stub.__state.appVersion = process.env.EPL_APP_VERSION ?? MIN_EDIT_APP_VERSION;
-  initIdentity({ allowOverride: true });
-  registerAllIpcHandlers();
-  process.on('disconnect', () => process.exit(0));
-  process.on('message', async (m: { id: number; op: string; args: any[] }) => {
-    const reply = (x: object) => process.send?.({ id: m.id, ...x });
-    try {
-      let result: unknown;
-      if (m.op === 'invoke') result = await invoke(m.args[0], ...m.args.slice(1));
-      else if (m.op === 'startup') { await getIdentity(); await startup(); result = getStatus(); }
-      else if (m.op === 'sql') result = getDb().prepare(m.args[0]).all(...(m.args[1] ?? []));
-      else if (m.op === 'raw-write') result = getDb().prepare(m.args[0]).run();
-      else if (m.op === 'timers') startBackgroundChecks(m.args[0]);
-      else if (m.op === 'exit') { reply({ ok: true }); process.exit(0); }
-      reply({ ok: true, result });
-    } catch (e) {
-      reply({ ok: false, error: (e as Error).message, code: (e as any).code });
-    }
-  });
-  process.send?.({ ready: true });
-}
-
-class Pc {
-  private child: ChildProcess | null = null;
-  private seq = 0;
-  private readonly waiting = new Map<number, (m: any) => void>();
-
-  constructor(readonly name: string, readonly dir: string, public who: Person, readonly extraEnv: Record<string, string> = {}) {}
-
-  get userData() { return path.join(this.dir, 'userData'); }
-  get settings() { return path.join(this.userData, 'settings.json'); }
-  get local() { return path.join(this.dir, 'local'); }
-  get cacheDir() { return path.join(this.local, 'userData', 'cache'); }
-  get workDir() { return path.join(this.local, 'userData', 'work'); }
-
-  async start(who: Person = this.who): Promise<void> {
-    this.who = who;
-    fs.mkdirSync(this.userData, { recursive: true });
-    fs.mkdirSync(this.local, { recursive: true });
-    // Windows environment names are case-insensitive: drop the PC's own value before overriding.
-    const env: NodeJS.ProcessEnv = { ...process.env };
-    const overrides: Record<string, string> = {
-      EPL_PC: this.name, TEST_USERDATA: this.userData, LOCALAPPDATA: this.local,
-      EPL_DEV_ACCOUNT: who.account, EPL_DEV_EMAIL: who.email, ...this.extraEnv,
-    };
-    for (const [key, value] of Object.entries(overrides)) {
-      for (const k of Object.keys(env)) if (k.toLowerCase() === key.toLowerCase()) delete env[k];
-      env[key] = value;
-    }
-    const child = fork(process.argv[1], [], { env, stdio: ['ignore', 'inherit', 'inherit', 'ipc'] });
-    this.child = child;
-    await new Promise<void>((resolve, reject) => {
-      child.once('error', reject);
-      child.on('message', (m: any) => {
-        if (m?.ready) resolve();
-        else this.waiting.get(m?.id)?.(m);
-      });
-    });
-  }
-
-  private send(op: string, ...args: any[]): Promise<any> {
-    const id = ++this.seq;
-    return new Promise(resolve => {
-      this.waiting.set(id, m => { this.waiting.delete(id); resolve(m); });
-      this.child?.send({ id, op, args });
-    });
-  }
-
-  private async ok(op: string, ...args: any[]): Promise<any> {
-    const r = await this.send(op, ...args);
-    if (!r.ok) throw new Error(r.error);
-    return r.result;
-  }
-
-  invoke(channel: string, ...args: any[]) { return this.ok('invoke', channel, ...args); }
-  status() { return this.invoke('sync:status'); }
-  startup() { return this.ok('startup'); }
-  sql(query: string, params?: any[]) { return this.ok('sql', query, params); }
-  rawWrite(query: string) { return this.send('raw-write', query); }
-  timers(t: { checkMs?: number; publishMs?: number }) { return this.ok('timers', t); }
-
-  // A crash: no chance to publish.
-  async kill(): Promise<void> {
-    const c = this.child;
-    if (!c) return;
-    const exited = new Promise(r => c.once('exit', r));
-    c.kill();
-    await exited;
-    this.child = null;
-  }
-
-  async stop(): Promise<void> {
-    const c = this.child;
-    if (!c) return;
-    const exited = new Promise(r => c.once('exit', r));
-    void this.send('exit');
-    await exited;
-    this.child = null;
-  }
-}
-
-interface Central { centralDir: string; central: string; base: string; orch: string }
-
-// A v0.6.1-like shared database (schema 7, a user list, no sync_meta yet) in tmp\central, plus a schema 8 copy ("base").
-function prepareCentral(tmp: string): Central {
-  const prep = path.join(tmp, 'prep', 'EPL-Database.db');
-  fs.mkdirSync(path.dirname(prep), { recursive: true });
-  fs.copyFileSync(sample(SAMPLE_DBS[0]), prep);
-  openDatabase(prep, { skipBackup: true });          // the orchestrator is Anna: she becomes the first admin
-  const db = getDb();
-  const add = db.prepare('INSERT INTO users (display_name, email, account, role) VALUES (?, ?, ?, ?)');
-  add.run('Ben Admin', PEOPLE.ben.email, PEOPLE.ben.account, 'admin');
-  add.run('Uma User', PEOPLE.uma.email, PEOPLE.uma.account, 'user');
-  add.run('Vic Viewer', PEOPLE.vic.email, PEOPLE.vic.account, 'viewer');
-  add.run('Eve Email', PEOPLE.eve.email, null, 'user');
-  add.run('Fay Admin', PEOPLE.fay.email, null, 'admin');
-  closeDatabase();
-  const base = path.join(tmp, 'prep', 'base8.db');
-  fs.copyFileSync(prep, base);
-  const d = new Database(prep);
-  d.exec('DROP TABLE sync_meta');
-  d.pragma('user_version = 7');
-  d.close();
-  const centralDir = path.join(tmp, 'shared', 'EPL-Central');
-  fs.mkdirSync(centralDir, { recursive: true });
-  const central = path.join(centralDir, 'EPL-Database.db');
-  fs.copyFileSync(prep, central);
-  const orch = path.join(tmp, 'orchestrator');
-  fs.mkdirSync(orch);
-  return { centralDir, central, base, orch };
-}
-
-// "Someone else" publishes a new version, as the app does: copy, change, stamp the next generation, generation check.
-let pubSeq = 0;
-async function publishAs(
-  c: Central, by: { name: string; account: string }, change: (d: Database.Database) => void,
-  opts: { from?: string; schema?: number; minApp?: string } = {},
-): Promise<DbFileInfo> {
-  const cur = path.join(c.orch, `current-${++pubSeq}.db`);
-  fs.copyFileSync(c.central, cur);
-  const curInfo = await describeDbFile(cur);
-  const work = path.join(c.orch, `publish-${pubSeq}.db`);
-  fs.copyFileSync(opts.from ?? cur, work);
-  if (userVersion(work) < SCHEMA_VERSION) {
-    openDatabase(work, { skipBackup: true, bootstrap: false });
-    closeDatabase();
-  }
-  const d = new Database(work);
-  change(d);
-  d.prepare(`UPDATE sync_meta SET generation = ?, published_by = ?, published_by_account = ?, published_at = ?,
-    published_app_version = '0.7.0' WHERE id = 1`).run(curInfo.generation + 1, by.name, by.account, new Date().toISOString());
-  if (opts.schema) d.pragma(`user_version = ${opts.schema}`);
-  d.close();
-  const info = await describeDbFile(work);
-  const r = await new SyncedFolderStore(c.central).publish(work, info, { generation: curInfo.generation, sha256: curInfo.sha256 },
-    { appVersion: '0.7.0', minAppVersion: opts.minApp ?? '0.7.0' });
-  if (!r.ok) throw new Error(`orchestrator publish refused: ${r.conflict}`);
-  return info;
-}
-
-function corrupt(file: string): void {
-  const fd = fs.openSync(file, 'r+');
-  fs.writeSync(fd, Buffer.alloc(4096, 0xab), 0, 4096, 4096);
-  fs.closeSync(fd);
-}
+// ── Part 2: the app on simulated PCs (pcs.ts) ────────────────────────────────────────────────────────────────────
 
 async function readModeChecks(tmp: string, c: Central, pcs: Pc[]): Promise<{ A: Pc; B: Pc; ref: string }> {
   let expectedCentral = sha(c.central);
@@ -431,10 +250,9 @@ async function readModeChecks(tmp: string, c: Central, pcs: Pc[]): Promise<{ A: 
   r = await B.invoke('sync:connect', c.central);
   check('B (Uma, user) connects', r.ok, r);
   let sb = await B.status();
-  check('B (user): read mode, no Start editing in this version', sb.phase === 'read' && !sb.canStartEditing &&
-    /Only admins/.test(sb.startEditingBlocked ?? ''), sb);
-  await expectError('B (user): a change is refused with the users message', () => B.invoke('price-lists:create', {}),
-    /^Read-only — only admins can change the shared database in this version\.$/);
+  check('B (user): read mode; Users may start editing from v0.8', sb.phase === 'read' && sb.canStartEditing, sb);
+  await expectError('B (user): a change is refused until Start editing', () => B.invoke('price-lists:create', {}),
+    /^Read-only — click Start editing to make changes\.$/);
 
   await B.stop();
   await B.start(PEOPLE.vic);
@@ -583,25 +401,6 @@ async function readModeChecks(tmp: string, c: Central, pcs: Pc[]): Promise<{ A: 
   return { A, B, ref };
 }
 
-// Reads the central file through a copy (the checks don't open the shared file with SQLite either).
-let querySeq = 0;
-function centralQuery(c: Central, query: string, params: any[] = [], file = c.central): any[] {
-  const copy = path.join(c.orch, `query-${++querySeq}.db`);
-  fs.copyFileSync(file, copy);
-  const d = new Database(copy, { readonly: true });
-  try {
-    return d.prepare(query).all(...params);
-  } finally {
-    d.close();
-  }
-}
-
-const spocOf = (c: Central, ref: string, file?: string) =>
-  centralQuery(c, 'SELECT customer_spoc AS s FROM customers WHERE customer_ref_sap = ?', [ref], file)[0]?.s;
-const generationOf = (c: Central, file?: string) =>
-  centralQuery(c, 'SELECT generation AS g FROM sync_meta', [], file)[0]?.g;
-const manifestOf = (c: Central) => JSON.parse(fs.readFileSync(path.join(c.centralDir, 'EPL-Database.manifest.json'), 'utf-8'));
-const backupsOf = (c: Central) => ls(path.join(c.centralDir, 'EPL-Backups'));
 
 async function editModeChecks(tmp: string, c: Central, pcs: Pc[], A: Pc, B: Pc, ref: string) {
   // ── Start editing ──
@@ -674,36 +473,45 @@ async function editModeChecks(tmp: string, c: Central, pcs: Pc[], A: Pc, B: Pc, 
   await expectError('A: read-only again', () => A.invoke('settings:create-unit', 'Unit 3'), /^Read-only — click Start editing/);
   check('only one backup for the whole editing session', backupsOf(c).length === 1, backupsOf(c));
 
-  // ── Two admins at once: the second publish is refused, nothing is overwritten ──
+  // ── The edit slot: one editor at a time ──
   await B.stop();
   await B.start(PEOPLE.ben);
   await B.startup();
-  const genBoth = generationOf(c);
   r = await B.invoke('sync:start-editing');
   check('B (Ben, admin) starts editing', r.ok, r);
   r = await A.invoke('sync:start-editing');
-  check('A starts editing too (no edit slot in v0.7)', r.ok, r);
+  check('A has to wait: Ben holds the edit slot', !r.ok && r.waiting?.user === 'Ben Admin' && !!r.waiting?.since, r);
+  sa = await A.invoke('sync:check');
+  check("A's status knows Ben is editing", sa.slot?.holder?.user === 'Ben Admin' && !sa.slot.holder.mine, sa.slot);
   await allowed('B edits', () => B.invoke('customers:update', ref, { customer_spoc: 'Set by Ben' }));
+  const fb = await B.invoke('sync:finish-editing');
+  check('B finishes: published, slot released', fb.ok && (await B.status()).phase === 'read' &&
+    ls(path.join(c.centralDir, 'EPL-EditSlot')).length === 0, fb);
+
+  // ── A PC whose OneDrive was paused publishes behind the slot: the generation check refuses, nothing is overwritten ──
+  await A.invoke('sync:refresh');
+  const genBoth = generationOf(c);
+  r = await A.invoke('sync:start-editing');
+  check('A starts editing once the slot is free', r.ok, r);
   await allowed('A edits', () => A.invoke('customers:update', ref, { customer_spoc: 'Set by Anna again' }));
-  p = await B.invoke('sync:publish');
-  check('B publishes first', p.ok && p.published, p);
+  await publishAs(c, { name: 'Ben Admin', account: PEOPLE.ben.account },
+    d => d.prepare("UPDATE customers SET customer_spoc = 'Set by Ben (paused OneDrive)' WHERE customer_ref_sap = ?").run(ref));
   const benSha = sha(c.central);
   sa = await A.invoke('sync:check');
   check('A is warned at once that someone else published', /Ben Admin published a newer version/.test(sa.edit?.centralChanged ?? ''), sa.edit);
   p = await A.invoke('sync:publish');
   sa = await A.status();
   check("A's publish is refused", !p.ok && p.conflict && /not published/.test(p.error), p);
-  check("the shared file is still Ben's", sha(c.central) === benSha && spocOf(c, ref) === 'Set by Ben');
+  check("the shared file is still Ben's", sha(c.central) === benSha && spocOf(c, ref) === 'Set by Ben (paused OneDrive)');
   check("A's work is kept in EPL-Conflicts/", !!p.savedTo && path.dirname(p.savedTo) === path.join(c.centralDir, 'EPL-Conflicts') &&
     spocOf(c, ref, p.savedTo) === 'Set by Anna again', p.savedTo);
   check('the conflict copy is the working copy, not stamped as published', generationOf(c, p.savedTo) === genBoth &&
     centralQuery(c, "SELECT 1 FROM audit_log WHERE action = 'sync.publish' AND entity_key = ?", [String(genBoth + 1)], p.savedTo).length === 0);
-  check("A is back in read mode on Ben's version, with the conflict shown", sa.phase === 'read' && !!sa.conflict &&
-    sa.conflict.savedTo === p.savedTo && (await A.invoke('customers:get', ref)).customer_spoc === 'Set by Ben', sa);
+  check("A is back in read mode on Ben's version, with the conflict shown, slot released", sa.phase === 'read' && !!sa.conflict &&
+    sa.conflict.savedTo === p.savedTo && (await A.invoke('customers:get', ref)).customer_spoc === 'Set by Ben (paused OneDrive)' &&
+    ls(path.join(c.centralDir, 'EPL-EditSlot')).length === 0, sa);
   sa = await A.invoke('sync:dismiss-conflict');
   check('A dismisses the conflict message', sa.conflict === null);
-  const fb = await B.invoke('sync:finish-editing');
-  check('B finishes', fb.ok && (await B.status()).phase === 'read', fb);
 
   // ── Auto-publish about a minute after the last change (shortened here) ──
   await A.timers({ checkMs: 60_000, publishMs: 400 });

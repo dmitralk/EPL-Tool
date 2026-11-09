@@ -6,7 +6,7 @@ import { useBusyCount } from './busy';
 import { SyncContext, useSync } from './syncState';
 import { ipcErrorMessage } from './utils';
 import { useToast } from '../components/ui/toast';
-import type { SyncStatus } from '../../types';
+import type { SlotPerson, SyncStatus } from '../../types';
 
 // Shared database on the screens (multi-user study §5): the status pushed by the main process, new data applied when
 // nothing is open, and the current screen re-rendered whenever another copy of the database was opened.
@@ -152,7 +152,12 @@ export function useSyncActions() {
   return {
     working,
     startEditing: () => run('start', async () => {
-      const r = await api.startEditing() as { ok: boolean; error?: string };
+      const r = await api.startEditing() as {
+        ok: boolean; error?: string; waiting?: SlotPerson; takeOver?: SlotPerson; cancelled?: boolean;
+      };
+      if (r.waiting) { toast(`${r.waiting.user} is editing right now (since ${formatWhen(r.waiting.since)}).`, 'info'); return; }
+      if (r.takeOver) { toast(`${r.takeOver.user}'s editing session is inactive since ${formatWhen(r.takeOver.heartbeatAt)}.`, 'info'); return; }
+      if (r.cancelled) return;
       if (!r.ok) throw new Error(r.error ?? 'Editing could not be started.');
       await refreshAuth();
       toast('You are editing. Changes are published automatically.', 'success');

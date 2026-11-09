@@ -101,9 +101,10 @@ export function canBackup(u: U): boolean {
   return isAdmin(u);
 }
 
-// Shared database (Phase C): who may click Start editing. Admins only in v0.7; Users follow with the edit slot (v0.8).
+// Shared database: who may click Start editing — Admins and Users (Users only change what their rights allow; v0.8,
+// decided 9 Nov 2026). Viewers never edit.
 export function canStartEditing(u: U): boolean {
-  return isAdmin(u);
+  return isEditor(u);
 }
 
 // Why the open copy of a shared database can't be changed: read mode, offline copy, or a newer app is needed.
@@ -114,7 +115,7 @@ export function readOnlyMessage(u: U, block: WriteBlock, minVersion?: string | n
   if (block === 'update') return `Update EPL Tool${minVersion ? ` to ${minVersion}` : ''} to make changes.`;
   return canStartEditing(u)
     ? 'Read-only — click Start editing to make changes.'
-    : 'Read-only — only admins can change the shared database in this version.';
+    : 'Viewers can only view and export.';
 }
 
 export function canExport(u: U): boolean {

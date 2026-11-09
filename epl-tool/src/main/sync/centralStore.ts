@@ -4,12 +4,14 @@ import path from 'path';
 import crypto from 'crypto';
 import Database from 'better-sqlite3';
 import { escapeRegExp, fileStamp, isHealthy } from '../backup';
+import { isValidClaim, type SlotClaim } from './editSlot';
 
 // All access to the shared folder goes through a CentralStore (multi-user study §5, §7). The app never opens the central
 // database with SQLite: it only copies it (to read) and replaces it in one step (to publish). SyncedFolderStore works on the
 // folder synced by the OneDrive client; another implementation (e.g. Microsoft Graph) could replace it later.
 
 export const CONFLICTS_DIR_NAME = 'EPL-Conflicts';
+export const EDIT_SLOT_DIR_NAME = 'EPL-EditSlot';
 const MANIFEST_SUFFIX = '.manifest.json';
 
 // <name>.manifest.json next to the central database, rewritten by every publish.
@@ -77,6 +79,9 @@ export interface CentralStore {
   saveConflictCopy(file: string, account: string | null): Promise<string>;
   findConflictCopies(): Promise<string[]>;
   canWrite(): Promise<boolean>;
+  listClaims(): Promise<SlotClaim[]>;
+  writeClaim(claim: SlotClaim): Promise<void>;
+  deleteClaim(slotId: string): Promise<void>;
 }
 
 // ── Helpers for local copies ───────────────────────────────────────────────────────────────────────────────────────
@@ -319,5 +324,55 @@ export class SyncedFolderStore implements CentralStore {
     } catch {
       return false;
     }
+  }
+
+  // ── Edit slot: EPL-EditSlot/<slotId>.json, one file per editing session, written only by its owner ──
+
+  private get slotDir(): string {
+    return path.join(this.folder, EDIT_SLOT_DIR_NAME);
+  }
+
+  // Claims for this database; unreadable files (half-synced, foreign) are skipped. Throws when the folder can't be read.
+  async listClaims(): Promise<SlotClaim[]> {
+    let names: string[];
+    try {
+      names = await fsp.readdir(this.slotDir);
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code === 'ENOENT') {
+        await fsp.access(this.folder);
+        return [];
+      }
+      throw e;
+    }
+    const db = path.basename(this.dbPath).toLowerCase();
+    const claims: SlotClaim[] = [];
+    for (const name of names.filter(n => n.toLowerCase().endsWith('.json'))) {
+      try {
+        const data = JSON.parse(await fsp.readFile(path.join(this.slotDir, name), 'utf-8'));
+        if (isValidClaim(data) && data.db === db) claims.push(data);
+      } catch {
+        // being synced or not a claim
+      }
+    }
+    return claims;
+  }
+
+  async writeClaim(claim: SlotClaim): Promise<void> {
+    await fsp.mkdir(this.slotDir, { recursive: true });
+    const file = path.join(this.slotDir, `${claim.slotId}.json`);
+    const tmp = `${file}.tmp`;
+    await fsp.writeFile(tmp, JSON.stringify(claim, null, 2));
+    try {
+      await retry(() => fsp.rename(tmp, file));
+    } catch (e) {
+      await removeQuietly(tmp);
+      throw e;
+    }
+  }
+
+  async deleteClaim(slotId: string): Promise<void> {
+    await retry(() => fsp.unlink(path.join(this.slotDir, `${slotId}.json`))).catch(e => {
+      if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e;
+    });
   }
 }

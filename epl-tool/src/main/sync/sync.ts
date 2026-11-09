@@ -1,5 +1,6 @@
 import fs from 'fs';
 import fsp from 'fs/promises';
+import os from 'os';
 import path from 'path';
 import { app } from 'electron';
 import Database from 'better-sqlite3';
@@ -13,19 +14,23 @@ import { getResolvedIdentity } from '../auth';
 import { getConnection, getSavedDbPath, saveDbPath, saveSharedConnection } from '../localSettings';
 import { auditActor, getActor, getRealUser, stopPreview, userListEmpty } from '../currentUser';
 import { canStartEditing, readOnlyMessage, type WriteBlock } from '../../shared/permissions';
-import { AUTO_PUBLISH_SECONDS, CHANGE_CHECK_SECONDS, MIN_EDIT_APP_VERSION, compareVersions } from '../../shared/sync';
+import {
+  AUTO_PUBLISH_SECONDS, CHANGE_CHECK_SECONDS, CLAIM_CLEANUP_DAYS, IDLE_RELEASE_MINUTES, IDLE_WARNING_MINUTES,
+  MIN_EDIT_APP_VERSION, SLOT_HEARTBEAT_SECONDS, SLOT_TAKEOVER_MINUTES, SLOT_WAIT_SECONDS, compareVersions,
+} from '../../shared/sync';
 import {
   CentralError, SyncedFolderStore, describeDbFile, sha256File, type CentralStore, type DbFileInfo, type Manifest,
 } from './centralStore';
+import { holderOf, inactiveHolderOf, isActive, isStale, newSlotId, takenOverBy, type SlotClaim } from './editSlot';
 import { isInSyncedFolder } from './oneDrive';
 import { cacheDir, localDataDir, workDir } from './paths';
-import type { AppUser, SyncPublishInfo, SyncStatus } from '../../types';
+import type { AppUser, SlotPerson, SyncPublishInfo, SyncStatus } from '../../types';
 
-// The connection to the database (multi-user study §5, dev-plan Phase C):
+// The connection to the database (multi-user study §5, dev-plan Phases C–D):
 //   local  — a database file opened directly, as before v0.7 (test databases, development)
 //   shared — the central database in a synced SharePoint folder. The app works on a local copy: read mode (PRAGMA
-//            query_only) by default, refreshed when someone publishes; edit mode (admins) works on a working copy that is
-//            published back with the generation check.
+//            query_only) by default, refreshed when someone publishes; edit mode (Admins and Users, one at a time through
+//            the edit slot) works on a working copy that is published back with the generation check.
 
 // What the read copy in cache\ is a copy of (cache\cache.json).
 interface CacheMeta {
@@ -53,14 +58,17 @@ interface Shared {
   conflictCopies: string[];
   lastCheckAt: string | null;
   error: string | null;
-  conflict: { savedTo: string | null; at: string; message: string } | null;  // last refused publish
+  conflict: { savedTo: string | null; at: string; message: string } | null;  // last refused publish / lost slot
   recovery: Session | null;     // unpublished working copy left by a previous run
+  claims: SlotClaim[];          // edit slot claims seen at the last check
 }
 
 // Edit mode: the working copy in work\ and what the next publish must find in the shared folder.
 interface EditState {
   since: string;
   workFile: string;
+  slot: SlotClaim;              // my claim (holding)
+  lastBeat: number;             // when my claim was last written (ms): a longer gap than the take-over time = slot lost
   baseGeneration: number;       // generation of the central file the next publish replaces
   baseSha: string;              // its exact content (sha256)
   publishedBy: string | null;   // of that central file (status line)
@@ -82,6 +90,7 @@ interface EditState {
 interface Session {
   centralPath: string;
   account: string | null;
+  slotId: string | null;
   startedAt: string;
   baseGeneration: number;
   baseSha: string;
@@ -95,6 +104,13 @@ export type PublishOutcome =
   | { ok: true; published: boolean; generation: number }
   | { ok: false; error: string; conflict?: boolean; savedTo?: string | null };
 
+// Start editing: started, or someone else holds the slot (wait), or an inactive session can be taken over (ask first).
+export type StartEditingResult =
+  | { ok: true }
+  | { ok: false; waiting: SlotPerson }
+  | { ok: false; takeOver: SlotPerson }
+  | { ok: false; cancelled: true };
+
 // A shared file failing the integrity check this many times in a row is reported as damaged (a single failure is
 // usually a copy caught in the middle of a OneDrive download).
 const DAMAGED_REPORT_AFTER = 3;
@@ -106,9 +122,21 @@ let legacySuggestion: { path: string } | null = null;
 let connectError: string | null = null;
 let checking: Promise<void> | null = null;
 let starting = false;
+let claiming: { claim: SlotClaim; until: number; cancelled: boolean } | null = null;
 let timer: NodeJS.Timeout | null = null;
 let publishTimer: NodeJS.Timeout | null = null;
-let timing = { checkMs: CHANGE_CHECK_SECONDS * 1000, publishMs: AUTO_PUBLISH_SECONDS * 1000 };
+let heartbeatTimer: NodeJS.Timeout | null = null;
+const MINUTE = 60_000;
+let timing = {
+  checkMs: CHANGE_CHECK_SECONDS * 1000,
+  publishMs: AUTO_PUBLISH_SECONDS * 1000,
+  heartbeatMs: SLOT_HEARTBEAT_SECONDS * 1000,
+  slotWaitMs: SLOT_WAIT_SECONDS * 1000,
+  takeoverMs: SLOT_TAKEOVER_MINUTES * MINUTE,
+  idleMs: IDLE_RELEASE_MINUTES * MINUTE,
+  idleWarnMs: IDLE_WARNING_MINUTES * MINUTE,
+  cleanupMs: CLAIM_CLEANUP_DAYS * 24 * 60 * MINUTE,
+};
 let timersOn = false;
 const listeners = new Set<(status: SyncStatus) => void>();
 
@@ -245,6 +273,7 @@ export async function connectShared(centralPath: string, opts: { save?: boolean 
   const s: Shared = {
     store, phase: 'connecting', copy: null, offline: null, syncing: null, pending: null, manifest: null, lastProbe: null,
     damagedCount: 0, centralDamaged: false, conflictCopies: [], lastCheckAt: null, error: null, conflict: null, recovery: null,
+    claims: [],
   };
   shared = s;
   mode = 'shared';
@@ -304,6 +333,7 @@ function writeSession(e: EditState): void {
   const sess: Session = {
     centralPath: shared.store.dbPath,
     account: getResolvedIdentity()?.account ?? null,
+    slotId: e.slot.slotId,
     startedAt: e.since,
     baseGeneration: e.baseGeneration,
     baseSha: e.baseSha,
@@ -393,8 +423,13 @@ async function runCheck(): Promise<void> {
   s.offline = null;
   s.manifest = probe.manifest;
   s.conflictCopies = await s.store.findConflictCopies();
+  await readClaims(s);
   const key = probeKey(probe.size, probe.mtimeMs, probe.manifest);
   if (s.phase === 'edit') {
+    if (edit && verifySlot(edit, s.claims) === 'lost') {
+      await slotLost(s, edit);
+      return;
+    }
     await watchWhileEditing(s, key);
     emit();
     return;
@@ -457,17 +492,23 @@ export async function refresh(): Promise<void> {
 }
 
 // Delays can be shortened for the checks; the app uses the constants of shared/sync.ts.
-export function startBackgroundChecks(t: Partial<typeof timing> = {}): void {
+export function configureTimings(t: Partial<typeof timing>): void {
   timing = { ...timing, ...t };
+}
+
+export function startBackgroundChecks(t: Partial<typeof timing> = {}): void {
+  configureTimings(t);
   timersOn = true;
   if (timer) clearInterval(timer);
   timer = setInterval(() => { void checkNow(); }, timing.checkMs);
   timer.unref?.();
+  if (edit) startHeartbeat();
 }
 
 export function stopBackgroundChecks(): void {
   if (timer) clearInterval(timer);
   if (publishTimer) clearTimeout(publishTimer);
+  stopHeartbeat();
   timer = null;
   publishTimer = null;
   timersOn = false;
@@ -491,7 +532,173 @@ async function watchWhileEditing(s: Shared, key: string): Promise<void> {
   if (timersOn && e.dirty && e.error && !e.publishing) void publishNow();
 }
 
-// ── Edit mode (multi-user study §5.5–5.7; admins in v0.7, no edit slot yet) ──────────────────────────────────────
+// ── Edit slot (multi-user study §5.5, dev-plan Phase D) ──────────────────────────────────────────────────────────
+
+const sleep = (msec: number) => new Promise(r => setTimeout(r, msec));
+
+function me(): { user: string; account: string | null; machine: string } {
+  const real = isOpen() ? getRealUser() : null;
+  const id = getResolvedIdentity();
+  return {
+    user: real?.display_name ?? id?.displayNameHint ?? id?.account ?? 'Unknown',
+    account: real?.account ?? id?.account ?? null,
+    machine: os.hostname(),
+  };
+}
+
+// A claim left by this person on this PC in an earlier session (crash, "Quit anyway"): mine to delete.
+function isMyOldClaim(c: SlotClaim, keep: string | null): boolean {
+  if (c.slotId === keep) return false;
+  const who = me();
+  return !!who.account && (c.account ?? '').toLowerCase() === who.account.toLowerCase() && c.machine === who.machine;
+}
+
+function personOf(c: SlotClaim): SlotPerson {
+  return {
+    user: c.user, account: c.account, machine: c.machine, since: c.claimedAt, lastChangeAt: c.lastChangeAt,
+    heartbeatAt: c.heartbeatAt,
+    mine: c.slotId === edit?.slot.slotId || c.slotId === claiming?.claim.slotId || c.slotId === shared?.recovery?.slotId,
+  };
+}
+
+// Reads the claims (status line, waiting, slot checks) and deletes other people's claims nobody will renew (7 days).
+// When the folder can't be read, the last list is kept.
+async function readClaims(s: Shared): Promise<SlotClaim[]> {
+  try {
+    const now = Date.now();
+    const claims = await s.store.listClaims();
+    for (const c of claims.filter(x => isStale(x, now, timing.cleanupMs))) {
+      await s.store.deleteClaim(c.slotId).catch(() => undefined);
+    }
+    s.claims = claims.filter(x => !isStale(x, now, timing.cleanupMs));
+  } catch {
+    // not readable right now
+  }
+  return s.claims;
+}
+
+function newClaim(s: Shared): SlotClaim {
+  const who = me();
+  const now = nowIso();
+  return {
+    format: 1, slotId: newSlotId(), db: path.basename(s.store.dbPath).toLowerCase(), user: who.user, account: who.account,
+    machine: who.machine, claimedAt: now, heartbeatAt: now, lastChangeAt: null, state: 'claiming', appVersion: app.getVersion(),
+  };
+}
+
+// Claims the slot: someone active → waiting; only an inactive session → take-over question (unless confirmed); otherwise
+// my claim, the waiting window (OneDrive carries competing claims), a second look: the earliest active claim wins.
+// keepSlotId: my claim from an earlier session (recovery), reused when it still holds the slot.
+async function acquireSlot(
+  s: Shared, opts: { takeOver?: boolean; keepSlotId?: string | null } = {},
+): Promise<SlotClaim | StartEditingResult> {
+  const keep = opts.keepSlotId ?? null;
+  const claims = await s.store.listClaims();
+  for (const c of claims.filter(x => isMyOldClaim(x, keep))) await s.store.deleteClaim(c.slotId);
+  const current = claims.filter(x => !isMyOldClaim(x, keep));
+  const now = Date.now();
+  const kept = keep ? current.find(c => c.slotId === keep) : undefined;
+  if (kept) {
+    if (holderOf(current, now, timing.takeoverMs)?.slotId === kept.slotId) return kept;
+    await s.store.deleteClaim(kept.slotId);
+  }
+  const others = current.filter(c => c.slotId !== keep);
+  const holder = holderOf(others, now, timing.takeoverMs);
+  if (holder) return { ok: false, waiting: personOf(holder) };
+  const inactive = inactiveHolderOf(others, now, timing.takeoverMs);
+  if (inactive && !opts.takeOver) return { ok: false, takeOver: personOf(inactive) };
+  // Taking over ends every inactive session for good (recorded in my claim, their files removed once the slot is mine).
+  const ended = opts.takeOver ? others.filter(c => !isActive(c, now, timing.takeoverMs)).map(c => c.slotId) : [];
+
+  const claim: SlotClaim = { ...newClaim(s), ...(ended.length ? { takesOver: ended } : {}) };
+  await s.store.writeClaim(claim);
+  claiming = { claim, until: Date.now() + timing.slotWaitMs, cancelled: false };
+  emit();
+  while (claiming && !claiming.cancelled && Date.now() < claiming.until) {
+    await sleep(Math.min(250, Math.max(1, claiming.until - Date.now())));
+  }
+  const cancelled = !claiming || claiming.cancelled;
+  claiming = null;
+  if (cancelled) {
+    await s.store.deleteClaim(claim.slotId).catch(() => undefined);
+    emit();
+    return { ok: false, cancelled: true };
+  }
+  const after = (await s.store.listClaims()).filter(x => !isMyOldClaim(x, claim.slotId));
+  const winner = holderOf(after, Date.now(), timing.takeoverMs);
+  if (winner?.slotId === claim.slotId) {
+    for (const id of ended) await s.store.deleteClaim(id).catch(() => undefined);
+    return claim;
+  }
+  await s.store.deleteClaim(claim.slotId).catch(() => undefined);
+  emit();
+  if (winner) return { ok: false, waiting: personOf(winner) };
+  throw new Error('The edit slot could not be reserved (the shared folder did not keep the claim). Please try again.');
+}
+
+// Cancels a claim during its waiting window.
+export function cancelClaim(): void {
+  if (claiming) claiming.cancelled = true;
+}
+
+// Do I still hold the slot? Lost when my claim is gone (released by an admin), someone took my session over, another claim
+// holds it, or my own heartbeat gap was longer than the take-over time (laptop asleep: others may have taken over — an
+// expired claim is never revived).
+function verifySlot(e: EditState, claims: readonly SlotClaim[]): 'ok' | 'lost' {
+  const now = Date.now();
+  if (now - e.lastBeat > timing.takeoverMs) return 'lost';
+  if (!claims.some(c => c.slotId === e.slot.slotId)) return 'lost';
+  if (takenOverBy(claims, e.slot.slotId)) return 'lost';
+  const holder = holderOf(claims, now, timing.takeoverMs);
+  return holder && holder.slotId !== e.slot.slotId ? 'lost' : 'ok';
+}
+
+// Rewrites my claim (every SLOT_HEARTBEAT_SECONDS while editing), after checking that I still hold the slot.
+export async function heartbeatNow(): Promise<void> {
+  const s = shared;
+  const e = edit;
+  if (!s || !e || s.phase !== 'edit') return;
+  const claims = await readClaims(s);
+  if (edit !== e) return;
+  if (verifySlot(e, claims) === 'lost') {
+    await slotLost(s, e);
+    return;
+  }
+  e.slot = { ...e.slot, state: 'holding', heartbeatAt: nowIso(), lastChangeAt: e.changedAt };
+  try {
+    await s.store.writeClaim(e.slot);
+    e.lastBeat = Date.now();
+  } catch {
+    // the shared folder can't be written right now: next time
+  }
+}
+
+function startHeartbeat(): void {
+  stopHeartbeat();
+  if (!timersOn) return;
+  heartbeatTimer = setInterval(() => { void heartbeatNow(); }, timing.heartbeatMs);
+  heartbeatTimer.unref?.();
+}
+
+function stopHeartbeat(): void {
+  if (heartbeatTimer) clearInterval(heartbeatTimer);
+  heartbeatTimer = null;
+}
+
+// Someone else holds the slot now (or my session expired): unpublished work goes to EPL-Conflicts/, back to read mode.
+async function slotLost(s: Shared, e: EditState): Promise<void> {
+  if (edit !== e) return;
+  noteChanges();
+  const holder = takenOverBy(s.claims, e.slot.slotId) ?? holderOf(s.claims, Date.now(), timing.takeoverMs);
+  const by = holder && holder.slotId !== e.slot.slotId ? holder.user : null;
+  const savedTo = e.dirty ? await keepRefusedCopy(s) : null;
+  const what = by ? `${by} took over the edit slot` : 'Your editing session ended: this PC gave no sign of life for too long';
+  const work = !e.dirty ? '' : savedTo ? ` Your unpublished changes were saved as ${savedTo}.` : ' Your unpublished changes could not be saved.';
+  s.conflict = { savedTo, at: nowIso(), message: `${what}.${work}` };
+  await endEditing(s, e, false);
+}
+
+// ── Edit mode (multi-user study §5.5–5.7) ─────────────────────────────────────────────────────────────────────────
 
 // A change has to wait while a publish takes its snapshot of the working copy, else null.
 export function waitForPublish(): Promise<void> | null {
@@ -559,9 +766,10 @@ function backupCopy(file: string, centralPath: string): void {
   }
 }
 
-// Start editing: fresh copy of the shared file → backup → working copy opened read-write. restoreFrom: start from a backup
-// instead (restore while the shared file is damaged).
-export async function startEditing(opts: { restoreFrom?: string } = {}): Promise<void> {
+// Start editing: the edit slot → fresh copy of the shared file → backup → working copy opened read-write. restoreFrom: start
+// from a backup instead (restore while the shared file is damaged). takeOver: the person confirmed taking over an inactive
+// session.
+export async function startEditing(opts: { restoreFrom?: string; takeOver?: boolean } = {}): Promise<StartEditingResult> {
   const s = shared;
   if (starting) throw new Error('Editing is already being started.');
   if (!s || s.phase !== 'read') throw new Error(s?.phase === 'edit' ? 'You are already editing.' : 'Connect to the shared database first.');
@@ -571,10 +779,14 @@ export async function startEditing(opts: { restoreFrom?: string } = {}): Promise
   if (blocked && !(damagedRestore && canStartEditing(user))) throw new Error(blocked);
   if (s.recovery) throw new Error('You have unpublished changes from an earlier session: publish or discard them first.');
   starting = true;
+  let claim: SlotClaim | null = null;
   try {
     if (!(await s.store.canWrite())) {
       throw new Error('You have read-only access to the shared folder on SharePoint, so changes are not possible.');
     }
+    const got = await acquireSlot(s, { takeOver: opts.takeOver });
+    if (!('slotId' in got)) return got;
+    claim = got;
     const workFile = workFileFor(s.store.dbPath);
     await fsp.mkdir(workDir(), { recursive: true });
     clearWorkFiles(s.store.dbPath);
@@ -613,24 +825,38 @@ export async function startEditing(opts: { restoreFrom?: string } = {}): Promise
       openReadCopy(cacheFileFor(s.store.dbPath));
       throw e;
     }
+    const holding: SlotClaim = { ...claim, state: 'holding', heartbeatAt: nowIso() };
+    await s.store.writeClaim(holding);
     const n = totalChanges();
     edit = {
-      since: nowIso(), workFile, baseGeneration: base.generation, baseSha: base.sha256,
+      since: nowIso(), workFile, slot: holding, lastBeat: Date.now(), baseGeneration: base.generation, baseSha: base.sha256,
       publishedBy: base.publishedBy, publishedAt: base.publishedAt, baseline: n, seen: n, dirty: false, changedAt: null,
       publishing: null, lastPublishedAt: null, lastPublishedGeneration: null, nextPublishAt: null, error: null,
       centralKey: null, centralChanged: null,
     };
+    claim = null;
     s.phase = 'edit';
     s.conflict = null;
     s.pending = null;
     await removeQuietly(incomingPath());
     writeSession(edit);
+    startHeartbeat();
     // Decided 9 Nov 2026: the first admin of a database without users is created here, and the Windows account of someone
     // added by email only is recorded now (the look-up records it). Both are changes to publish.
     bootstrapFirstAdmin(getDb());
     getActor();
     noteChanges();
+    await readClaims(s);
     emit();
+    return { ok: true };
+  } catch (err) {
+    if (claim) await s.store.deleteClaim(claim.slotId).catch(() => undefined);
+    if (!edit && isOpen() && getCurrentDbPath() !== cacheFileFor(s.store.dbPath)) {
+      closeDatabase();
+      clearWorkFiles(s.store.dbPath);
+      openReadCopy(cacheFileFor(s.store.dbPath));
+    }
+    throw err;
   } finally {
     starting = false;
   }
@@ -680,6 +906,12 @@ async function doPublish(e: EditState): Promise<PublishOutcome> {
   if (!s) return { ok: false, error: 'Not connected to the shared database.' };
   noteChanges();
   if (!e.dirty) return { ok: true, published: false, generation: e.baseGeneration };
+
+  // Study §5.6 step 1: do I still hold the slot?
+  if (verifySlot(e, await readClaims(s)) === 'lost') {
+    await slotLost(s, e);
+    return { ok: false, conflict: true, error: s.conflict?.message ?? 'The edit slot was lost.', savedTo: s.conflict?.savedTo ?? null };
+  }
 
   const real = getRealUser();
   const { userId, label } = auditActor();
@@ -786,8 +1018,12 @@ async function refused(s: Shared, e: EditState, message: string, savedTo: string
 async function endEditing(s: Shared, e: EditState, published: boolean): Promise<void> {
   if (publishTimer) clearTimeout(publishTimer);
   publishTimer = null;
+  stopHeartbeat();
   edit = null;
   closeDatabase();
+  // My claim is mine to delete; the slot is free for the next person.
+  await s.store.deleteClaim(e.slot.slotId).catch(() => undefined);
+  s.claims = s.claims.filter(c => c.slotId !== e.slot.slotId);
   const cacheFile = cacheFileFor(s.store.dbPath);
   s.phase = 'read';
   s.lastProbe = null;
@@ -851,23 +1087,34 @@ export async function recoverUnpublished(action: 'publish' | 'discard'): Promise
   if (!(await s.store.canWrite())) {
     return { ok: false, error: 'You have read-only access to the shared folder on SharePoint, so changes are not possible.' };
   }
+  // The edit slot first (my claim from that session is reused if it still holds the slot).
+  const got = await acquireSlot(s, { keepSlotId: sess.slotId, takeOver: true });
+  if (!('slotId' in got)) {
+    const who = 'waiting' in got ? got.waiting.user : null;
+    return { ok: false, error: who ? `${who} is editing right now. Your changes are kept: try again when the slot is free.`
+      : 'The edit slot could not be reserved. Your changes are kept: try again.' };
+  }
   const workFile = workFileFor(s.store.dbPath);
   closeDatabase();
   try {
     openDatabase(workFile, { skipBackup: true, bootstrap: false });
   } catch (err) {
+    await s.store.deleteClaim(got.slotId).catch(() => undefined);
     openReadCopy(cacheFileFor(s.store.dbPath));
     return { ok: false, error: `The unpublished copy can't be opened: ${(err as Error).message}` };
   }
+  const holding: SlotClaim = { ...got, state: 'holding', heartbeatAt: nowIso() };
+  await s.store.writeClaim(holding).catch(() => undefined);
   const e: EditState = {
-    since: sess.startedAt, workFile, baseGeneration: sess.baseGeneration, baseSha: sess.baseSha,
-    publishedBy: sess.publishedBy, publishedAt: sess.publishedAt, baseline: -1, seen: totalChanges(), dirty: true,
-    changedAt: sess.changedAt, publishing: null, lastPublishedAt: null, lastPublishedGeneration: null, nextPublishAt: null,
-    error: null, centralKey: null, centralChanged: null,
+    since: sess.startedAt, workFile, slot: holding, lastBeat: Date.now(), baseGeneration: sess.baseGeneration,
+    baseSha: sess.baseSha, publishedBy: sess.publishedBy, publishedAt: sess.publishedAt, baseline: -1, seen: totalChanges(),
+    dirty: true, changedAt: sess.changedAt, publishing: null, lastPublishedAt: null, lastPublishedGeneration: null,
+    nextPublishAt: null, error: null, centralKey: null, centralChanged: null,
   };
   edit = e;
   s.phase = 'edit';
   s.recovery = null;
+  startHeartbeat();
   const r = await publishNow();
   if (r.ok && edit === e) await endEditing(s, e, true);
   emit();
@@ -883,8 +1130,12 @@ export async function restoreSharedBackup(backupPath: string): Promise<{ ok: boo
   let safetyCopy: string | null;
   if (s.phase === 'read') {
     if (!s.centralDamaged) return { ok: false, error: writeBlockMessage(getActor()) ?? 'Click Start editing first.' };
+    const started = await startEditing({ restoreFrom: backupPath, takeOver: true });
+    if (!started.ok) {
+      const who = 'waiting' in started ? started.waiting.user : null;
+      return { ok: false, error: who ? `${who} is editing right now: try again when the edit slot is free.` : 'Restore cancelled.' };
+    }
     safetyCopy = createPreRestoreCopy(s.store.dbPath);
-    await startEditing({ restoreFrom: backupPath });
     startedHere = true;
   } else {
     const e = edit;
@@ -959,7 +1210,7 @@ export function writeBlockMessage(user: AppUser | null): string | null {
 function startEditingBlocked(user: AppUser | null, opts: { recovering?: boolean } = {}): string | null {
   const s = shared;
   if (!s || s.phase !== 'read') return s?.phase === 'edit' ? 'You are already editing.' : 'Connect to the shared database first.';
-  if (!canStartEditing(user) && !userListEmpty()) return 'Only admins can change the shared database in this version.';
+  if (!canStartEditing(user) && !userListEmpty()) return 'Viewers can only view and export.';
   if (s.offline) return 'The shared database can\'t be reached: you are working on an offline copy.';
   if (getNewerSchema() !== null || minAppVersionNeeded()) {
     return `This database was published by a newer EPL Tool. Update EPL Tool${minAppVersionNeeded() ? ` to ${minAppVersionNeeded()}` : ''} to make changes.`;
@@ -1013,6 +1264,13 @@ export function getStatus(): SyncStatus {
     } : null,
     conflict: s?.conflict ?? null,
     recovery: s?.recovery ? { since: s.recovery.startedAt, changedAt: s.recovery.changedAt } : null,
+    slot: {
+      holder: e ? personOf(e.slot) : s ? (() => {
+        const h = holderOf(s.claims, Date.now(), timing.takeoverMs);
+        return h ? personOf(h) : null;
+      })() : null,
+      claimingUntil: claiming ? new Date(claiming.until).toISOString() : null,
+    },
     legacySuggestion,
   };
 }

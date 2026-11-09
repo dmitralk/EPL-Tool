@@ -289,6 +289,17 @@ export interface SyncPublishInfo {
   publishedAt: string | null;       // ISO UTC
 }
 
+// A person in the edit slot (Phase D): the holder, or an inactive session that can be taken over.
+export interface SlotPerson {
+  user: string;
+  account: string | null;
+  machine: string;
+  since: string;                    // when they claimed the slot (ISO UTC)
+  lastChangeAt: string | null;      // their last change
+  heartbeatAt: string;              // last sign of life
+  mine: boolean;
+}
+
 export interface SyncStatus {
   mode: 'none' | 'local' | 'shared';
   phase: 'connecting' | 'read' | 'edit' | null;  // shared mode only
@@ -319,6 +330,10 @@ export interface SyncStatus {
   } | null;
   conflict: { savedTo: string | null; at: string; message: string } | null;  // last refused publish
   recovery: { since: string; changedAt: string | null } | null;  // unpublished changes from a previous run
+  slot: {
+    holder: SlotPerson | null;      // who is editing right now (as seen at the last check)
+    claimingUntil: string | null;   // my claim is in its waiting window until then
+  };
   legacySuggestion: { path: string } | null;  // v0.6 database in a synced folder: offer to connect as shared
 }
 

@@ -1,8 +1,8 @@
 import { BrowserWindow, dialog } from 'electron';
 import { getIdentity } from '../auth';
 import {
-  applyUpdate, checkNow, connectShared, dismissConflict, finishEditing, getStatus, onStatus, publishNow, recoverUnpublished,
-  refresh, startEditing,
+  applyUpdate, cancelClaim, checkNow, connectShared, dismissConflict, finishEditing, getStatus, onStatus, publishNow,
+  recoverUnpublished, refresh, startEditing,
 } from '../sync/sync';
 import { handle } from './guard';
 
@@ -52,14 +52,19 @@ export function registerSyncHandlers() {
     return getStatus();
   });
 
-  handle('sync:start-editing', 'public', async () => {
+  // Start editing: { ok: true } · { waiting: holder } · { takeOver: inactive session } · { cancelled } · { error }.
+  handle('sync:start-editing', 'public', async (_e, opts?: { takeOver?: boolean }) => {
     try {
       await getIdentity();
-      await startEditing();
-      return { ok: true };
+      return await startEditing({ takeOver: !!opts?.takeOver });
     } catch (err) {
       return { ok: false, error: (err as Error).message };
     }
+  });
+
+  handle('sync:cancel-claim', 'public', () => {
+    cancelClaim();
+    return getStatus();
   });
 
   handle('sync:publish', 'public', () => publishNow());
