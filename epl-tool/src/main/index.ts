@@ -1,4 +1,4 @@
-import { app, BrowserWindow } from 'electron';
+import { app, BrowserWindow, dialog } from 'electron';
 import path from 'node:path';
 import started from 'electron-squirrel-startup';
 import { closeDatabase } from './database';
@@ -6,7 +6,7 @@ import { registerAllIpcHandlers } from './ipc';
 import { guardDevTools, installAppMenu } from './menu';
 import { getIdentity, initIdentity } from './auth';
 import { isRealUserAdmin } from './currentUser';
-import { startBackgroundChecks, startup } from './sync/sync';
+import { finishEditing, isEditing, startBackgroundChecks, startup } from './sync/sync';
 
 if (started) app.quit();
 
@@ -63,6 +63,30 @@ app.on('window-all-closed', () => {
 
 app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0) createWindow();
+});
+
+// Closing while editing a shared database: publish first. If that fails, the changes can stay on this PC (offered again
+// at the next start) or the user cancels and keeps editing.
+let quitting = false;
+app.on('before-quit', event => {
+  if (quitting || !isEditing()) return;
+  event.preventDefault();
+  void finishEditing().then(async r => {
+    if (!r.ok && !r.conflict) {
+      const choice = await dialog.showMessageBox({
+        type: 'warning',
+        title: 'EPL Tool',
+        message: 'Your changes could not be published.',
+        detail: `${r.error}\n\nIf you quit now, they stay on this computer and EPL Tool offers to publish them next time.`,
+        buttons: ['Quit anyway', 'Cancel'],
+        defaultId: 1,
+        cancelId: 1,
+      });
+      if (choice.response !== 0) return;
+    }
+    quitting = true;
+    app.quit();
+  });
 });
 
 app.on('quit', () => closeDatabase());

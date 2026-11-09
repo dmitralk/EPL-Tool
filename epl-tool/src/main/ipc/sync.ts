@@ -1,9 +1,13 @@
 import { BrowserWindow, dialog } from 'electron';
 import { getIdentity } from '../auth';
-import { applyUpdate, checkNow, connectShared, getStatus, onStatus, refresh } from '../sync/sync';
+import {
+  applyUpdate, checkNow, connectShared, dismissConflict, finishEditing, getStatus, onStatus, publishNow, recoverUnpublished,
+  refresh, startEditing,
+} from '../sync/sync';
 import { handle } from './guard';
 
-// Shared database (Phase C). The status is public like db:*: the setup and no-access screens need it too.
+// Shared database (Phase C). The channels are public like db:*: the setup and no-access screens need the status, and the
+// edit actions check the rights themselves (Start editing: admins, or anybody on a database without users).
 export function registerSyncHandlers() {
   onStatus(status => {
     for (const win of BrowserWindow.getAllWindows?.() ?? []) {
@@ -45,6 +49,28 @@ export function registerSyncHandlers() {
 
   handle('sync:refresh', 'public', async () => {
     await refresh();
+    return getStatus();
+  });
+
+  handle('sync:start-editing', 'public', async () => {
+    try {
+      await getIdentity();
+      await startEditing();
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: (err as Error).message };
+    }
+  });
+
+  handle('sync:publish', 'public', () => publishNow());
+
+  handle('sync:finish-editing', 'public', () => finishEditing());
+
+  handle('sync:recover', 'public', (_e, action: 'publish' | 'discard') =>
+    recoverUnpublished(action === 'publish' ? 'publish' : 'discard'));
+
+  handle('sync:dismiss-conflict', 'public', () => {
+    dismissConflict();
     return getStatus();
   });
 }

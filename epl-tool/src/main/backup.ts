@@ -96,12 +96,13 @@ export function createBackup(db: Database.Database, dbPath: string): string {
   return final;
 }
 
-// Raw file copy of the (closed, possibly damaged) database, kept so a restore can be undone.
-export function createPreRestoreCopy(dbPath: string): string | null {
-  if (!fs.existsSync(dbPath)) return null;
+// Raw file copy of the (closed, possibly damaged) database, kept so a restore can be undone. source: the file to keep when it
+// is not dbPath itself (the working copy of a shared database).
+export function createPreRestoreCopy(dbPath: string, source = dbPath): string | null {
+  if (!fs.existsSync(source)) return null;
   const dir = backupDirFor(dbPath);
   fs.mkdirSync(dir, { recursive: true });
   const dest = path.join(dir, `${path.parse(dbPath).name}_${fileStamp()}_pre-restore.db`);
-  fs.copyFileSync(dbPath, dest);
+  fs.copyFileSync(source, dest);
   return dest;
 }

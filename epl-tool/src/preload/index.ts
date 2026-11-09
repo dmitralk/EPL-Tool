@@ -19,6 +19,11 @@ const api = {
   checkSync: () => ipcRenderer.invoke('sync:check'),
   applySyncUpdate: () => ipcRenderer.invoke('sync:apply-update'),
   refreshSync: () => ipcRenderer.invoke('sync:refresh'),
+  startEditing: () => ipcRenderer.invoke('sync:start-editing'),
+  publishNow: () => ipcRenderer.invoke('sync:publish'),
+  finishEditing: () => ipcRenderer.invoke('sync:finish-editing'),
+  recoverUnpublished: (action: 'publish' | 'discard') => ipcRenderer.invoke('sync:recover', action),
+  dismissSyncConflict: () => ipcRenderer.invoke('sync:dismiss-conflict'),
   onSyncStatus: (listener: (status: SyncStatus) => void) => {
     const wrapped = (_e: IpcRendererEvent, status: SyncStatus) => listener(status);
     ipcRenderer.on('sync:status', wrapped);

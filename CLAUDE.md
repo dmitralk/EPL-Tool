@@ -13,8 +13,9 @@ https://github.com/dmitralk/EPL-Tool/releases/tag/v0.6.1
 accepted, cache in `%LOCALAPPDATA%`) and the **approved technical design** are recorded in the dev-plan's Phase C section — follow
 that design. Build steps, one commit each after asking the user: 1) Migration 8 `sync_meta` + `CentralStore`/`SyncedFolderStore`
 (`main/sync/`) — **done** · 2) read mode (`query_only`, change detection, offline, guard `writes` flag; `main/sync/sync.ts`,
-`ipc/sync.ts`) — **done (main process)** · 3) admin edit mode
-(auto-publish, generation check, `EPL-Conflicts/`, unpublished-changes recovery) · 4) setup screen, sidebar status line, banners ·
+`ipc/sync.ts`) — **done (main process)** · 3) admin edit mode (auto-publish, generation check, `EPL-Conflicts/`,
+unpublished-changes recovery, restore through the working copy, publish on quit) — **done (main process)** · 4) setup screen,
+sidebar status line, banners, `useCan()` read-only gating, busy signal ·
 5) Guides & Help v0.7 topics + docs → release v0.7.0.
 
 **Working agreements with the user**
@@ -45,7 +46,12 @@ annotated tag, push `main` + tag; CI runs `npm test`, builds and publishes).
   next to it), `connectShared` (copy to `%LOCALAPPDATA%\epl-tool\cache`, opened with `query_only`), `startup` (settings.json
   `connection`, or the v0.6 `lastDbPath` → `legacySuggestion` when in a synced folder), `checkNow`/`applyUpdate`, `getStatus`
   (`SyncStatus`, pushed to the window as `sync:status`). `dataPath()` = the central DB in shared mode (used by `db:get-path`,
-  backups). Two-PC simulation: `phase-c.checks.ts` forks itself into worker "PCs" (`EPL_PC` env).
+  backups). Edit mode (same file): `startEditing` (canWrite probe, fresh copy to `work\`, backup, open read-write, bootstrap /
+  account linking), change tracking via SQLite `total_changes()` (`afterWrite` from the guard), `publishNow` (snapshot `VACUUM
+  INTO` → stamp `sync_meta` + `sync.publish` audit → generation check → same stamp on the working copy; writes wait while it
+  runs), `finishEditing`, refused publish → unstamped working copy to `EPL-Conflicts/` + back to read mode,
+  `recoverUnpublished` (`work\session.json`), `restoreSharedBackup`. `main/index.ts` publishes on quit. Two-PC simulation:
+  `phase-c.checks.ts` forks itself into worker "PCs" (`EPL_PC` env).
 - On the Windows dev PC, `whoami /upn` resolves to one of the named admins' accounts (relevant for first-admin bootstrap tests).
 - The stored legacy logo path was a macOS path; the logo must be selected once in Settings (done by the user or still to do —
   ask if exports lack a logo).
@@ -282,6 +288,7 @@ P  auth:whoami, auth:me, auth:preview-start (checks real admin), auth:preview-st
 V  prefs:get, prefs:set
 P  db:select-file, db:open, db:create, db:get-path, db:is-open, db:last-open-error      V  db:open-folder
 P  sync:status, sync:select-central, sync:connect, sync:check, sync:apply-update, sync:refresh   (+ event sync:status → window)
+P  sync:start-editing (admins, or anybody on a DB without users), sync:publish, sync:finish-editing, sync:recover, sync:dismiss-conflict
 P  backup:list, backup:open-folder, backup:restore (A when a DB is open; else admin in the backup)      A  backup:create
 V  users:list      A  users:create, users:update
 V  audit:list, audit:export-xlsx

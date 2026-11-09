@@ -7,9 +7,9 @@ import {
   backupDirFor, createBackup, createPreRestoreCopy, getLastBackupStatus, isBackupOf, isFileHealthy, listBackups, pruneBackups,
 } from '../backup';
 import { getIdentity } from '../auth';
-import { getActor, stopPreview } from '../currentUser';
+import { stopPreview } from '../currentUser';
 import { audit } from '../audit';
-import { dataPath, isShared, writeBlockMessage } from '../sync/sync';
+import { dataPath, isShared, restoreSharedBackup } from '../sync/sync';
 import { handle, requireRule } from './guard';
 import type { BackupListResult } from '../../types';
 
@@ -74,8 +74,9 @@ export function registerBackupHandlers() {
     try {
       if (isOpen()) requireRule('admin', RESTORE_DENIED);
       if (isShared()) {
-        // Never replace the central file directly; restoring through the working copy comes with edit mode.
-        return { ok: false, error: writeBlockMessage(getActor()) ?? 'Restore is not available here.' };
+        // Never replaces the central file directly: the backup goes through the working copy and the generation check.
+        if (!isFileHealthy(backupPath)) return { ok: false, error: 'This backup failed the integrity check.' };
+        return await restoreSharedBackup(backupPath);
       }
       if (!isFileHealthy(backupPath)) return { ok: false, error: 'This backup failed the integrity check.' };
       if (!isOpen()) await requireAdminInBackup(backupPath);

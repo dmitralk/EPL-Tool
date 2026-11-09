@@ -14,10 +14,10 @@ import {
 } from '../../src/main/sync/centralStore';
 import { isInSyncedFolder, isUnder } from '../../src/main/sync/oneDrive';
 import { cacheDir, localDataDir, workDir } from '../../src/main/sync/paths';
-import { getStatus, startup } from '../../src/main/sync/sync';
+import { getStatus, startBackgroundChecks, startup } from '../../src/main/sync/sync';
 import { MIN_EDIT_APP_VERSION } from '../../src/shared/sync';
 import { registerAllIpcHandlers } from '../../src/main/ipc/index';
-import { SAMPLE_DBS, allowed, check, expectError, finish, invoke, run, sample, setupTemp, sha, stub, userVersion } from './harness';
+import { SAMPLE_DBS, allowed, check, expectError, finish, invoke, run, sample, setupTemp, sha, sleep, stub, userVersion } from './harness';
 
 const ls = (dir: string) => (fs.existsSync(dir) ? fs.readdirSync(dir).sort() : []);
 
@@ -208,6 +208,8 @@ const PEOPLE = {
   uma: { account: 'usr-u', email: 'uma.user@example.com' },      // user
   vic: { account: 'vw-v', email: 'vic.viewer@example.com' },     // viewer
   eve: { account: 'usr-e', email: 'eve.email@example.com' },     // user added by email only
+  fay: { account: 'adm-f', email: 'fay.admin@example.com' },     // admin added by email only
+  boot: { account: 'boot-x', email: 'boot.strap@example.com' },  // nobody's user yet (database without users)
 };
 
 // Worker side: a "PC" running the real IPC handlers, driven by messages from the orchestrator. It reports the version
@@ -225,6 +227,7 @@ function worker(): void {
       else if (m.op === 'startup') { await getIdentity(); await startup(); result = getStatus(); }
       else if (m.op === 'sql') result = getDb().prepare(m.args[0]).all(...(m.args[1] ?? []));
       else if (m.op === 'raw-write') result = getDb().prepare(m.args[0]).run();
+      else if (m.op === 'timers') startBackgroundChecks(m.args[0]);
       else if (m.op === 'exit') { reply({ ok: true }); process.exit(0); }
       reply({ ok: true, result });
     } catch (e) {
@@ -291,6 +294,17 @@ class Pc {
   startup() { return this.ok('startup'); }
   sql(query: string, params?: any[]) { return this.ok('sql', query, params); }
   rawWrite(query: string) { return this.send('raw-write', query); }
+  timers(t: { checkMs?: number; publishMs?: number }) { return this.ok('timers', t); }
+
+  // A crash: no chance to publish.
+  async kill(): Promise<void> {
+    const c = this.child;
+    if (!c) return;
+    const exited = new Promise(r => c.once('exit', r));
+    c.kill();
+    await exited;
+    this.child = null;
+  }
 
   async stop(): Promise<void> {
     const c = this.child;
@@ -316,6 +330,7 @@ function prepareCentral(tmp: string): Central {
   add.run('Uma User', PEOPLE.uma.email, PEOPLE.uma.account, 'user');
   add.run('Vic Viewer', PEOPLE.vic.email, PEOPLE.vic.account, 'viewer');
   add.run('Eve Email', PEOPLE.eve.email, null, 'user');
+  add.run('Fay Admin', PEOPLE.fay.email, null, 'admin');
   closeDatabase();
   const base = path.join(tmp, 'prep', 'base8.db');
   fs.copyFileSync(prep, base);
@@ -366,7 +381,7 @@ function corrupt(file: string): void {
   fs.closeSync(fd);
 }
 
-async function readModeChecks(tmp: string, c: Central, pcs: Pc[]) {
+async function readModeChecks(tmp: string, c: Central, pcs: Pc[]): Promise<{ A: Pc; B: Pc; ref: string }> {
   let expectedCentral = sha(c.central);
   const centralUnchanged = (label: string) =>
     check(`${label}: readers left the central file unchanged`, sha(c.central) === expectedCentral);
@@ -565,13 +580,242 @@ async function readModeChecks(tmp: string, c: Central, pcs: Pc[]) {
   centralUnchanged('read mode overall');
   check('the shared folder holds only the database and its manifest',
     ls(c.centralDir).join() === 'EPL-Database.db,EPL-Database.manifest.json', ls(c.centralDir));
+  return { A, B, ref };
+}
+
+// Reads the central file through a copy (the checks don't open the shared file with SQLite either).
+let querySeq = 0;
+function centralQuery(c: Central, query: string, params: any[] = [], file = c.central): any[] {
+  const copy = path.join(c.orch, `query-${++querySeq}.db`);
+  fs.copyFileSync(file, copy);
+  const d = new Database(copy, { readonly: true });
+  try {
+    return d.prepare(query).all(...params);
+  } finally {
+    d.close();
+  }
+}
+
+const spocOf = (c: Central, ref: string, file?: string) =>
+  centralQuery(c, 'SELECT customer_spoc AS s FROM customers WHERE customer_ref_sap = ?', [ref], file)[0]?.s;
+const generationOf = (c: Central, file?: string) =>
+  centralQuery(c, 'SELECT generation AS g FROM sync_meta', [], file)[0]?.g;
+const manifestOf = (c: Central) => JSON.parse(fs.readFileSync(path.join(c.centralDir, 'EPL-Database.manifest.json'), 'utf-8'));
+const backupsOf = (c: Central) => ls(path.join(c.centralDir, 'EPL-Backups'));
+
+async function editModeChecks(tmp: string, c: Central, pcs: Pc[], A: Pc, B: Pc, ref: string) {
+  // ── Start editing ──
+  let sa = await A.status();
+  const genBefore = sa.data?.generation;
+  const shaBefore = sha(c.central);
+  let r = await A.invoke('sync:start-editing');
+  sa = await A.status();
+  check('A (admin) starts editing', r.ok && sa.phase === 'edit' && sa.writable && !sa.canStartEditing && !!sa.edit &&
+    !sa.edit.dirty && sa.data?.generation === genBefore, { r, sa });
+  check('Start editing: one backup in EPL-Backups/, nothing else written to the shared folder', backupsOf(c).length === 1 &&
+    sha(c.central) === shaBefore, backupsOf(c));
+  const startBackup = path.join(c.centralDir, 'EPL-Backups', backupsOf(c)[0]);
+  check('the backup is the shared file as it was', generationOf(c, startBackup) === genBefore);
+  check('A: working copy + session.json in %LOCALAPPDATA%\\epl-tool\\work', ls(A.workDir).join() === 'EPL-Database.db,session.json', ls(A.workDir));
+  r = await A.invoke('sync:start-editing');
+  check('Start editing twice is refused', !r.ok && /already editing/.test(r.error), r);
+  r = await A.invoke('db:open', path.join(tmp, 'pcA', 'docs', 'Test.db'));
+  check('A: switching database while editing is refused', !r.ok && /Finish editing first/.test(r.error), r);
+
+  // ── A change, then Publish now ──
+  await allowed('A edits a customer', () => A.invoke('customers:update', ref, { customer_spoc: 'Set by Anna' }));
+  sa = await A.status();
+  check('A: the change is noted, publish scheduled', !!sa.edit?.dirty && !!sa.edit?.nextPublishAt, sa.edit);
+  check('A: session.json says unpublished changes', JSON.parse(fs.readFileSync(path.join(A.workDir, 'session.json'), 'utf-8')).dirty === true);
+  check('nothing reaches the shared file before the publish', sha(c.central) === shaBefore);
+  let p = await A.invoke('sync:publish');
+  const gen1 = (genBefore ?? 0) + 1;
+  check(`A publishes: generation ${gen1}`, p.ok && p.published && p.generation === gen1, p);
+  const m1 = manifestOf(c);
+  check('manifest: generation, sha256, Anna, minAppVersion', m1.generation === gen1 && m1.sha256 === sha(c.central) &&
+    m1.publishedBy === 'Anna Admin' && m1.publishedByAccount === PEOPLE.anna.account && m1.minAppVersion === MIN_EDIT_APP_VERSION, m1);
+  check("the shared file has Anna's change and generation", spocOf(c, ref) === 'Set by Anna' && generationOf(c) === gen1);
+  const pubAudit = centralQuery(c, "SELECT * FROM audit_log WHERE action IN ('sync.publish', 'customer.update') ORDER BY id DESC LIMIT 2");
+  check('activity log of the shared file: the change and the sync.publish entry', pubAudit[0]?.action === 'sync.publish' &&
+    pubAudit[0]?.entity_key === String(gen1) && /Anna Admin/.test(pubAudit[0]?.user_label) && pubAudit[1]?.action === 'customer.update', pubAudit);
+  const workAudit = await A.sql("SELECT entity_key FROM audit_log WHERE action = 'sync.publish' ORDER BY id DESC LIMIT 1");
+  check('the working copy got the same stamp', workAudit[0]?.entity_key === String(gen1) &&
+    (await A.sql('SELECT generation FROM sync_meta'))[0].generation === gen1);
+  sa = await A.status();
+  check('A: published, nothing pending', !sa.edit?.dirty && sa.edit?.lastPublishedGeneration === gen1 && sa.data?.generation === gen1, sa.edit);
+  check('no temp files in the shared folder', ls(c.centralDir).every(f => !f.endsWith('.tmp')), ls(c.centralDir));
+  p = await A.invoke('sync:publish');
+  check('Publish now without changes publishes nothing', p.ok && !p.published && manifestOf(c).generation === gen1, p);
+
+  const sb = await B.invoke('sync:refresh');
+  check("B (reader) gets Anna's version", sb.data?.generation === gen1 && sb.data?.publishedBy === 'Anna Admin' &&
+    (await B.invoke('customers:get', ref)).customer_spoc === 'Set by Anna', sb.data);
+
+  // ── Changes wait while a publish takes its snapshot ──
+  await allowed('A adds a unit', () => A.invoke('settings:create-unit', 'Unit 1'));
+  const publishing = A.invoke('sync:publish');
+  const waiting = A.invoke('settings:create-unit', 'Unit 2');
+  const [p2] = await Promise.all([publishing, waiting]);
+  sa = await A.status();
+  const units = centralQuery(c, "SELECT name FROM units WHERE name LIKE 'Unit %' ORDER BY name").map(u => u.name);
+  check('a change made during a publish waits and goes into the next one', p2.ok && p2.generation === gen1 + 1 &&
+    units.join() === 'Unit 1' && !!sa.edit?.dirty, { p2, units, edit: sa.edit });
+
+  // ── Finish editing ──
+  const f = await A.invoke('sync:finish-editing');
+  sa = await A.status();
+  const gen3 = gen1 + 2;
+  check('Finish editing publishes the rest and goes back to read mode', f.ok && sa.phase === 'read' && !sa.writable &&
+    sa.data?.generation === gen3 && generationOf(c) === gen3, { f, sa });
+  check('A: working copy and session removed; the read copy is the published version', ls(A.workDir).length === 0 &&
+    JSON.parse(fs.readFileSync(path.join(A.cacheDir, 'cache.json'), 'utf-8')).sha256 === sha(c.central), ls(A.workDir));
+  sa = await A.invoke('sync:check');
+  check('A: next check finds nothing new', !sa.pendingUpdate, sa);
+  await expectError('A: read-only again', () => A.invoke('settings:create-unit', 'Unit 3'), /^Read-only — click Start editing/);
+  check('only one backup for the whole editing session', backupsOf(c).length === 1, backupsOf(c));
+
+  // ── Two admins at once: the second publish is refused, nothing is overwritten ──
+  await B.stop();
+  await B.start(PEOPLE.ben);
+  await B.startup();
+  const genBoth = generationOf(c);
+  r = await B.invoke('sync:start-editing');
+  check('B (Ben, admin) starts editing', r.ok, r);
+  r = await A.invoke('sync:start-editing');
+  check('A starts editing too (no edit slot in v0.7)', r.ok, r);
+  await allowed('B edits', () => B.invoke('customers:update', ref, { customer_spoc: 'Set by Ben' }));
+  await allowed('A edits', () => A.invoke('customers:update', ref, { customer_spoc: 'Set by Anna again' }));
+  p = await B.invoke('sync:publish');
+  check('B publishes first', p.ok && p.published, p);
+  const benSha = sha(c.central);
+  sa = await A.invoke('sync:check');
+  check('A is warned at once that someone else published', /Ben Admin published a newer version/.test(sa.edit?.centralChanged ?? ''), sa.edit);
+  p = await A.invoke('sync:publish');
+  sa = await A.status();
+  check("A's publish is refused", !p.ok && p.conflict && /not published/.test(p.error), p);
+  check("the shared file is still Ben's", sha(c.central) === benSha && spocOf(c, ref) === 'Set by Ben');
+  check("A's work is kept in EPL-Conflicts/", !!p.savedTo && path.dirname(p.savedTo) === path.join(c.centralDir, 'EPL-Conflicts') &&
+    spocOf(c, ref, p.savedTo) === 'Set by Anna again', p.savedTo);
+  check('the conflict copy is the working copy, not stamped as published', generationOf(c, p.savedTo) === genBoth &&
+    centralQuery(c, "SELECT 1 FROM audit_log WHERE action = 'sync.publish' AND entity_key = ?", [String(genBoth + 1)], p.savedTo).length === 0);
+  check("A is back in read mode on Ben's version, with the conflict shown", sa.phase === 'read' && !!sa.conflict &&
+    sa.conflict.savedTo === p.savedTo && (await A.invoke('customers:get', ref)).customer_spoc === 'Set by Ben', sa);
+  sa = await A.invoke('sync:dismiss-conflict');
+  check('A dismisses the conflict message', sa.conflict === null);
+  const fb = await B.invoke('sync:finish-editing');
+  check('B finishes', fb.ok && (await B.status()).phase === 'read', fb);
+
+  // ── Auto-publish about a minute after the last change (shortened here) ──
+  await A.timers({ checkMs: 60_000, publishMs: 400 });
+  r = await A.invoke('sync:start-editing');
+  const genAuto = generationOf(c) + 1;
+  await A.invoke('customers:update', ref, { customer_spoc: 'Auto-published' });
+  await sleep(150);
+  await A.invoke('customers:update', ref, { customer_spoc: 'Auto-published 2' });
+  await sleep(250);
+  check('no publish while changes keep coming', generationOf(c) === genAuto - 1);
+  await sleep(700);
+  sa = await A.status();
+  check('auto-publish after the delay', generationOf(c) === genAuto && spocOf(c, ref) === 'Auto-published 2' && !sa.edit?.dirty, sa.edit);
+  await A.invoke('sync:finish-editing');
+
+  // ── Crash with unpublished changes: offered at the next start ──
+  await A.kill();
+  await A.start();
+  await A.startup();
+  await A.invoke('sync:start-editing');
+  await A.invoke('customers:update', ref, { customer_spoc: 'Before the crash' });
+  const shaBeforeCrash = sha(c.central);
+  await A.kill();
+  check('a crash publishes nothing', sha(c.central) === shaBeforeCrash);
+  await A.start();
+  sa = await A.startup();
+  check('A restarts: unpublished changes offered, Start editing blocked until decided', sa.phase === 'read' && !!sa.recovery &&
+    !sa.canStartEditing && /unpublished changes/.test(sa.startEditingBlocked ?? ''), sa);
+  p = await A.invoke('sync:recover', 'publish');
+  sa = await A.status();
+  check('Publish now: the changes are published with the generation check', p.ok && p.published && sa.phase === 'read' &&
+    !sa.recovery && spocOf(c, ref) === 'Before the crash', { p, sa });
+  await A.invoke('sync:start-editing');
+  await A.invoke('customers:update', ref, { customer_spoc: 'Thrown away' });
+  await A.kill();
+  await A.start();
+  sa = await A.startup();
+  p = await A.invoke('sync:recover', 'discard');
+  sa = await A.status();
+  check('Discard: the changes are dropped, nothing published', p.ok && !sa.recovery && spocOf(c, ref) === 'Before the crash' &&
+    ls(A.workDir).length === 0, sa);
+
+  // ── Restore in shared mode ──
+  r = await A.invoke('backup:restore', startBackup);
+  check('restore in read mode is refused', !r.ok && /Read-only — click Start editing/.test(r.error), r);
+  await A.invoke('sync:start-editing');
+  const genRestore = generationOf(c) + 1;
+  r = await A.invoke('backup:restore', startBackup);
+  sa = await A.status();
+  check('restore while editing: the backup is published at once', r.ok && generationOf(c) === genRestore &&
+    spocOf(c, ref) === spocOf(c, ref, startBackup) && sa.phase === 'edit' && !sa.edit?.dirty, { r, sa: sa.edit });
+  check('restore: pre-restore copy kept, activity entry published', !!r.safetyCopy && fs.existsSync(r.safetyCopy) &&
+    centralQuery(c, "SELECT 1 FROM audit_log WHERE action = 'backup.restore'").length === 1, r);
+  await A.invoke('sync:finish-editing');
+
+  const good = fs.readFileSync(c.central);
+  corrupt(c.central);
+  for (let i = 0; i < 3; i++) sa = await A.invoke('sync:check');
+  check('A: shared file damaged → Start editing blocked', sa.centralDamaged && !sa.canStartEditing, sa);
+  const genDamaged = manifestOf(c).generation + 1;
+  r = await A.invoke('backup:restore', startBackup);
+  sa = await A.status();
+  check('restore of a damaged shared file works from read mode (admin)', r.ok && sa.phase === 'read' && !sa.centralDamaged &&
+    generationOf(c) === genDamaged && spocOf(c, ref) === spocOf(c, ref, startBackup), { r, sa });
+  check('the damaged file is kept as a pre-restore copy', !!r.safetyCopy && fs.statSync(r.safetyCopy).size === good.length, r);
+
+  // ── An admin added by email only: account recorded at Start editing ──
+  const F = new Pc('F', path.join(tmp, 'pcF'), PEOPLE.fay);
+  pcs.push(F);
+  await F.start();
+  await F.invoke('sync:connect', c.central);
+  check('F (Fay, admin added by email): no account recorded in read mode',
+    (await F.sql('SELECT account FROM users WHERE email = ?', [PEOPLE.fay.email]))[0].account === null);
+  await F.invoke('sync:start-editing');
+  const fp = await F.invoke('sync:finish-editing');
+  check('F: Start editing records her account, published', fp.ok && fp.published &&
+    centralQuery(c, 'SELECT account FROM users WHERE email = ?', [PEOPLE.fay.email])[0].account === PEOPLE.fay.account, fp);
+
+  // ── A shared database without users: the first person to start editing becomes its admin ──
+  const bootDir = path.join(tmp, 'shared', 'EPL-NoUsers');
+  fs.mkdirSync(bootDir, { recursive: true });
+  const bootDb = path.join(bootDir, 'EPL-Database.db');
+  fs.copyFileSync(sample(SAMPLE_DBS[1]), bootDb);
+  const bootSha = sha(bootDb);
+  const E = new Pc('E', path.join(tmp, 'pcE'), PEOPLE.boot);
+  pcs.push(E);
+  await E.start();
+  r = await E.invoke('sync:connect', bootDb);
+  let se = await E.status();
+  const meE = await E.invoke('auth:me');
+  check('E: database without users opens read-only, nobody bootstrapped', r.ok && se.phase === 'read' && !meE.user &&
+    sha(bootDb) === bootSha, { r, user: meE.user });
+  check('E: Start editing allowed (to create the first admin)', se.canStartEditing, se.startEditingBlocked);
+  await allowed('E starts editing', async () => {
+    const x = await E.invoke('sync:start-editing');
+    if (!x.ok) throw new Error(x.error);
+  });
+  const meE2 = await E.invoke('auth:me');
+  const fe = await E.invoke('sync:finish-editing');
+  const users = centralQuery(c, 'SELECT account, role FROM users', [], bootDb);
+  const bootAudit = centralQuery(c, "SELECT action FROM audit_log WHERE action IN ('user.bootstrap', 'sync.publish')", [], bootDb);
+  se = await E.status();
+  check('E becomes the first admin, published', meE2.user?.role === 'admin' && fe.ok && users.length === 1 &&
+    users[0].account === PEOPLE.boot.account && bootAudit.length === 2 && se.phase === 'read', { users, bootAudit, fe });
 }
 
 async function twoPcChecks(tmp: string) {
   const c = prepareCentral(tmp);
   const pcs: Pc[] = [];
   try {
-    await readModeChecks(tmp, c, pcs);
+    const { A, B, ref } = await readModeChecks(tmp, c, pcs);
+    await editModeChecks(tmp, c, pcs, A, B, ref);
   } finally {
     for (const pc of pcs) await pc.stop();
   }

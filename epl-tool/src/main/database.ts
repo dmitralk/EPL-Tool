@@ -291,8 +291,8 @@ export function totalChanges(): number {
 }
 
 // A database without any user (just upgraded by Migration 7, or new) makes the person opening it the first admin.
-// Callers must await getIdentity() before openDatabase so the identity is known here.
-function bootstrapFirstAdmin(db: Database.Database): void {
+// Callers must await getIdentity() before openDatabase so the identity is known here. Shared database: only in edit mode.
+export function bootstrapFirstAdmin(db: Database.Database): void {
   if ((db.prepare('SELECT COUNT(*) AS n FROM users').get() as { n: number }).n > 0) return;
   const id = getResolvedIdentity();
   if (!id || (!id.account && !id.email)) return;

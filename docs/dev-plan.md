@@ -371,12 +371,15 @@ shared mode, OneDrive conflict copies.
         done; the automatic apply / banner is in the screens, step 4.)*
   - [x] Offline mode using the last copy.
   - [x] Block editing when the database needs a newer app version (`minAppVersion` / schema version).
-- [ ] **Edit mode, first version (Admins only, no edit slot yet):**
-  - [ ] *Start editing* copies the fresh database to a working copy.
-  - [ ] Auto-publish about 60 s after the last change; *Finish editing*.
-  - [ ] A publish that conflicts with someone else's is refused, and the copy is saved to `EPL-Conflicts/`.
-- [ ] **Backups:** one backup at the start of each editing session; none on every open; read-only users never write to
-      SharePoint.
+- [x] **Edit mode, first version (Admins only, no edit slot yet)** — main process done 9 Nov 2026 (`main/sync/sync.ts`):
+  - [x] *Start editing* copies the fresh database to a working copy.
+  - [x] Auto-publish about 60 s after the last change; *Finish editing*. Also *Publish now*, publish on quit (with *Quit
+        anyway* when it fails) and the unpublished-changes recovery at the next start.
+  - [x] A publish that conflicts with someone else's is refused, and the copy is saved to `EPL-Conflicts/` (the working copy
+        as it was, not stamped); the editor gets a warning as soon as someone else publishes.
+- [x] **Backups:** one backup at the start of each editing session; none on every open; read-only users never write to
+      SharePoint. Restore in shared mode goes through the working copy and is published at once (also from read mode when
+      the shared file is damaged).
 - [ ] **Setup and status:** a setup screen *"Connect to shared database"* and a status line in the sidebar.
 - [ ] **Help:** the v0.7 topics.
 
