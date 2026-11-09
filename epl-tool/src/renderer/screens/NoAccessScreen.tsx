@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { FolderOpen, Mail, RefreshCw, ShieldOff } from 'lucide-react';
+import { FolderOpen, Mail, Pencil, RefreshCw, ShieldOff } from 'lucide-react';
 import { api } from '../lib/ipc';
 import { useAuth } from '../lib/auth';
+import { useSync } from '../lib/syncState';
 import { ipcErrorMessage } from '../lib/utils';
 import { Button } from '../components/ui/button';
 import type { AuthState } from '../../types';
@@ -10,6 +11,7 @@ import type { AuthState } from '../../types';
 export function NoAccessScreen() {
   const navigate = useNavigate();
   const { state, refresh } = useAuth();
+  const { status } = useSync();
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -36,12 +38,11 @@ export function NoAccessScreen() {
     }
   }
 
-  async function changeDatabase() {
-    const filePath = await api.dbSelectFile();
-    if (!filePath) return;
+  // A shared database without any user yet: whoever starts editing becomes its first admin.
+  async function becomeFirstAdmin() {
     await retry(async () => {
-      const r = await api.dbOpen(filePath);
-      if (!r.ok) throw new Error(r.error ?? 'Failed to open database');
+      const r = await api.startEditing() as { ok: boolean; error?: string };
+      if (!r.ok) throw new Error(r.error ?? 'Editing could not be started.');
     });
   }
 
@@ -85,6 +86,16 @@ export function NoAccessScreen() {
           )}
         </div>
 
+        {status?.mode === 'shared' && status.canStartEditing && state.admins.length === 0 && (
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-5 text-sm text-blue-900">
+            <p className="font-medium mb-1">This shared database has no user list yet.</p>
+            <p className="mb-3">Start editing to become its first admin; you can then add the others in Settings → Users.</p>
+            <Button size="sm" onClick={becomeFirstAdmin} disabled={busy} className="gap-1.5">
+              <Pencil size={13} /> Start editing
+            </Button>
+          </div>
+        )}
+
         <div className="flex flex-col gap-2">
           <Button onClick={requestAccess} disabled={busy || state.admins.length === 0} className="gap-2">
             <Mail size={15} /> Request access
@@ -93,8 +104,8 @@ export function NoAccessScreen() {
             <Button variant="outline" onClick={() => retry()} disabled={busy} className="flex-1 gap-2">
               <RefreshCw size={14} /> Try again
             </Button>
-            <Button variant="outline" onClick={changeDatabase} disabled={busy} className="flex-1 gap-2">
-              <FolderOpen size={14} /> Open another database
+            <Button variant="outline" onClick={() => navigate('/setup')} disabled={busy} className="flex-1 gap-2">
+              <FolderOpen size={14} /> Change database
             </Button>
           </div>
         </div>

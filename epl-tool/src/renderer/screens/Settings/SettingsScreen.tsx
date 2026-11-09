@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Activity, Plus, Trash2, Users } from 'lucide-react';
 import { api } from '../../lib/ipc';
 import { useCan } from '../../lib/auth';
+import { useSync } from '../../lib/syncState';
+import { statusLine } from '../../lib/sync';
 import { ipcErrorMessage } from '../../lib/utils';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
@@ -17,6 +19,7 @@ export function SettingsScreen() {
   const { toast } = useToast();
   const navigate = useNavigate();
   const can = useCan();
+  const { status } = useSync();
   const admin = can.referenceData;
   const [dbOpen, setDbOpen] = useState(true);
   const [dbPath, setDbPath] = useState<string | null>(null);
@@ -128,13 +131,23 @@ export function SettingsScreen() {
         <CardHeader><CardTitle>Database</CardTitle></CardHeader>
         <CardContent>
           <div>
-            <Label>Current Database Path (this PC)</Label>
+            <Label>
+              {status?.mode === 'shared' ? 'Shared database (central file in the synced SharePoint folder)'
+                : status?.mode === 'local' ? 'Local database (opened directly, not shared)' : 'Current Database Path (this PC)'}
+            </Label>
             <div className="text-sm text-gray-600 bg-gray-50 px-3 py-2 rounded-md border border-gray-200 font-mono break-all">
               {dbPath ?? 'No database open'}
             </div>
           </div>
+          {status?.mode === 'shared' && (
+            <p className="text-sm text-gray-600 mt-2">
+              {statusLine(status).text}{status.data && <> · generation {status.data.generation}</>}.{' '}
+              {status.phase === 'read' && 'You work on a copy on this PC; it is refreshed when someone publishes.'}
+            </p>
+          )}
           <p className="text-xs text-gray-400 mt-2">
-            To change the database, use "Change Database" in the sidebar.
+            To change the database, use "Change Database" in the sidebar.{' '}
+            <Link to="/help/shared-database" className="text-blue-600 hover:underline">About the shared database</Link>
           </p>
         </CardContent>
       </Card>
@@ -150,8 +163,8 @@ export function SettingsScreen() {
           </CardHeader>
           <CardContent>
             <p className="text-sm text-gray-600 mb-3">Who may use EPL Tool, with which role (Admin, User, Viewer).</p>
-            <Button variant="outline" onClick={() => navigate('/settings/users')} disabled={!can.manageUsers}>
-              Manage Users →
+            <Button variant="outline" onClick={() => navigate('/settings/users')} disabled={!can.isAdmin}>
+              {can.manageUsers ? 'Manage Users →' : 'View Users →'}
             </Button>
           </CardContent>
         </Card>
@@ -176,7 +189,8 @@ export function SettingsScreen() {
             </div>
           </CardHeader>
           <CardContent>
-            <BackupPanel canCreate={can.backup} canRestore={can.backup} onRestored={() => window.location.reload()} />
+            <BackupPanel canCreate={can.backup} canRestore={can.backup || (can.isAdmin && !!status?.centralDamaged)}
+              onRestored={() => window.location.reload()} />
           </CardContent>
         </Card>
       )}

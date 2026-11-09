@@ -364,12 +364,11 @@ shared mode, OneDrive conflict copies.
   - [x] publishing with the generation check
   - [x] spotting OneDrive conflict copies
 - [x] **Generation number:** stored in the database (Migration 8: `sync_meta`).
-- [ ] **Read mode** (main process done 9 Nov 2026 — `main/sync/sync.ts`, `ipc/sync.ts`, guard `writes` flag; the screens
-      follow in step 4):
+- [x] **Read mode** (done 9 Nov 2026 — `main/sync/sync.ts`, `ipc/sync.ts`, guard `writes` flag, screens):
   - [x] Open the local copy with `PRAGMA query_only`; in read mode, "read-only" errors become the message *"Read-only — click
         Start editing"* (the role check runs first).
-  - [ ] Check for changes every 30 s; refresh automatically or show a banner. *(Detection, download and `sync:apply-update`
-        done; the automatic apply / banner is in the screens, step 4.)*
+  - [x] Check for changes every 30 s; refresh automatically or show a banner (applied at once when no dialog or wizard is
+        open, otherwise *New data — Refresh*; also checked when the window gets the focus).
   - [x] Offline mode using the last copy.
   - [x] Block editing when the database needs a newer app version (`minAppVersion` / schema version).
 - [x] **Edit mode, first version (Admins only, no edit slot yet)** — main process done 9 Nov 2026 (`main/sync/sync.ts`):
@@ -381,7 +380,11 @@ shared mode, OneDrive conflict copies.
 - [x] **Backups:** one backup at the start of each editing session; none on every open; read-only users never write to
       SharePoint. Restore in shared mode goes through the working copy and is published at once (also from read mode when
       the shared file is damaged).
-- [ ] **Setup and status:** a setup screen *"Connect to shared database"* and a status line in the sidebar.
+- [x] **Setup and status:** a setup screen *"Connect to shared database"* and a status line in the sidebar (done 9 Nov 2026,
+      with the banners, read-only locks through `useCan()`, *Preview as…* in read mode, the first-admin path on the
+      no-access screen). Checked visually in an isolated development instance (`EPL_DEV_USER_DATA`, temp copy of the sample
+      database): first admin, editing, publish, Ben's version picked up, *Refresh* banner during a wizard, offline, early
+      warning and refused publish.
 - [ ] **Help:** the v0.7 topics.
 
 **Done when** (two PCs: you + a colleague):

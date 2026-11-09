@@ -10,7 +10,7 @@ import { useToast } from '../../components/ui/toast';
 import { ModeBadge } from '../../components/ModeBadge';
 import { LockBadge } from '../../components/LockBadge';
 import { ManagersPicker } from './ManagersPicker';
-import { PRICING_MODE_LABELS, PRICING_MODES, accessChangeError } from '../../../shared/permissions';
+import { PRICING_MODE_LABELS, PRICING_MODES, accessChangeError, canChangeCustomerAccess } from '../../../shared/permissions';
 import type { Customer, PricingMode } from '../../../types';
 
 const MODE_HELP: Record<PricingMode, string> = {
@@ -68,7 +68,7 @@ export function PricingManagementCard({ customer, onChanged }: { customer: Custo
           </CardTitle>
           {!editing && (editable
             ? <Button variant="outline" size="sm" onClick={start}>Change</Button>
-            : <LockBadge reason="Admins and this customer's managers can change this" />)}
+            : <LockBadge reason={can.why(canChangeCustomerAccess(can.user, customer), "Admins and this customer's managers can change this")} />)}
         </div>
       </CardHeader>
       <CardContent>

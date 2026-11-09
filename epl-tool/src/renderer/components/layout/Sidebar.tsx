@@ -1,9 +1,10 @@
 import { NavLink, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, FileText, Users, Settings, Database, Package, BookOpen, BarChart3, Mail, HelpCircle, UserCircle } from 'lucide-react';
+import { LayoutDashboard, FileText, Users, Settings, Database, Package, BookOpen, BarChart3, Mail, HelpCircle, UserCircle, Pencil, RefreshCw, Check } from 'lucide-react';
 import { cn } from '../../lib/utils';
-import { api } from '../../lib/ipc';
 import { useAuth } from '../../lib/auth';
-import { ROLE_LABELS } from '../../../shared/permissions';
+import { useSync } from '../../lib/syncState';
+import { statusLine, useSyncActions } from '../../lib/sync';
+import { ROLE_LABELS, canStartEditing } from '../../../shared/permissions';
 
 const navItems = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
@@ -25,17 +26,18 @@ const linkClass = ({ isActive }: { isActive: boolean }) =>
     isActive ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-800 hover:text-white',
   );
 
+const TONE_DOT = { gray: 'bg-gray-500', green: 'bg-green-400', blue: 'bg-blue-400', amber: 'bg-amber-400', red: 'bg-red-500' };
+
+const smallButton = 'flex items-center gap-1 px-2 py-1 rounded text-[11px] font-medium transition-colors disabled:opacity-40';
+
 export function Sidebar() {
   const navigate = useNavigate();
-  const { state, refresh } = useAuth();
-
-  async function handleChangeDb() {
-    const filePath = await api.dbSelectFile();
-    if (!filePath) return;
-    const result = await api.dbOpen(filePath);
-    const next = await refresh();
-    navigate(!result.ok || !next.dbOpen ? '/setup' : next.user ? '/' : '/no-access');
-  }
+  const { state } = useAuth();
+  const { status } = useSync();
+  const act = useSyncActions();
+  const editing = status?.phase === 'edit';
+  const line = status ? statusLine(status) : null;
+  const working = !!act.working;
 
   return (
     <aside className="w-52 shrink-0 bg-gray-900 text-white flex flex-col h-full">
@@ -74,8 +76,10 @@ export function Sidebar() {
           {helpItem.label}
         </NavLink>
         <button
-          onClick={handleChangeDb}
-          className="flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium text-gray-300 hover:bg-gray-800 hover:text-white w-full transition-colors"
+          onClick={() => navigate('/setup')}
+          disabled={editing}
+          title={editing ? 'Finish editing first' : 'Connect to the shared database or open another database'}
+          className="flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium text-gray-300 hover:bg-gray-800 hover:text-white w-full transition-colors disabled:opacity-40 disabled:hover:bg-transparent"
         >
           <Database size={16} />
           Change Database
@@ -84,6 +88,38 @@ export function Sidebar() {
           <settingsItem.icon size={16} />
           {settingsItem.label}
         </NavLink>
+        {status && line && status.mode !== 'none' && (
+          <div className="px-3 pt-3 mt-2 border-t border-gray-800 text-xs">
+            <div className="flex items-start gap-2" title={line.detail}>
+              <span className={cn('mt-1 h-2 w-2 rounded-full shrink-0', TONE_DOT[line.tone])} />
+              <span className="text-gray-300 leading-snug">{line.text}</span>
+            </div>
+            {status.mode === 'shared' && (
+              <div className="flex flex-wrap gap-1.5 mt-2">
+                {status.phase === 'read' && canStartEditing(state?.user) && (
+                  <button onClick={act.startEditing} disabled={working || !status.canStartEditing}
+                    title={status.startEditingBlocked ?? 'Get a fresh copy and make changes; they are published for everybody'}
+                    className={cn(smallButton, 'bg-blue-600 text-white hover:bg-blue-500')}>
+                    <Pencil size={11} /> {act.working === 'start' ? 'Starting…' : 'Start editing'}
+                  </button>
+                )}
+                {editing && (
+                  <button onClick={act.finishEditing} disabled={working || status.edit?.publishing}
+                    title="Publish your changes and go back to read mode"
+                    className={cn(smallButton, 'bg-green-600 text-white hover:bg-green-500')}>
+                    <Check size={11} /> {act.working === 'finish' ? 'Publishing…' : 'Finish editing'}
+                  </button>
+                )}
+                {status.phase === 'read' && (
+                  <button onClick={act.refresh} disabled={working} title="Look for newer data now"
+                    className={cn(smallButton, 'text-gray-300 hover:bg-gray-800 hover:text-white')}>
+                    <RefreshCw size={11} className={act.working === 'refresh' ? 'animate-spin' : ''} /> Refresh
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        )}
         {state?.user && (
           <div className="flex items-center gap-2 px-3 pt-3 mt-2 border-t border-gray-800 text-xs" title={state.realUser?.email ?? ''}>
             <UserCircle size={16} className="text-gray-400 shrink-0" />

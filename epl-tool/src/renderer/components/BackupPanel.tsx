@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { FolderOpen, DatabaseBackup, RotateCcw } from 'lucide-react';
 import { api } from '../lib/ipc';
+import { useSync } from '../lib/syncState';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { ConfirmDialog } from './ui/dialog';
@@ -20,6 +21,7 @@ function fmtSize(bytes: number): string {
 // canRestore defaults to true: on the damaged-database screen the main process checks the backup's own user list.
 export function BackupPanel({ canCreate, canRestore = true, onRestored }: { canCreate: boolean; canRestore?: boolean; onRestored: () => void }) {
   const { toast } = useToast();
+  const { status } = useSync();
   const [data, setData] = useState<BackupListResult | null>(null);
   const [busy, setBusy] = useState(false);
   const [showAll, setShowAll] = useState(false);
@@ -120,8 +122,11 @@ export function BackupPanel({ canCreate, canRestore = true, onRestored }: { canC
       )}
 
       <p className="text-xs text-gray-400">
-        A verified backup is taken automatically each time the database is opened, in an <span className="font-mono">EPL-Backups</span> folder
-        next to the database. The 20 most recent are kept.
+        {status?.mode === 'shared'
+          ? <>A verified backup is taken automatically at the start of each editing session (and before a restore), in an <span className="font-mono">EPL-Backups</span> folder
+            next to the shared database. A restore is published to everybody at once. The 20 most recent are kept.</>
+          : <>A verified backup is taken automatically each time the database is opened, in an <span className="font-mono">EPL-Backups</span> folder
+            next to the database. The 20 most recent are kept.</>}
       </p>
 
       <ConfirmDialog

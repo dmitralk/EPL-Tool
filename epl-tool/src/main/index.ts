@@ -10,6 +10,15 @@ import { finishEditing, isEditing, startBackgroundChecks, startup } from './sync
 
 if (started) app.quit();
 
+// Development only (ignored in packaged builds, like EPL_DEV_ACCOUNT): a separate profile — settings.json, Chromium data
+// and the local copies of the shared database — so a test run never touches the real one, and two instances can run
+// side by side.
+const devProfile = app.isPackaged ? undefined : process.env.EPL_DEV_USER_DATA;
+if (devProfile) {
+  app.setPath('userData', path.join(devProfile, 'userData'));
+  process.env.LOCALAPPDATA = path.join(devProfile, 'local');
+}
+
 const STARTUP_WAIT_MS = 8000;
 
 let mainWindow: BrowserWindow | null = null;

@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { AUTO_PUBLISH_SECONDS, CHANGE_CHECK_SECONDS, compareVersions } from './sync';
+import { AUTO_PUBLISH_SECONDS, CHANGE_CHECK_SECONDS, compareVersions, describeSeconds } from './sync';
 
 describe('compareVersions', () => {
   it('compares numerically, part by part', () => {
@@ -14,5 +14,11 @@ describe('compareVersions', () => {
 describe('shared-database delays', () => {
   it('check more often than auto-publish', () => {
     assert.ok(CHANGE_CHECK_SECONDS > 0 && AUTO_PUBLISH_SECONDS >= CHANGE_CHECK_SECONDS);
+  });
+
+  it('are described in words', () => {
+    assert.equal(describeSeconds(60), 'about a minute');
+    assert.equal(describeSeconds(30), '30 seconds');
+    assert.equal(describeSeconds(900), '15 minutes');
   });
 });

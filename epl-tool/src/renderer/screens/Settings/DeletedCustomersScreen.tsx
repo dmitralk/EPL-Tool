@@ -113,7 +113,7 @@ export function DeletedCustomersScreen() {
                         </Button>
                       </div>
                     ) : (
-                      <div className="flex justify-end"><LockBadge reason="Admins restore or delete" /></div>
+                      <div className="flex justify-end"><LockBadge reason={can.why(can.isAdmin, 'Admins restore or delete')} /></div>
                     )}
                   </td>
                 </tr>

@@ -120,7 +120,7 @@ export function MasterDataScreen() {
             <Plus size={14} /> Add Product
           </Button>
         ) : (
-          <LockBadge reason="View only — admins manage products" />
+          <LockBadge reason={can.why(can.isAdmin, 'View only — admins manage products')} />
         )}
       </div>
 

@@ -104,7 +104,9 @@ export function Step1SelectCustomer() {
             />
             {hiddenCount > 0 && (
               <p className="text-xs text-gray-400 mt-1">
-                {hiddenCount} customer{hiddenCount === 1 ? ' is' : 's are'} not listed: you can only price customers that are Open or that you manage.
+                {can.readOnly
+                  ? `No customer can be priced: ${can.readOnly}`
+                  : `${hiddenCount} customer${hiddenCount === 1 ? ' is' : 's are'} not listed: you can only price customers that are Open or that you manage.`}
               </p>
             )}
             {errors.customer && <p className="text-red-500 text-xs mt-1">{errors.customer}</p>}

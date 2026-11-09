@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { cn } from '../../lib/utils';
+import { useBusyWhile } from '../../lib/busy';
 import { Button } from './button';
 
 interface DialogProps {
@@ -15,6 +16,8 @@ export function Dialog({ open, onClose, title, children, className }: DialogProp
   const pressStartedOutside = useRef(false);
   // Once the user has clicked or typed inside, only explicit buttons (×, Cancel, actions) close the dialog.
   const dirty = useRef(false);
+  // While a dialog is open, new data from the shared database waits for a Refresh instead of re-rendering the screen.
+  useBusyWhile(open);
 
   useEffect(() => {
     const el = ref.current;

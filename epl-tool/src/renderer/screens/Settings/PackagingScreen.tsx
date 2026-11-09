@@ -69,7 +69,7 @@ export function PackagingScreen() {
         </button>
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-bold text-gray-900">Packaging Versions</h1>
-          {can.referenceData ? <Button onClick={() => setNewOpen(true)}>+ New Version</Button> : <LockBadge reason="View only — admins manage packaging" />}
+          {can.referenceData ? <Button onClick={() => setNewOpen(true)}>+ New Version</Button> : <LockBadge reason={can.why(can.isAdmin, 'View only — admins manage packaging')} />}
         </div>
         <p className="text-sm text-gray-500 mt-1">
           Each customer is assigned one packaging version. Prices from that version appear in their exported price list.

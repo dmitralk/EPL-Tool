@@ -15,15 +15,19 @@ that design. Build steps, one commit each after asking the user: 1) Migration 8 
 (`main/sync/`) — **done** · 2) read mode (`query_only`, change detection, offline, guard `writes` flag; `main/sync/sync.ts`,
 `ipc/sync.ts`) — **done (main process)** · 3) admin edit mode (auto-publish, generation check, `EPL-Conflicts/`,
 unpublished-changes recovery, restore through the working copy, publish on quit) — **done (main process)** · 4) setup screen,
-sidebar status line, banners, `useCan()` read-only gating, busy signal ·
-5) Guides & Help v0.7 topics + docs → release v0.7.0.
+sidebar status line, banners, `useCan()` read-only gating, busy signal — **done** (checked visually in an isolated dev
+instance) · 5) Guides & Help v0.7 topics + docs → release v0.7.0.
 
 **Working agreements with the user**
 - Ask (with a form) before committing; always add the `Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>`
   trailer. Never stage the data files `All_Prices.xlsx`, `All_PricesTest.xlsx`, `EPL-Database.db`, `EPL-Database BackUp.db`
   (modified locally before these sessions; not our work).
 - Don't launch the app (`npm start` / packaged) without asking: it auto-opens the user's real SharePoint database and writes a
-  startup backup. Test main-process code outside the app instead (see *Testing main-process code* below).
+  startup backup. Test main-process code outside the app instead (see *Testing main-process code* below). For a visual check
+  (asked first), the dev-only switch `EPL_DEV_USER_DATA=<temp dir>` gives `npm start` its own profile (settings.json,
+  Chromium data, `%LOCALAPPDATA%` copies) — seed `<dir>\userData\settings.json` with a `connection` to a temp copy, start
+  forge through a Node wrapper that keeps stdin open (forge quits on stdin EOF) with `-- --remote-debugging-port=9223`, and
+  drive/screenshot it over CDP (`Page.captureScreenshot`, `Runtime.evaluate`; Node 24 has a global `WebSocket`).
 - Keep `docs/` (dev-plan + studies), CLAUDE.md and README.md updated as phases complete; update the Guides & Help topic
   *What's new* (`epl-tool/src/renderer/help/10-whats-new.md`) with each release.
 - Never hard-code people's emails or names in the repo (admins are added in Settings → Users).
@@ -31,7 +35,7 @@ sidebar status line, banners, `useCan()` read-only gating, busy signal ·
 **Verify after changes** (from `epl-tool/`; for anything that downloads — npm, packaging — first set in the same PowerShell call:
 `$env:HTTP_PROXY='http://cloudproxy-emea.corp.local:8080'; $env:HTTPS_PROXY=$env:HTTP_PROXY; $env:NODE_OPTIONS='--use-system-ca'; $env:ELECTRON_GET_USE_PROXY='1'; $env:GLOBAL_AGENT_HTTPS_PROXY=$env:HTTP_PROXY`):
 `npx tsc --noEmit -p .` (exactly 4 known errors: `export.ts` ×2, `Step2ConfigurePricing.tsx`, `Step3ReviewProducts.tsx`),
-`npx eslint <changed files>`, `npm test` (54 tests), `npm run test:main` (main-process checks, see below), and packaging into a temp folder (`out/` is often locked by OneDrive):
+`npx eslint <changed files>`, `npm test` (55 tests), `npm run test:main` (main-process checks, see below), and packaging into a temp folder (`out/` is often locked by OneDrive):
 `node -e "require('@electron-forge/core').api.package({dir:process.cwd(),outDir:process.env.TEMP+'\\epl-pkg-check',interactive:false})"`,
 then delete that folder. Release procedure: see *GitHub Actions* below (`npm version X.Y.Z --no-git-tag-version`, commit, BOM-free
 annotated tag, push `main` + tag; CI runs `npm test`, builds and publishes).
@@ -321,7 +325,7 @@ Removed: generic `settings:get` / `settings:set` (Phase A); `customers:delete`, 
 - **Users (`ipc/users.ts`)**: never deleted (deactivate); `users:update` refuses to demote/deactivate the last active admin. The Users screen shows the SharePoint reminder (Edit for Admin/User, Read for Viewer — managed outside the app) and lists managed customers without an active manager (they behave as PBP).
 - **Restore on the damaged-DB screen**: no DB to look the person up in, so `backup:restore` checks that the identity is an active admin **in the backup** (backups without a `users` table are allowed).
 - **FX**: `fx_rates` = shared defaults (`fx:set-defaults`, admins, one audited call); the Analysis screen keeps **session rates** in a module variable (forgotten when the app closes), with *Reset to defaults* and *Save as default rates* (admins).
-- **Renderer**: `AuthProvider` (`auth:me`) + `AccessGuard` in App.tsx; `useCan()` exposes the shared rules for the effective user; `LockBadge` shows the reason; admin-only cards/buttons are hidden or locked. The UI only mirrors the rules — the guard is the protection.
+- **Renderer**: `AuthProvider` (`auth:me`) + `AccessGuard` in App.tsx; `useCan()` exposes the shared rules for the effective user; `LockBadge` shows the reason; admin-only cards/buttons are hidden or locked. The UI only mirrors the rules — the guard is the protection. **Phase C**: `SyncProvider` (`lib/sync.tsx`, context in `lib/syncState.ts`) holds the pushed `SyncStatus`, applies new data when not busy (`lib/busy.ts`: open `Dialog`s + wizard routes) and bumps `dataVersion` (AppShell `<Outlet key={dataVersion}>` re-mounts the screen) when another copy was opened; `useCan()` ANDs every change permission with `writable` and offers `readOnly` + `why(roleAllows, roleReason)` for lock texts (use it for any new hard-coded "admins only" text); `SyncBanners.tsx`, sidebar status line, setup screen `/setup` (`DatabaseSelector.tsx`).
 - **DevTools in releases**: admins only (Ctrl+Shift+I / F12 via `before-input-event`, real user, not the previewed one); otherwise closed on `devtools-opened`.
 - **Help — shown to users as "Guides & Help"** (sidebar entry above *Change Database*; code, routes `/help` and files keep the name `help`) **(`renderer/help/*.md`, `screens/Help/HelpScreen.tsx`)**: topics are Markdown files listed in `help/index.ts` (`?raw` imports; `import.meta.glob` can't be used because tsconfig `module` is CommonJS). `{{ROLES}}` and `{{PERMISSION_MATRIX}}` lines are replaced by content generated from `shared/permissions.ts`. Links `help:<id>`. "?" links: Pricing management card → `pricing-modes`, FX popover → `analysis-fx`. Update *What's new* (`10-whats-new.md`) with each release.
 
@@ -668,7 +672,7 @@ npm install          # install dependencies
 npm start            # dev mode with Vite HMR (DevTools auto-open in dev)
 npm run package      # build unpackaged app (dev/testing only, no installer); prepackage prepares better-sqlite3 for Electron
 npm run make         # build distributable installers (Squirrel .exe + ZIP for Windows); premake does the same
-npm test             # unit tests (node:test via tsx): src/**/*.test.ts — shared/permissions.test.ts + shared/sync.test.ts (54 tests); also run in CI
+npm test             # unit tests (node:test via tsx): src/**/*.test.ts — shared/permissions.test.ts + shared/sync.test.ts (55 tests); also run in CI
 npm run test:main    # main-process checks (scripts/main-checks/*.checks.ts) on temp copies of the sample DBs; local only
 ```
 

@@ -1,8 +1,10 @@
 import { Lock } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { useCan } from '../lib/auth';
 
 // Shown where an action is not available to the current user, with the reason (e.g. "Managed by PBP — view only").
-export function LockBadge({ reason, className, compact }: { reason: string; className?: string; compact?: boolean }) {
+// label: shorter text to show (the full reason stays in the tooltip).
+export function LockBadge({ reason, label, className, compact }: { reason: string; label?: string; className?: string; compact?: boolean }) {
   return (
     <span
       title={reason}
@@ -10,12 +12,14 @@ export function LockBadge({ reason, className, compact }: { reason: string; clas
         compact ? 'px-1.5 py-0.5' : 'px-2 py-0.5', className)}
     >
       <Lock size={10} className="shrink-0" />
-      {!compact && <span className="truncate">{reason}</span>}
+      {!compact && <span className="truncate">{label ?? reason}</span>}
     </span>
   );
 }
 
-// Card-level note for admin-only sections.
+// Card-level note for admin-only sections (for admins on a read-only copy: why it is locked right now).
 export function AdminOnlyNote({ className }: { className?: string }) {
+  const can = useCan();
+  if (can.isAdmin && can.readOnly) return <LockBadge reason={can.readOnly} label="Read-only" className={className} />;
   return <LockBadge reason="Admins only" className={className} />;
 }

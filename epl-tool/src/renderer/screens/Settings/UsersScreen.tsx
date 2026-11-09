@@ -10,6 +10,7 @@ import { Card, CardContent } from '../../components/ui/card';
 import { ConfirmDialog, Dialog } from '../../components/ui/dialog';
 import { Input, Label } from '../../components/ui/input';
 import { useToast } from '../../components/ui/toast';
+import { LockBadge } from '../../components/LockBadge';
 import { ROLES, ROLE_DESCRIPTIONS, ROLE_LABELS } from '../../../shared/permissions';
 import type { AppUser, AuthState, Customer, Role, UserInput } from '../../../types';
 
@@ -51,7 +52,8 @@ export function UsersScreen() {
   const orphans = useMemo(() => orphaned(customers, users), [customers, users]);
   const realId = state?.realUser?.id;
 
-  if (!can.manageUsers) {
+  // Admins see the list and can Preview as… on a read-only copy too; adding and editing needs edit mode.
+  if (!can.isAdmin) {
     return <div className="p-6 text-sm text-gray-500">Only admins can manage users.</div>;
   }
 
@@ -112,9 +114,13 @@ export function UsersScreen() {
             People are recognised by their Windows account and company email — no passwords. Users are never deleted, only deactivated.
           </p>
         </div>
-        <Button onClick={() => { setError(null); setEditing({ id: null, display_name: '', email: '', account: '', role: 'user' }); }} className="gap-2">
-          <Plus size={14} /> Add user
-        </Button>
+        {can.manageUsers ? (
+          <Button onClick={() => { setError(null); setEditing({ id: null, display_name: '', email: '', account: '', role: 'user' }); }} className="gap-2">
+            <Plus size={14} /> Add user
+          </Button>
+        ) : (
+          <LockBadge reason={can.readOnly ?? 'View only'} />
+        )}
       </div>
 
       <div className={cn('flex items-start gap-3 p-4 rounded-lg border text-sm',
@@ -188,12 +194,16 @@ export function UsersScreen() {
                         <Eye size={13} /> Preview as…
                       </Button>
                     )}
-                    <Button variant="ghost" size="sm" onClick={() => { setError(null); setEditing({ id: u.id, display_name: u.display_name, email: u.email ?? '', account: u.account ?? '', role: u.role }); }}>
-                      Edit
-                    </Button>
-                    {u.is_active
-                      ? <Button variant="ghost" size="sm" className="text-red-600 hover:bg-red-50" onClick={() => setDeactivate(u)}>Deactivate</Button>
-                      : <Button variant="ghost" size="sm" onClick={() => setActive(u, true)}>Reactivate</Button>}
+                    {can.manageUsers && (
+                      <>
+                        <Button variant="ghost" size="sm" onClick={() => { setError(null); setEditing({ id: u.id, display_name: u.display_name, email: u.email ?? '', account: u.account ?? '', role: u.role }); }}>
+                          Edit
+                        </Button>
+                        {u.is_active
+                          ? <Button variant="ghost" size="sm" className="text-red-600 hover:bg-red-50" onClick={() => setDeactivate(u)}>Deactivate</Button>
+                          : <Button variant="ghost" size="sm" onClick={() => setActive(u, true)}>Reactivate</Button>}
+                      </>
+                    )}
                   </td>
                 </tr>
               ))}

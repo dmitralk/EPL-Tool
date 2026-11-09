@@ -7,6 +7,13 @@ export const CHANGE_CHECK_SECONDS = 30;
 // A change is published automatically this long after the last change (edit mode).
 export const AUTO_PUBLISH_SECONDS = 60;
 
+// "about a minute", "30 seconds": delays as shown on screens and in Help.
+export function describeSeconds(seconds: number): string {
+  if (seconds === 60) return 'about a minute';
+  if (seconds % 60 === 0) return `${seconds / 60} minutes`;
+  return `${seconds} seconds`;
+}
+
 // Oldest app version allowed to edit a database published by this version (written to the manifest as minAppVersion).
 // Raise it when older versions must stop editing (e.g. they would write data this version can't read).
 export const MIN_EDIT_APP_VERSION = '0.7.0';

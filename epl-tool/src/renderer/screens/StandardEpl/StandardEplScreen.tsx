@@ -556,7 +556,9 @@ export function StandardEplScreen() {
           {/* Published version note */}
           {!canEdit ? (
             <div className="flex items-center gap-2 mb-3 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-500">
-              <LockBadge reason="View only" /> Only admins change the Standard EPL. You can view, compare, export and email it.
+              {can.isAdmin && can.readOnly
+                ? <><LockBadge reason="View only" /> {can.readOnly} You can view, compare, export and email it.</>
+                : <><LockBadge reason="View only" /> Only admins change the Standard EPL. You can view, compare, export and email it.</>}
             </div>
           ) : !isDraftSelected && (
             <div className="flex items-center gap-2 mb-3 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-500">

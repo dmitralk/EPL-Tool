@@ -103,7 +103,7 @@ export function CurrenciesScreen() {
             {!adding && can.referenceData && (
               <Button size="sm" variant="outline" onClick={() => setAdding(true)}>+ Add Currency</Button>
             )}
-            {!can.referenceData && <LockBadge reason="View only — admins manage currencies" />}
+            {!can.referenceData && <LockBadge reason={can.why(can.isAdmin, 'View only — admins manage currencies')} />}
           </div>
         </CardHeader>
         <CardContent>

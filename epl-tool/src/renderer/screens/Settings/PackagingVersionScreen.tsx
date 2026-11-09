@@ -122,7 +122,7 @@ export function PackagingVersionScreen() {
         </button>
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-bold text-gray-900">{decodedVersion}</h1>
-          {can.referenceData ? <Button variant="outline" onClick={openAddDialog}>+ Add Row</Button> : <LockBadge reason="View only — admins manage packaging" />}
+          {can.referenceData ? <Button variant="outline" onClick={openAddDialog}>+ Add Row</Button> : <LockBadge reason={can.why(can.isAdmin, 'View only — admins manage packaging')} />}
         </div>
         <p className="text-xs text-gray-400 mt-1">
           Rows without a price are treated as section labels in the export and won't appear as line items.

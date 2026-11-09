@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { Loader2 } from 'lucide-react';
 import { AppShell } from './components/layout/AppShell';
 import { DatabaseSelector } from './screens/DatabaseSelector';
 import { Dashboard } from './screens/Dashboard';
@@ -25,21 +26,40 @@ import { ActivityScreen } from './screens/Settings/ActivityScreen';
 import { HelpScreen } from './screens/Help/HelpScreen';
 import { ToastProvider } from './components/ui/toast';
 import { AuthProvider, useAuth } from './lib/auth';
-import type { AuthState } from '../types';
+import { SyncProvider } from './lib/sync';
+import { useSync } from './lib/syncState';
 
-// Re-reads who is signed in each time the app shell is entered: no database → /setup, not on the user list → /no-access.
+// Re-reads who is signed in each time the app shell is entered: no database → /setup (or "Connecting…" while the first
+// copy of the shared database is downloaded), not on the user list → /no-access.
 function AccessGuard({ children }: { children: React.ReactNode }) {
-  const { refresh } = useAuth();
-  const [state, setState] = useState<AuthState | null>(null);
+  const { state, refresh } = useAuth();
+  const { status } = useSync();
+  const [checked, setChecked] = useState(false);
 
   useEffect(() => {
-    refresh().then(setState);
+    refresh().then(() => setChecked(true));
   }, [refresh]);
 
-  if (!state) return null;
-  if (!state.dbOpen) return <Navigate to="/setup" replace />;
+  if (!checked || !state || !status) return null;
+  if (!state.dbOpen) {
+    if (status.phase === 'connecting') return <ConnectingScreen path={status.path} />;
+    return <Navigate to="/setup" replace />;
+  }
   if (!state.user) return <Navigate to="/no-access" replace />;
   return <>{children}</>;
+}
+
+function ConnectingScreen({ path }: { path: string | null }) {
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-gray-100 flex items-center justify-center p-6">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-8 text-center">
+        <Loader2 size={28} className="mx-auto mb-4 text-blue-600 animate-spin" />
+        <h1 className="text-lg font-semibold text-gray-900 mb-1">Connecting to the shared database…</h1>
+        <p className="text-sm text-gray-500">Copying the latest version to this PC. OneDrive may still be downloading it.</p>
+        {path && <p className="font-mono text-xs text-gray-400 mt-3 break-all">{path}</p>}
+      </div>
+    </div>
+  );
 }
 
 export function App() {
@@ -47,6 +67,7 @@ export function App() {
     <ToastProvider>
       <HashRouter>
         <AuthProvider>
+          <SyncProvider>
           <Routes>
             <Route path="/setup" element={<DatabaseSelector />} />
             <Route path="/no-access" element={<NoAccessScreen />} />
@@ -82,6 +103,7 @@ export function App() {
             </Route>
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
+          </SyncProvider>
         </AuthProvider>
       </HashRouter>
     </ToastProvider>

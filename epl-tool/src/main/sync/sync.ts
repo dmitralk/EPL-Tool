@@ -187,7 +187,10 @@ function connectErrorMessage(e: unknown, centralPath: string): string {
   return (e as Error).message;
 }
 
-// Status → screens (ipc/sync.ts sends it to the window).
+// Status → screens (ipc/sync.ts sends it to the window). Only real changes are pushed (not the time of each 30 s check),
+// so the screens don't re-render for nothing.
+let lastEmitted = '';
+
 export function onStatus(listener: (status: SyncStatus) => void): () => void {
   listeners.add(listener);
   return () => listeners.delete(listener);
@@ -195,6 +198,9 @@ export function onStatus(listener: (status: SyncStatus) => void): () => void {
 
 function emit(): void {
   const status = getStatus();
+  const key = JSON.stringify({ ...status, lastCheckAt: null });
+  if (key === lastEmitted) return;
+  lastEmitted = key;
   for (const l of listeners) {
     try { l(status); } catch { /* a closed window */ }
   }

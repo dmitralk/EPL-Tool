@@ -235,8 +235,10 @@ export class SyncedFolderStore implements CentralStore {
   ): Promise<PublishResult> {
     const manifest = await this.readManifest();
     if (manifest && manifest.generation > expected.generation) {
-      return { ok: false, conflict: `${manifest.publishedBy ?? 'Someone else'} published a newer version` +
-        `${manifest.publishedAt ? ` (${manifest.publishedAt})` : ''} after you started editing.` };
+      const when = manifest.publishedAt
+        ? ` on ${new Date(manifest.publishedAt).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}`
+        : '';
+      return { ok: false, conflict: `${manifest.publishedBy ?? 'Someone else'} published a newer version${when} after you started editing.` };
     }
     let centralSha: string;
     try {
