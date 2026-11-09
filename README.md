@@ -15,6 +15,8 @@ A desktop application for generating and managing customer Export Price Lists (E
 - Automatic, verified database backups
 - Users and roles (Admin / User / Viewer, recognised by their Windows account — no passwords), a pricing management mode per
   customer, an activity log visible to everybody, and built-in **Guides & Help**
+- A **shared database** on SharePoint for several people: everybody works on a local copy that is kept up to date
+  (read-only by default); admins click *Start editing*, and their changes are published safely for everybody
 
 ---
 
@@ -82,8 +84,10 @@ The tag triggers the Windows build and publishes a GitHub Release with `EPL Tool
 ## First-time setup
 
 1. Launch the app
-2. Click **Open Database** and select the existing `.db` file (normally the shared one on SharePoint)
-3. The first time a database is opened with v0.6 or later, the person opening it becomes its **first admin**. That admin
+2. Click **Connect to shared database** and select the database file in the SharePoint folder synced to your PC (or **Open a
+   local database** for a test database that is not shared). Next time the app reconnects by itself
+3. The first time a database is used with v0.6 or later, the first admin is created: with a local database, the person
+   opening it; with a shared database without users, the person who clicks **Start editing**. That admin
    adds the other people in **Settings → Users** (by company email, with a role) and gives them access to the SharePoint
    folder separately (Edit for Admins and Users, Read for Viewers)
 4. If exports show no logo, an admin goes to **Settings → Company Logo** and selects the logo image (PNG, JPEG or GIF, under 1 MB). It is stored inside the database, so exports made on any computer show it — this only needs to be done once (logos chosen with older versions were only linked to a file on one computer and must be selected again)
@@ -104,7 +108,7 @@ The original one-off Excel import (`All_Prices.xlsx`) has been removed. A wizard
 | **Analysis** | Every price list line vs the Standard EPL (USD, EUR, or All currencies via FX); choose columns; export to Excel |
 | **Products** | Add, edit, or delete products (admins) |
 | **Standard EPL** | Versioned standard prices (USD + EUR): draft → publish (admins), compare versions; packaging charges; export / email |
-| **Guides & Help** | Documentation and how-to guides: roles and permissions, pricing modes, wizards, emails, FX rates, activity log, backups, what's new (sidebar, above *Change Database*) |
+| **Guides & Help** | Documentation and how-to guides: shared database, roles and permissions, pricing modes, wizards, emails, FX rates, activity log, backups, what's new (sidebar, above *Change Database*) |
 | **Settings** | Database, users (admins), activity log, backups, logo, PBP emails, units, packaging, currencies, hidden customers |
 
 Customer pickers everywhere work like Power BI slicers: click the dropdown, type part of the name or SAP code, tick one or several customers.
@@ -149,17 +153,36 @@ Products are pre-populated from the customer's most recent price list. If no pre
 
 ## Database location
 
-The database is a single `.db` file. You can store it on SharePoint or a shared drive. To switch databases, use **Change Database** in the sidebar.
+The database is a single `.db` file. To switch databases, use **Change Database** in the sidebar.
 
-The app remembers the last opened database path between sessions (on your computer only; the path is not stored in the database). If the file is not there (e.g. SharePoint not yet synced), the app reports it instead of creating an empty database. A database last used by a newer version of EPL Tool is not opened: update the app first.
+- **Shared database** (*Connect to shared database*, from v0.7): the file stays in a SharePoint folder synced by OneDrive.
+  EPL Tool never opens it directly: it copies it to `%LOCALAPPDATA%\epl-tool\cache` and works on that copy, read-only. Every
+  30 seconds it looks for newer data and applies it (or offers *Refresh* while a dialog or wizard is open); when SharePoint
+  can't be reached it keeps working on the last copy (*Offline copy*). Admins click **Start editing** to work on a fresh
+  working copy; changes are published about a minute after the last change and on **Finish editing**. A publish is
+  refused if someone else published in between (generation check) — nothing is overwritten, the work is kept in
+  `EPL-Conflicts/`. The sidebar shows the status (*Read-only · data of …*, *Editing*, *Offline copy*). Users and Viewers are
+  read-only in v0.7; the edit slot for several editors comes with v0.8. Details: **Guides & Help → Shared database** and
+  [docs/multi-user-study.md](docs/multi-user-study.md).
+- **Local database** (*Open a local database*): opened directly, as before v0.7 — for test databases. A database that has
+  been published as shared (it has a `.manifest.json` next to it) can't be opened this way.
+
+The app remembers the connection between sessions (on your computer only; nothing about it is stored in the database). If the
+file is not there (e.g. SharePoint not yet synced), the app reports it instead of creating an empty database. A local
+database last used by a newer version of EPL Tool is not opened; a shared one published by a newer version can still be read,
+but changes need the update.
 
 ---
 
 ## Backups
 
-- Every time the database is opened, a verified backup is written to an **`EPL-Backups`** folder next to the database file (SharePoint database → backups on SharePoint; local → local). The 20 most recent are kept.
-- **Settings → Backups**: see the list and **Open folder** (everybody); **Back up now** and **Restore** (admins). Before restoring, the current database is saved as a "pre-restore" copy, so a restore can be undone.
-- If the database is damaged, the app does not open it and offers to restore the latest backup instead (allowed for people who are admins in that backup).
+- A verified backup is written to an **`EPL-Backups`** folder next to the database file: for a **shared** database each time an
+  admin clicks *Start editing* (and before a restore) — reading never writes to SharePoint; for a **local** database each time
+  it is opened. The 20 most recent are kept.
+- **Settings → Backups**: see the list and **Open folder** (everybody); **Back up now** and **Restore** (admins; with a shared
+  database while editing — a restore is then published to everybody). Before restoring, the current database is saved as a
+  "pre-restore" copy, so a restore can be undone.
+- If a local database is damaged, the app does not open it and offers to restore the latest backup instead (allowed for people who are admins in that backup). If the shared file is damaged, everybody keeps their last good copy and an admin restores a backup from Settings.
 - The database uses SQLite's rollback-journal mode so the synced `.db` file is always self-contained (the previous WAL mode was a likely cause of past corruption on OneDrive/SharePoint).
 
 ---

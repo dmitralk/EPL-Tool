@@ -4,19 +4,26 @@ This file is read automatically by Claude Code at conversation start. It gives f
 
 ---
 
-## Current state & next session (updated 9 Nov 2026, Phase C in progress)
+## Current state & next session (updated 9 Nov 2026, end of session: Phase C built, not released)
 
 **Released:** **v0.6.1** (6 Nov 2026) = dev-plan Phase A (foundations) + Phase B (access rights + Guides & Help). GitHub release:
 https://github.com/dmitralk/EPL-Tool/releases/tag/v0.6.1
 
-**In progress: Phase C — read copy + publish → v0.7** (`docs/dev-plan.md` Phase C). The kickoff answers (9 Nov: all proposals
-accepted, cache in `%LOCALAPPDATA%`) and the **approved technical design** are recorded in the dev-plan's Phase C section — follow
-that design. Build steps, one commit each after asking the user: 1) Migration 8 `sync_meta` + `CentralStore`/`SyncedFolderStore`
-(`main/sync/`) — **done** · 2) read mode (`query_only`, change detection, offline, guard `writes` flag; `main/sync/sync.ts`,
-`ipc/sync.ts`) — **done (main process)** · 3) admin edit mode (auto-publish, generation check, `EPL-Conflicts/`,
-unpublished-changes recovery, restore through the working copy, publish on quit) — **done (main process)** · 4) setup screen,
-sidebar status line, banners, `useCan()` read-only gating, busy signal — **done** (checked visually in an isolated dev
-instance) · 5) Guides & Help v0.7 topics + docs → release v0.7.0.
+**Built, not released: Phase C — read copy + publish → v0.7.0** (`docs/dev-plan.md` Phase C: kickoff decisions of 9 Nov and
+the **approved technical design**). Five commits, one per step: 1) Migration 8 `sync_meta` + `CentralStore`/`SyncedFolderStore`
+(`main/sync/centralStore.ts`) · 2) read mode (`main/sync/sync.ts`, `ipc/sync.ts`, guard `writes` flag) · 3) admin edit mode
+(publish + generation check, `EPL-Conflicts/`, recovery, restore, publish on quit) · 4) screens (setup screen, sidebar status
+line, banners, `useCan()` read-only gating, busy signal) · 5) Guides & Help topic *Shared database* + docs. Steps 1–2 are pushed;
+steps 3–5 are **local commits, not pushed** (the user pushes later). Commit `aff14b5` between steps 3 and 4 is another agent's
+docs-only pointer to a local-only AI study (`docs/local/`, excluded via `.git/info/exclude`).
+
+**Next:**
+1. Before pushing, review with the user what goes public (see the public-repo rule below): the pending commits, and whether
+   `aff14b5`'s wording and existing corporate details in tracked files (proxy host in this file, sample data files) may stay.
+2. The **two-PC test** with a colleague on a separate SharePoint **test** folder holding a copy of the database (decision 10;
+   scenarios in multi-user study §7 for read/publish, not the edit slot). Install a build on the colleague's PC.
+3. Release **v0.7.0** (`npm version 0.7.0 --no-git-tag-version`, What's new already describes it, tag, push). Then Phase D
+   (edit slot), which also brings *Start editing* for Users.
 
 **Working agreements with the user**
 - Ask (with a form) before committing; always add the `Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>`
@@ -31,6 +38,9 @@ instance) · 5) Guides & Help v0.7 topics + docs → release v0.7.0.
 - Keep `docs/` (dev-plan + studies), CLAUDE.md and README.md updated as phases complete; update the Guides & Help topic
   *What's new* (`epl-tool/src/renderer/help/10-whats-new.md`) with each release.
 - Never hard-code people's emails or names in the repo (admins are added in Settings → Users).
+- **The GitHub repo is public** (decided by the user 9 Nov 2026): never commit or push corporate details (company hosts, IDs,
+  internal links, user paths, real emails); sensitive notes stay in `docs/local/` (excluded via `.git/info/exclude`). Stage
+  files explicitly and scan the diff before each commit; ask before pushing.
 
 **Verify after changes** (from `epl-tool/`; for anything that downloads — npm, packaging — first set in the same PowerShell call:
 `$env:HTTP_PROXY='http://cloudproxy-emea.corp.local:8080'; $env:HTTPS_PROXY=$env:HTTP_PROXY; $env:NODE_OPTIONS='--use-system-ca'; $env:ELECTRON_GET_USE_PROXY='1'; $env:GLOBAL_AGENT_HTTPS_PROXY=$env:HTTP_PROXY`):
@@ -110,7 +120,8 @@ annotated tag, push `main` + tag; CI runs `npm test`, builds and publishes).
 │   │   │   ├── currentUser.ts ← user-list lookup (account, then email), effective actor (with Preview as…), audit label, AuthState
 │   │   │   ├── customerAccess.ts ← customer managers, requireCustomerChange / requireCustomerHide (per-customer refusals)
 │   │   │   ├── audit.ts    ← audit(db, entry) — call inside the same transaction as the change; diffFields()
-│   │   │   ├── localSettings.ts ← per-PC settings.json (lastDbPath + per-user prefs); never in the DB
+│   │   │   ├── localSettings.ts ← per-PC settings.json (connection {mode local|shared, path}, lastDbPath, per-user prefs); never in the DB
+│   │   │   ├── sync/       ← Phase C shared database: centralStore.ts (CentralStore/SyncedFolderStore — the only code touching the shared folder), sync.ts (connection, read/edit modes, publish, recovery, status), paths.ts (%LOCALAPPDATA%\epl-tool cache/work), oneDrive.ts (synced-folder detection)
 │   │   │   ├── logo.ts     ← logo stored in the DB as a data URL (app_settings.logo_data_url)
 │   │   │   ├── menu.ts     ← release menu policy (none on Windows) + DevTools guard (admins only in releases)
 │   │   │   ├── ipc/        ← all IPC handlers (entity:action naming), each registered via guard.ts handle()
@@ -152,14 +163,14 @@ annotated tag, push `main` + tag; CI runs `npm test`, builds and publishes).
 │   │       │   └── utils.ts  ← cn, ipcErrorMessage, formatDate, formatCurrency, todayISO, nextVersion, priceTypeLabel, fmtNum/absDelta/pctDelta (shared delta helpers)
 │   │       ├── components/
 │   │       │   ├── ui/     ← button, input, select, dialog, card, badge, toast, searchable-select (slicer-style dropdown)
-│   │       │   ├── layout/ ← AppShell.tsx (Preview-as banner), Sidebar.tsx (bottom: Guides & Help, Change Database, Settings; user + role)
+│   │       │   ├── layout/ ← AppShell.tsx (Preview-as banner + SyncBanners, Outlet keyed by dataVersion), SyncBanners.tsx, Sidebar.tsx (bottom: Guides & Help, Change Database → /setup, Settings; sync status line + Start/Finish editing + Refresh; user + role)
 │   │       │   ├── LockBadge.tsx          ← lock + reason ("Managed by PBP — view only"), AdminOnlyNote
 │   │       │   ├── ModeBadge.tsx          ← pricing mode badge
 │   │       │   ├── Markdown.tsx           ← tiny Markdown renderer for Help ({{BLOCK}} lines = generated content)
 │   │       │   ├── BackupPanel.tsx        ← backup list / back up now / open folder / restore (Settings + damaged-DB screen)
 │   │       │   └── EmailComposeDialog.tsx ← shared subject/body compose step used by every Email button
 │   │       └── screens/
-│   │           ├── DatabaseSelector.tsx        ← route /setup: open/create DB; shows restore UI when the DB failed its integrity check
+│   │           ├── DatabaseSelector.tsx        ← route /setup: Connect to shared database, open/create a local DB, offer for a v0.6 DB in a synced folder; restore UI when a local DB failed its integrity check
 │   │           ├── NoAccessScreen.tsx          ← route /no-access: identity, admin contacts, Request access, Try again, open another DB
 │   │           ├── Help/HelpScreen.tsx         ← routes /help, /help/:topic: topic list + search, "Your access" block, generated roles/matrix
 │   │           ├── Dashboard.tsx               ← stats cards, recent price lists table; "+ New Price List" routes to /price-lists/new (gateway)
@@ -242,11 +253,11 @@ audit_log            -- (Migration 7) at (ISO UTC), user_id (the real person), u
 
 Pragmas set on every open: `journal_mode=DELETE`, `foreign_keys=ON`, `synchronous=FULL`. **Do not switch back to WAL**: the separate `-wal` file gets synced out of step with the `.db` by OneDrive/SharePoint, which caused past corruption. Existing WAL databases are converted automatically on open.
 
-**Open sequence (`openDatabase`)**: open with `fileMustExist` (only `db:create` passes `create: true`, so a not-yet-synced SharePoint file is never replaced by an empty DB) → `journal_mode=DELETE` → `PRAGMA quick_check` (fail → close, record `lastOpenError` with `corrupt: true`, throw; renderer shows restore UI on `/setup`) → `PRAGMA user_version` newer than `SCHEMA_VERSION` → refuse (*"This database needs a newer version of EPL Tool"*, `corrupt: false`, file untouched) → close previous connection → startup backup (existing files only, never blocks open) → schema/seed/migrations.
+**Open sequence (`openDatabase`)**: open with `fileMustExist` (only `db:create` passes `create: true`, so a not-yet-synced SharePoint file is never replaced by an empty DB) → `journal_mode=DELETE` → `PRAGMA quick_check` (fail → close, record `lastOpenError` with `corrupt: true`, throw; renderer shows restore UI on `/setup`) → `PRAGMA user_version` newer than `SCHEMA_VERSION` → refuse (*"This database needs a newer version of EPL Tool"*, `corrupt: false`, file untouched) unless `allowNewerSchema` (shared read copies: opened as they are with `query_only`, no migrations) → close previous connection → startup backup (existing files only, never blocks open; shared copies pass `skipBackup`) → schema/seed/migrations → first-admin bootstrap (not with `bootstrap: false` / `readOnly`) → `query_only = ON` when `readOnly`.
 
 **Opening an up-to-date database must not change the file** (needed for the shared-DB plan): no `db_path` is written, and seeds on `AUTOINCREMENT` tables use `INSERT … WHERE NOT EXISTS` — `INSERT OR IGNORE` there still rewrites `sqlite_sequence` and bumps the file change counter on every open.
 
-**Backups (`main/backup.ts`, `ipc/backup.ts`, `components/BackupPanel.tsx`)**: stored in `EPL-Backups/` next to the DB file (so SharePoint DB → SharePoint backups, local → local). Name `{dbname}_YYYY-MM-DD_HH-mm-ss.db`; created with `VACUUM INTO` to a `.partial` file, verified with `quick_check` read-only, then renamed. 20 most recent kept (sorted by the timestamp in the name — Windows `copyFile` preserves mtime). Restore: verifies backup → closes DB → raw copy of current file as `..._pre-restore.db` → copy backup over DB (via `.restoring` temp + rename, stale `-wal/-shm/-journal` removed) → reopen with `skipBackup`. `backup:restore` only accepts files inside the target DB's `EPL-Backups` folder matching the name pattern. UI: Settings → Backups card, and the `/setup` screen when the DB is damaged. Channels: `db:last-open-error`, `backup:list`, `backup:create`, `backup:open-folder`, `backup:restore`.
+**Backups (`main/backup.ts`, `ipc/backup.ts`, `components/BackupPanel.tsx`)**: stored in `EPL-Backups/` next to the DB file (so SharePoint DB → SharePoint backups, local → local). Name `{dbname}_YYYY-MM-DD_HH-mm-ss.db`; created with `VACUUM INTO` to a `.partial` file, verified with `quick_check` read-only, then renamed. 20 most recent kept (sorted by the timestamp in the name — Windows `copyFile` preserves mtime). Restore: verifies backup → closes DB → raw copy of current file as `..._pre-restore.db` → copy backup over DB (via `.restoring` temp + rename, stale `-wal/-shm/-journal` removed) → reopen with `skipBackup`. `backup:restore` only accepts files inside the target DB's `EPL-Backups` folder matching the name pattern. UI: Settings → Backups card, and the `/setup` screen when the DB is damaged. Channels: `db:last-open-error`, `backup:list`, `backup:create`, `backup:open-folder`, `backup:restore`. **Shared database (Phase C):** the backup is taken at *Start editing* (of the downloaded copy, into the central folder's `EPL-Backups/`), never on open; `backup:create` needs edit mode (writes flag); `backup:restore` goes through `restoreSharedBackup` (backup → working copy → publish at once; allowed from read mode only when the central file is damaged).
 
 Schema runs `CREATE TABLE IF NOT EXISTS` so opening an existing DB is safe. Units and currencies are seeded with `INSERT … WHERE NOT EXISTS`, `fx_rates` with `INSERT OR IGNORE` (so `fx_rates` needs no numbered migration — it appears automatically on next DB open).
 
@@ -712,7 +723,7 @@ Additionally: `asar.unpack: '**/*.node'` unpacks `.node` binaries from the asar 
 
 ### DB path persistence
 
-The last-opened DB path is kept only in the local **`settings.json`** (`lastDbPath`, written by `saveDbPath()` in `main/localSettings.ts` on `db:open` / `db:create`, read on startup by `getSavedDbPath()` to auto-reconnect). `db:get-path` returns the path of the currently open DB from memory. The path is **never written into the database** any more (the old `app_settings.db_path` key may remain in older DBs and is ignored).
+The connection is kept only in the local **`settings.json`**: `connection: { mode: 'local' | 'shared', path }` (written by `saveDbPath()` for local mode — which also keeps `lastDbPath` — and `saveSharedConnection()` for shared mode, both in `main/localSettings.ts`), read at startup by `startup()` in `main/sync/sync.ts`. Without a `connection` (a v0.6 install), `lastDbPath` is reopened as a local DB unless it lies in a OneDrive/SharePoint-synced folder: then the setup screen offers to connect to it as shared (`legacySuggestion`). `db:get-path` returns `dataPath()` (the central DB in shared mode). The path is **never written into the database** (the old `app_settings.db_path` key may remain in older DBs and is ignored).
 
 ---
 
@@ -741,6 +752,6 @@ The last-opened DB path is kept only in the local **`settings.json`** (`lastDbPa
 - **PBP emails in drafts**: the customer page displays PBP copy/common from `admin_emails` (Settings), but drafts use each customer's own `email_pbp_copy` / `email_pbp_common` columns. Changing an admin email in Settings does not change existing customers' drafts. Candidate fix: build recipients from `admin_emails` in `export:open-mail-bulk`.
 - **Data files in the repo**: `EPL-Database.db`, `EPL-Database BackUp.db`, `All_Prices.xlsx`, `All_PricesTest.xlsx` are tracked in git and contain customer names, emails and prices. If the repo is public, make it private or untrack them (history keeps old copies unless rewritten).
 - **Pre-existing type/lint errors**: see Build commands → Type check / lint.
-- **Multi-user access + user access rights (in progress; single-user only today)**: `docs/multi-user-study.md` (local read copy + single "edit slot" via claim files next to the DB on SharePoint + atomic publish with a generation check), `docs/access-rights-study.md` (Windows-account identity, Admin/User/Viewer roles, per-customer pricing mode Open / Managed by PBP / Managed by named users, server-side IPC guard, audit log) and `docs/dev-plan.md` (phases A–F, releases v0.6–v0.8.1, in-app Help plan, historical price-list import spec). Decisions are recorded in each study. **Phase A (Foundations) and Phase B (access rights + Guides & Help) done and released as v0.6.1 on 6 Nov 2026** (permission matrix checked by the user with *Preview as…*). Next: Phase C (read copy + publish) → v0.7. Heads-up for Migration 7: the bootstrap admin is whoever's Windows identity first opens a database with v0.6.1 (on the Windows dev PC that is the account whose UPN is one of the named admins); the other admins are then added in Settings → Users. Until multi-user is implemented, only one person should edit the central DB.
+- **Multi-user access + user access rights (Phase C built; edit slot next)**: `docs/multi-user-study.md` (local read copy + single "edit slot" via claim files next to the DB on SharePoint + atomic publish with a generation check), `docs/access-rights-study.md` (Windows-account identity, Admin/User/Viewer roles, per-customer pricing mode Open / Managed by PBP / Managed by named users, server-side IPC guard, audit log) and `docs/dev-plan.md` (phases A–F, releases v0.6–v0.8.1, in-app Help plan, historical price-list import spec). Decisions are recorded in each study. **Phase A (Foundations) and Phase B (access rights + Guides & Help) done and released as v0.6.1 on 6 Nov 2026** (permission matrix checked by the user with *Preview as…*). **Phase C (read copy + publish) built 9 Nov 2026**, to be released as v0.7.0 after the two-PC test; in v0.7 only admins edit the shared database, and two admins editing at once is caught by the generation check (no edit slot until Phase D). Heads-up for Migration 7: the bootstrap admin is whoever's Windows identity first opens a database with v0.6.1 (on the Windows dev PC that is the account whose UPN is one of the named admins); the other admins are then added in Settings → Users. With v0.7, a shared database without users gets its first admin at *Start editing*.
 - **Open product questions (not yet decided by the user)**: (1) mass wizard Step 1 customer dropdown currently only *filters* the table — the user may prefer that ticking in the dropdown also selects rows for repricing; (2) after deleting a price list, the customer falls back to the remaining list with the latest *effective* date (not the most recently *created*) — confirm if this is the desired rule.
 - **AI features (study only, nothing implemented; 9 Nov 2026)**: using the company's per-user LLM service from EPL Tool was studied and tested end to end on the Windows dev PC (browser sign-in, quota, model list, a model answer). Findings, connection details, integration design (sign-in in the main process, `net.fetch`, encrypted token cache, no AI write path), use cases, open questions and a re-runnable test script are in **`docs/local/ai-study.md`** + `docs/local/llmhub-test/`. That folder is **local only**: excluded through `.git/info/exclude` because this GitHub repo is public and the study contains internal company details — it exists only in the SharePoint-synced working folder, not in clones. Don't copy those details (hosts, IDs, internal links) into tracked files or code before the open questions in the study (incl. repo visibility) are settled.

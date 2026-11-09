@@ -1,6 +1,8 @@
 # EPL Tool — Multi-user access study
 
-*Status: approved direction, decisions recorded in §8 · §5.9 items 1–3 and 6 done 6 Nov 2026 · based on EPL Tool v0.5.2*
+*Status: approved direction, decisions recorded in §8 · §5.9 done (items 1–3 and 6 on 6 Nov, 4 with Phase B, 5 with Phase C) ·
+§5.2–5.8 built in Phase C on 9 Nov 2026 except the edit slot (Phase D) — Phase C decisions and the technical design are in
+[dev-plan.md](./dev-plan.md) · based on EPL Tool v0.5.2*
 *Related: [access-rights-study.md](./access-rights-study.md) (who may change what) · [dev-plan.md](./dev-plan.md) (combined
 development plan, which replaces §7)*
 
@@ -195,13 +197,15 @@ One person edits; everyone else gets exports or reads a copy. It costs nothing a
 - **One claim file per claimant** instead of a single shared lock file. Nobody ever writes someone else's file, so OneDrive can
   never create conflict copies of the lock itself. Every PC reads the same set of claim files and reaches the same decision (§5.4).
 
-**On each PC** (`%APPDATA%\epl-tool\`, not synced):
+**On each PC** (not synced; decided 9 Nov 2026: the copies in `%LOCALAPPDATA%\epl-tool\`, not roamed with the Windows
+profile; `settings.json` stays in `%APPDATA%\epl-tool\`):
 
 ```
-settings.json            ← central DB path, display name, email templates (per user), UI preferences
-cache\EPL-Database.db    ← read-only snapshot of the central DB
-work\EPL-Database.db     ← working copy while editing
-work\session.json        ← slotId, base generation, last published generation, unpublished-changes flag
+%APPDATA%\epl-tool\settings.json   ← connection (shared central DB or local file), email templates (per user), UI preferences
+%LOCALAPPDATA%\epl-tool\
+  cache\EPL-Database.db            ← read-only snapshot of the central DB (+ cache.json: source path, sha256, generation)
+  work\EPL-Database.db             ← working copy while editing
+  work\session.json                ← base generation + sha256, unpublished-changes flag (crash recovery)
 ```
 
 **Inside the DB:** a small `sync_meta` table (or `app_settings` keys) holds `generation`, `published_by`, `published_at` and
@@ -373,7 +377,7 @@ packaging, emails) appear in a short report so they can be redone by hand. Given
 
 ### 5.9 Making the database shareable (Phase 1 — useful on its own)
 
-Items 1, 2, 3 and 6 were **done in Phase A (6 Nov 2026)**; 4 comes with Phase B and 5 with Phase C ([dev-plan.md](./dev-plan.md)).
+Items 1, 2, 3 and 6 were **done in Phase A (6 Nov 2026)**, 4 in Phase B and 5 in Phase C (9 Nov 2026) ([dev-plan.md](./dev-plan.md)).
 
 1. **Stop writing `db_path` into the DB** (in `db:open` and `db:create`). `db:get-path` returns the path known to the main
    process instead. *(Done.)*
@@ -385,7 +389,7 @@ Items 1, 2, 3 and 6 were **done in Phase A (6 Nov 2026)**; 4 comes with Phase B 
 4. **FX rates on the Analysis screen:** admins set the shared **default** rates, in edit mode. Anybody can change rates for their
    own session; these are not saved, so this causes no database write. *(Decided.)*
 5. **Backups:** no backup on every open. Take one at the start of each edit session and before a restore (still keeping 20).
-   Readers never write to SharePoint.
+   Readers never write to SharePoint. *(Done in Phase C, 9 Nov 2026; a local database still gets its backup on open.)*
 6. **Schema version:** each migration increases `PRAGMA user_version`, so the version can be read without running the migrations.
    *(Done: existing databases are stamped 6; later migrations are numbered steps.)* Opening an up-to-date database no longer
    changes the file at all (the `units` / `currencies` seeds used to rewrite `sqlite_sequence` on every open).

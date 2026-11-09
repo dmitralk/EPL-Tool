@@ -92,7 +92,12 @@ export function Sidebar() {
           <div className="px-3 pt-3 mt-2 border-t border-gray-800 text-xs">
             <div className="flex items-start gap-2" title={line.detail}>
               <span className={cn('mt-1 h-2 w-2 rounded-full shrink-0', TONE_DOT[line.tone])} />
-              <span className="text-gray-300 leading-snug">{line.text}</span>
+              <span className="text-gray-300 leading-snug flex-1">{line.text}</span>
+              {status.mode === 'shared' && (
+                <NavLink to="/help/shared-database" title="About the shared database" className="text-gray-500 hover:text-gray-200">
+                  <HelpCircle size={12} />
+                </NavLink>
+              )}
             </div>
             {status.mode === 'shared' && (
               <div className="flex flex-wrap gap-1.5 mt-2">

@@ -19,6 +19,12 @@ Windows, and looks you up in the user list stored in the database. The user list
 Your name and role are shown at the bottom of the sidebar. The box at the top of this **Guides & Help** page shows your
 access, the customers you manage and the admins to contact.
 
+## Where the data lives
+
+The database is shared through a SharePoint folder. EPL Tool works on a copy on your PC that it keeps up to date, and
+starts **read-only**; admins click **Start editing** to make changes, which are then published for everybody. The status
+line at the bottom of the sidebar shows which data you see. See [Shared database](help:shared-database).
+
 ## The main screens
 
 | Screen | What it is for |
