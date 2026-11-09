@@ -2,7 +2,8 @@
 
 *Status: decisions recorded · Phases A + B done · v0.6 released as v0.6.1 · Phase C in progress (design approved 9 Nov 2026) ·
 updated 9 Nov 2026 · current version v0.6.1*
-*Studies: [access-rights-study.md](./access-rights-study.md) · [multi-user-study.md](./multi-user-study.md)*
+*Studies: [access-rights-study.md](./access-rights-study.md) · [multi-user-study.md](./multi-user-study.md) · AI features:
+`docs/local/ai-study.md` (local only, not in git — see CLAUDE.md → Known issues / open items)*
 
 ---
 
