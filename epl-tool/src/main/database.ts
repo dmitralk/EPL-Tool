@@ -171,8 +171,23 @@ CREATE INDEX idx_audit_at       ON audit_log(at);
 CREATE INDEX idx_audit_customer ON audit_log(customer_ref_sap);
 `;
 
+// Migration 8 — shared database (multi-user study §5): the generation number of the published copy and who published it.
+// One row; generation 0 = never published. Stamped by the publish code, never edited by hand.
+const MIGRATION_8_SQL = `
+CREATE TABLE sync_meta (
+  id                    INTEGER PRIMARY KEY CHECK (id = 1),
+  generation            INTEGER NOT NULL DEFAULT 0,
+  published_by          TEXT,
+  published_by_account  TEXT,
+  published_at          TEXT,
+  published_app_version TEXT
+);
+INSERT INTO sync_meta (id, generation) VALUES (1, 0);
+`;
+
 const MIGRATIONS: Migration[] = [
   { version: 7, up: db => db.exec(MIGRATION_7_SQL) },
+  { version: 8, up: db => db.exec(MIGRATION_8_SQL) },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS.reduce((v, m) => Math.max(v, m.version), LEGACY_SCHEMA_VERSION);

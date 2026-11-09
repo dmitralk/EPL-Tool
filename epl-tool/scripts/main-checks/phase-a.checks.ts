@@ -13,7 +13,7 @@ import {
   SAMPLE_DBS, check, expectError, finish, handlers, invoke, run, sample, setupTemp, sha, sleep, stub, userVersion,
 } from './harness';
 
-const NEW_IN_LATER_MIGRATIONS = ['users', 'customer_managers', 'audit_log', 'customers', 'price_lists', 'sqlite_sequence'];
+const NEW_IN_LATER_MIGRATIONS = ['users', 'customer_managers', 'audit_log', 'customers', 'price_lists', 'sqlite_sequence', 'sync_meta'];
 
 function dump(db: Database.Database): Record<string, string> {
   const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name").all() as { name: string }[];

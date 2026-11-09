@@ -4,19 +4,17 @@ This file is read automatically by Claude Code at conversation start. It gives f
 
 ---
 
-## Current state & next session (updated 6 Nov 2026, end of session)
+## Current state & next session (updated 9 Nov 2026, Phase C in progress)
 
-**Released:** **v0.6.1** (6 Nov 2026) = dev-plan Phase A (foundations) + Phase B (access rights + Guides & Help). Everything is
-committed and pushed; `main` = tag `v0.6.1` + one commit with the handoff docs and the main-process checks. The user checked the
-permission matrix in the app with *Preview as…* and reported "all is working well". GitHub release:
+**Released:** **v0.6.1** (6 Nov 2026) = dev-plan Phase A (foundations) + Phase B (access rights + Guides & Help). GitHub release:
 https://github.com/dmitralk/EPL-Tool/releases/tag/v0.6.1
 
-**Next: Phase C — read copy + publish → v0.7** (`docs/dev-plan.md` Phase C, design in `docs/multi-user-study.md` §5).
-1. Start by asking the user the **Phase C kickoff points** listed at the top of the dev-plan's Phase C section (one form; the user
-   reviews designs before development and prefers forms for questions). Record the answers in the dev-plan.
-2. Then build in reviewable steps (Migration 8 `sync_meta` + `CentralStore`/`SyncedFolderStore` → read mode with
-   `query_only` + change detection + offline → admin edit mode with auto-publish + generation check + `EPL-Conflicts/` →
-   setup screen + sidebar status line → Guides & Help v0.7 topics), verifying each with the main-process test approach below.
+**In progress: Phase C — read copy + publish → v0.7** (`docs/dev-plan.md` Phase C). The kickoff answers (9 Nov: all proposals
+accepted, cache in `%LOCALAPPDATA%`) and the **approved technical design** are recorded in the dev-plan's Phase C section — follow
+that design. Build steps, one commit each after asking the user: 1) Migration 8 `sync_meta` + `CentralStore`/`SyncedFolderStore`
+(`main/sync/`) — **done** · 2) read mode (`query_only`, change detection, offline, guard `writes` flag) · 3) admin edit mode
+(auto-publish, generation check, `EPL-Conflicts/`, unpublished-changes recovery) · 4) setup screen, sidebar status line, banners ·
+5) Guides & Help v0.7 topics + docs → release v0.7.0.
 
 **Working agreements with the user**
 - Ask (with a form) before committing; always add the `Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>`
@@ -31,21 +29,21 @@ https://github.com/dmitralk/EPL-Tool/releases/tag/v0.6.1
 **Verify after changes** (from `epl-tool/`; for anything that downloads — npm, packaging — first set in the same PowerShell call:
 `$env:HTTP_PROXY='http://cloudproxy-emea.corp.local:8080'; $env:HTTPS_PROXY=$env:HTTP_PROXY; $env:NODE_OPTIONS='--use-system-ca'; $env:ELECTRON_GET_USE_PROXY='1'; $env:GLOBAL_AGENT_HTTPS_PROXY=$env:HTTP_PROXY`):
 `npx tsc --noEmit -p .` (exactly 4 known errors: `export.ts` ×2, `Step2ConfigurePricing.tsx`, `Step3ReviewProducts.tsx`),
-`npx eslint <changed files>`, `npm test` (49 tests), `npm run test:main` (main-process checks, see below), and packaging into a temp folder (`out/` is often locked by OneDrive):
+`npx eslint <changed files>`, `npm test` (51 tests), `npm run test:main` (main-process checks, see below), and packaging into a temp folder (`out/` is often locked by OneDrive):
 `node -e "require('@electron-forge/core').api.package({dir:process.cwd(),outDir:process.env.TEMP+'\\epl-pkg-check',interactive:false})"`,
 then delete that folder. Release procedure: see *GitHub Actions* below (`npm version X.Y.Z --no-git-tag-version`, commit, BOM-free
 annotated tag, push `main` + tag; CI runs `npm test`, builds and publishes).
 
 **Facts worth remembering**
-- Schema is at `user_version` 7. New schema changes = numbered entries in `MIGRATIONS` (`database.ts`), never edits of `SCHEMA_SQL`.
+- Schema is at `user_version` 8 (Migration 8 = `sync_meta`, Phase C). New schema changes = numbered entries in `MIGRATIONS` (`database.ts`), never edits of `SCHEMA_SQL`.
 - Every IPC channel is registered with `handle(channel, rule, fn)` from `main/ipc/guard.ts`; rules live in `src/shared/permissions.ts`;
   every write calls `audit()` inside its transaction.
 - On the Windows dev PC, `whoami /upn` resolves to one of the named admins' accounts (relevant for first-admin bootstrap tests).
 - The stored legacy logo path was a macOS path; the logo must be selected once in Settings (done by the user or still to do —
   ask if exports lack a logo).
-- The main-process checks for Phases A/B are in the repo: `epl-tool/scripts/main-checks/` (`npm run test:main`, 51 + 105
-  checks on temp copies of the sample DBs; not run in CI). Extend them for Phase C (e.g. a `phase-c.checks.ts` simulating two
-  PCs with separate `userData` folders sharing a temp "central" folder).
+- The main-process checks are in the repo: `epl-tool/scripts/main-checks/` (`npm run test:main`: phase-a 51, phase-b 105,
+  phase-c growing with each Phase C step; temp copies of the sample DBs; not run in CI). The sample DBs are at schema 0 (WAL, no
+  users), so the checks build their own databases from copies.
 - npm on this PC: `npm install <pkg>` also bumped an existing dev dependency (tsx) — check the `package.json`/lockfile diff and
   revert unintended changes; npm warns that package install scripts are held back (`allow-scripts`), so avoid a fresh `npm ci`
   locally unless needed (better-sqlite3 must stay built for Electron: `build/Release/.forge-meta` = `x64--<ABI>`; the
@@ -185,7 +183,7 @@ annotated tag, push `main` + tag; CI runs `npm test`, builds and publishes).
 │   │           └── StandardEpl/
 │   │               ├── StandardEplScreen.tsx ← two tabs: “Standard Prices” (version selector, draft management, combined USD+EUR table, Export/Email buttons) and “Packaging Charges” (version selector, read-only table, Export/Email buttons)
 │   │               └── StandardEplComparisonPanel.tsx ← side-by-side diff of two EPL versions (Changed / Added / Removed sections)
-│   ├── scripts/main-checks/ ← `npm run test:main`: run.js (esbuild + Electron-as-Node), electron-stub.js, harness.ts, phase-a/phase-b .checks.ts
+│   ├── scripts/main-checks/ ← `npm run test:main`: run.js (esbuild + Electron-as-Node), electron-stub.js, harness.ts, phase-a/b/c .checks.ts
 │   ├── forge.config.ts     ← IMPORTANT: contains packageAfterCopy for better-sqlite3
 │   └── package.json
 ├── All_Prices.xlsx         ← original master data file (source of the initial DB load; the in-app import was removed)
@@ -237,6 +235,8 @@ Schema runs `CREATE TABLE IF NOT EXISTS` so opening an existing DB is safe. Unit
 **Schema version = `PRAGMA user_version`** (`SCHEMA_VERSION` exported from database.ts). Databases from before the numbering have `user_version = 0`: they run the detection-based legacy Migrations 1–6 below once and are stamped **6**. `SCHEMA_SQL` / `SEED_SQL` are **frozen at that v6 baseline** — every later schema change must be a numbered entry in the `MIGRATIONS` array (`{ version: 7, up(db) }`, …), never an edit of `SCHEMA_SQL`. The runner applies pending steps in order, each in one transaction together with `user_version = N` (so a failed step leaves no trace), with `foreign_keys = OFF` and `legacy_alter_table = ON` set around it (they can't change inside a transaction).
 
 **Migration 7 (access rights, `MIGRATION_7_SQL`)** — creates `users`, `customer_managers`, `audit_log` (+ indexes), adds `customers.pricing_mode` (default `'pbp'`) and `price_lists.created_by_user_id`, and `DROP COLUMN customers.price_list_managed_by`. Data otherwise untouched (verified on copies of both DB files). **First-admin bootstrap** (`bootstrapFirstAdmin`, after the migrations on every open): if `users` is empty and the Windows identity is known, the person opening the DB becomes the first admin (`user.bootstrap` audit entry) — also for brand-new databases. Callers must `await getIdentity()` before `openDatabase` (startup, `db:open`, `db:create` do).
+
+**Migration 8 (shared database, `MIGRATION_8_SQL`)** — creates `sync_meta` (one row, `id = 1`: `generation` (0 = never published), `published_by`, `published_by_account`, `published_at`, `published_app_version`). Only the Phase C publish code stamps it. `main/sync/centralStore.ts` (`SyncedFolderStore`) is the only code that touches the shared folder: it copies the central DB (never opens it with SQLite), verifies copies (`inspectDbFile`/`describeDbFile`: quick_check + sha256 + sync_meta), publishes with the generation check (central sha256 must equal the expected one and the manifest generation must not be higher; `<name>.db.tmp` + rename; `<name>.manifest.json`), saves conflict copies to `EPL-Conflicts/` and lists OneDrive conflict copies (`<name>-<PC>.db`). Local copies: `main/sync/paths.ts` (`%LOCALAPPDATA%\epl-tool\cache|work`); synced-folder detection: `main/sync/oneDrive.ts` (registry `SyncEngines\Providers\OneDrive\*\MountPoint` + `OneDrive*` env vars).
 
 **Legacy migrations (`runLegacyMigrations` in database.ts)** — only for databases below version 6. Contains six sequential migrations:
 
@@ -652,7 +652,7 @@ npm install          # install dependencies
 npm start            # dev mode with Vite HMR (DevTools auto-open in dev)
 npm run package      # build unpackaged app (dev/testing only, no installer); prepackage prepares better-sqlite3 for Electron
 npm run make         # build distributable installers (Squirrel .exe + ZIP for Windows); premake does the same
-npm test             # unit tests (node:test via tsx): src/**/*.test.ts — today shared/permissions.test.ts (49 tests); also run in CI
+npm test             # unit tests (node:test via tsx): src/**/*.test.ts — shared/permissions.test.ts + shared/sync.test.ts (51 tests); also run in CI
 npm run test:main    # main-process checks (scripts/main-checks/*.checks.ts) on temp copies of the sample DBs; local only
 ```
 

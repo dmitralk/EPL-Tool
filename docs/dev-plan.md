@@ -1,6 +1,7 @@
 # EPL Tool — Development plan: access rights + multi-user
 
-*Status: decisions recorded · Phases A + B done · v0.6 released as v0.6.1 · updated 6 Nov 2026 · current version v0.6.1*
+*Status: decisions recorded · Phases A + B done · v0.6 released as v0.6.1 · Phase C in progress (design approved 9 Nov 2026) ·
+updated 9 Nov 2026 · current version v0.6.1*
 *Studies: [access-rights-study.md](./access-rights-study.md) · [multi-user-study.md](./multi-user-study.md)*
 
 ---
@@ -215,48 +216,153 @@ Checked on copies of the databases, by running the real main-process code outsid
 
 ### Phase C — Read copy + publish (3–4 d) → release v0.7
 
-**Kickoff — points to confirm with the user before coding** (prepared 6 Nov 2026 from how v0.6.1 is built; the design itself
-is in the multi-user study §5, decisions in §8). Ask them in one form, then update this list.
+**Kickoff decisions (confirmed by the user on 9 Nov 2026 — all proposals accepted; the cache goes to `%LOCALAPPDATA%`).**
+The design itself is in the multi-user study §5, decisions in §8.
 
-1. **Local mode.** Keep a way to open a `.db` file directly, as today (useful for test databases and development), next to the new
-   *Connect to shared database*? Proposal: yes, as *Open a local database (no sharing)* on the setup screen.
-2. **Existing installs.** `settings.json` has `lastDbPath` (the database opened directly). Proposal: on first start of v0.7, if
-   that file is in a OneDrive/SharePoint-synced folder, offer to connect to it as the shared database; otherwise keep it as a
-   local database.
-3. **Writes that happen while reading** (they fail under `PRAGMA query_only`):
-   - first sign-in of a user added by email only records their Windows account (`currentUser.ts`, `user.link-account`);
-   - the first-admin bootstrap (`bootstrapFirstAdmin`) on a database without users;
-   - migrations (Migration 8 `sync_meta`, later ones) — by design they run on the local copy only.
-   Proposal: in read mode, skip account linking (recognise by email; record the account at the next *Start editing*) and
-   allow the bootstrap only in local mode or in edit mode.
-4. **Guard + read mode.** Keep the order "role → per-customer rule → read-only". Proposal: add a `writes` flag to the
-   `editor`/`admin` channels in `ipc/guard.ts`, so in read mode they are refused with *"Read-only — click Start editing"*
-   before the handler runs, instead of relying only on the `SQLITE_READONLY` error.
-5. **Startup backup.** Today a backup is written to `EPL-Backups/` (SharePoint) on every open. Phase C: only at *Start editing*
-   (and before a restore). Confirm that the local cache gets no backups of its own.
-6. **Publish in the activity log.** Should each publish add an entry (`sync.publish`, who/when/generation)? It is written into
-   the working copy before the copy is published, so it costs nothing extra. Proposal: yes.
-7. **Who edits in v0.7.** The plan says Admins only in v0.7 (Users from v0.8 with the edit slot). Confirm, because Users who
-   could create price lists in v0.6.1 lose that until v0.8.
-8. **Auto-refresh vs open screens.** Refresh automatically every ~30 s only when no wizard or dialog is open; otherwise show the
-   *New data — Refresh* banner. Needs a small "busy" signal from the renderer (wizards, dialogs, unsaved edits).
-9. **Paths and names.** Local copies in `%APPDATA%\epl-tool\cache\` and `work\` (study §5.2); manifest file
-   `EPL-Database.manifest.json` next to the central DB; `EPL-Conflicts/`. Confirm, or prefer `%LOCALAPPDATA%` for the cache.
-10. **Test setup.** Two PCs are needed for the final check (you + a colleague). Before that, extend the main-process checks
-    (`epl-tool/scripts/main-checks/`, `npm run test:main`) with a `phase-c.checks.ts` that simulates two PCs as two processes
-    with separate `userData` folders sharing a temp "central" folder.
+1. **Local mode — kept.** *Open a local database (no sharing)* stays on the setup screen next to *Connect to shared database*
+   (test databases, development). Safeguard: local mode refuses a file that has a `<name>.manifest.json` next to it, so the
+   shared database can't be opened directly by mistake.
+2. **Existing installs — offer if synced.** On the first start of v0.7, if `lastDbPath` is in a OneDrive/SharePoint-synced
+   folder, the setup screen offers to connect to it as the shared database; otherwise it keeps opening as a local database.
+3. **Writes while reading — skipped.** In read mode account linking is skipped (the person is recognised by email; the account
+   is recorded at the next *Start editing*). The first-admin bootstrap runs only in local mode or in edit mode. Migrations run
+   on the local copies only.
+4. **Guard — `writes` flag.** `editor`/`admin` channels carry a `writes` flag in `ipc/guard.ts`; in read mode they are refused
+   with *"Read-only — click Start editing"* before the handler runs. `query_only` stays as the safety net. Order: role →
+   read-only → per-customer rule (inside the handler).
+5. **Backups.** Shared database: one backup to `EPL-Backups/` at *Start editing* and before a restore; the local cache gets no
+   backups. Local mode keeps today's backup on open.
+6. **Activity log — one `sync.publish` entry per publish** (who, when, generation).
+7. **Who edits in v0.7 — Admins only.** Users stay read-only until the edit slot (v0.8). Today only the PBP admin uses the tool.
+8. **Auto-refresh — when idle.** Changes are checked every ~30 s and applied automatically when no wizard, dialog or unsaved
+   edit is open; otherwise a *New data — Refresh* banner is shown.
+9. **Paths.** Local copies in `%LOCALAPPDATA%\epl-tool\cache\` and `work\` (not roamed with the Windows profile);
+   `settings.json` stays in `%APPDATA%\epl-tool`. Manifest `<db name>.manifest.json` and `EPL-Conflicts/` next to the central DB.
+10. **Tests.** Now: `scripts/main-checks/phase-c.checks.ts` simulating two PCs (separate `userData` / local folders, a shared
+    temp "central" folder). Before the release: a two-PC test with a colleague on a separate SharePoint **test** folder holding
+    a copy of the database (not the real central database).
 
 **Starting points in the code:** `main/database.ts` (`openDatabase`, startup backup, `bootstrapFirstAdmin`),
 `main/localSettings.ts` (`lastDbPath`), `main/currentUser.ts` (account linking), `main/ipc/guard.ts`, `main/ipc/settings.ts`
 (`db:open` / `db:create`), `main/ipc/backup.ts`, `renderer/screens/DatabaseSelector.tsx`, `renderer/components/layout/Sidebar.tsx`
 (status line), `renderer/App.tsx` (`AccessGuard`).
 
-- [ ] **SharePoint access in one place:** a `CentralStore` interface and a `SyncedFolderStore` implementation that handles:
-  - [ ] download + verify
-  - [ ] manifest
-  - [ ] publishing with the generation check
-  - [ ] spotting OneDrive conflict copies
-- [ ] **Generation number:** stored in the database (Migration 8: `sync_meta`).
+**Technical design (approved by the user on 9 Nov 2026, including the early warning, read mode after a refused publish, the
+unpublished-changes recovery and re-rendering instead of reloading)**
+
+*Main process — new folder `main/sync/`:*
+
+- `centralStore.ts` — the `CentralStore` interface and its `SyncedFolderStore` implementation (the only code that touches the
+  shared folder, always with async file calls so a slow OneDrive download never freezes the window):
+  - `probe()` — size and date of the central file + the manifest (cheap; every 30 s)
+  - `download(dest)` — copy to a temp file, `quick_check`, read generation / schema / publisher, sha256, then rename
+  - `publish(snapshot, expected)` — generation check, copy to `<name>.db.tmp` in the central folder, `quick_check`, rename
+    over the central file (retried while OneDrive holds it), then the manifest (`.tmp` + rename)
+  - `saveConflictCopy(file)` → `EPL-Conflicts/<name>_<date-time>_<account>.db`
+  - `findConflictCopies()` — OneDrive conflict copies of the central file (`<name>-<PC>.db`, `<name>-<PC>-2.db`, …)
+  - `canWrite()` — writes and deletes a `.tmp` probe file (detects *Read* permission on SharePoint)
+- `paths.ts` — `%LOCALAPPDATA%\epl-tool\cache\` (`<name>.db` + `cache.json`: central path, sha256 / generation of the source,
+  time of the copy) and `work\` (`<name>.db`, `session.json`).
+- `oneDrive.ts` — "is this file in a synced folder": OneDrive mount points from the registry
+  (`HKCU\Software\SyncEngines\Providers\OneDrive\*\MountPoint`, which lists every synced SharePoint library) + the `OneDrive*`
+  environment variables.
+- `sync.ts` — the connection (local / shared), the modes (read / offline / edit), the timers and the status pushed to the
+  screens. `ipc/sync.ts` — its channels.
+
+*Database:* **Migration 8** adds `sync_meta` (one row: `generation`, `published_by`, `published_by_account`, `published_at`,
+`published_app_version`; generation 0 = never published). **Manifest** `<name>.manifest.json`: generation, sha256, size,
+published by / at, schema version, app version, `minAppVersion` (a constant in the code, raised when older apps must stop
+editing).
+
+*Generation check:* a publish is accepted only if the central file is still **exactly** the one the editor started from or last
+published: same sha256 (this also catches a file changed outside the app) and no higher generation in the manifest.
+
+*Read mode (everybody; the default for a shared database):*
+
+- On connect, at start and every 30 s: probe the central file. If it changed → download into the cache folder and verify.
+  - Manifest generation higher than the file's → *"Newer data published by Anna is still syncing to your computer"*; keep the
+    current copy and retry.
+  - Same content as the current copy → nothing to do.
+  - Otherwise → applied at once when no wizard or dialog is open; else the banner *"New data published by Anna at 14:05 —
+    Refresh"*. Applying = swap the file, reopen, and re-render the current screen (no page reload, so session FX rates stay).
+- The copy is opened with migrations on the copy, then `PRAGMA query_only = ON`; no bootstrap, no account linking.
+- Central file unreachable → **offline**: the last copy, *"Offline copy of 5 Nov 10:45"*, retried every 30 s.
+- A copy that fails `quick_check` → keep the last good copy and retry (message after 3 failed attempts).
+- Central schema newer than the app, or `minAppVersion` above the app version → read the copy as it is (no migrations,
+  `query_only`), banner *"Published by a newer EPL Tool — update to x.y.z to make changes"*; *Start editing* blocked.
+
+*Edit mode (Admins; anybody when the user list is empty, so the first admin can be created):*
+
+- *Start editing*: checks (online, nothing still syncing, app version, write access to the folder) → fresh copy into `work\`
+  → backup of that copy in `EPL-Backups/` → opened read-write (migrations, account linking, bootstrap) → `work\session.json`.
+- Every change marks the copy as changed; **auto-publish ~60 s after the last change**, *Publish now*, and *Finish editing* =
+  publish + back to read mode (the working copy becomes the read copy).
+- Publish: snapshot of the working copy (`VACUUM INTO`) → in the snapshot: generation + 1, publisher, time, app version and the
+  `sync.publish` activity entry → generation check → copy + rename → manifest → the same stamp is applied to the working copy.
+  Changes wait while a publish runs (about a second), so nothing slips in between.
+- **Refused** (someone else published) → the working copy is saved to `EPL-Conflicts/` (kept locally if that fails), the app
+  goes back to read mode on the fresh data, with a red banner naming the saved file. The re-apply tool comes in Phase D.
+- Other publish errors (OneDrive busy, network) → stay in edit mode, retry at the next change / 30 s check, error shown.
+- While editing, the 30 s check also watches the central file: if someone else publishes, a warning appears at once.
+- Closing the app while editing: publish first; if that fails, *"Quit anyway — your changes stay on this PC"* / *Cancel*.
+- **Unpublished changes found at start** (crash, or quit anyway): banner *"Unpublished changes from 10:41"* [Publish now]
+  [Discard] for admins; *Publish now* uses the same generation check. (Small version of Phase D's crash recovery.)
+
+*Guard and rules:*
+
+- `handle()` gets a `writes` flag, on by default for `editor` / `admin` channels (all of them change data today). Order: database
+  open → on the user list → role → read-only → handler (per-customer rules).
+- Read-only messages live in `shared/permissions.ts`: admins *"Read-only — click Start editing to make changes."*; Users and
+  Viewers *"Read-only — only admins can change the shared database in this version."* (Viewers still get the role message
+  first); offline *"Offline copy — changes need the shared database."*; newer app needed *"Update EPL Tool to x.y.z to make
+  changes."* Any `SQLITE_READONLY` error becomes the same message (safety net).
+- New rule `canStartEditing(user)` (Admins) + a matrix row *"Start editing the shared database"* (generated for Help,
+  unit-tested).
+
+*Backups and restore:* shared database → one backup at *Start editing* (of the freshly downloaded copy); *Back up now* only
+while editing; no backups of the cache; the Backups panel always shows the central folder's `EPL-Backups/`. **Restore** in
+shared mode = an editing session started from the backup and published at once (the working copy is kept as the pre-restore
+copy). It needs edit mode, except when the central file is damaged: then an admin of the backup can restore from read mode,
+as on today's damaged-database screen. Local mode: unchanged.
+
+*Local mode and settings:* `db:open` / `db:create` work as today (backup on open) and refuse a shared database (manifest next to
+it). `settings.json` gets `connection: { mode: 'local' | 'shared', path }`; the old `lastDbPath` is read once for decision 2.
+
+*Screens:*
+
+- `SyncProvider` / `useSync()`: status pushed by the main process, actions (start / finish editing, publish now, refresh). Busy =
+  a dialog is open (counted by the shared `Dialog`) or a wizard route is shown; updates are applied automatically when not busy.
+- `useCan()`: every change permission also requires "writable" (local mode or editing), and `lockReason` returns the read-only
+  reason — so all existing locks and hidden buttons follow without per-screen changes. The Users screen keeps the list and
+  *Preview as…* in read mode.
+- `AppShell`: one banner area (editing / new data / still syncing / offline / update needed / conflict / unpublished changes);
+  the current screen is re-mounted after the data was swapped.
+- Sidebar: status line under the user — *"Read-only · data of 5 Nov 10:45 (Anna)"*, *"Editing · published 10:47"*, *"Offline
+  copy · 5 Nov 10:45"*, *"Local database"* — with *Start editing* / *Finish editing* and *Refresh*. *Change Database* opens the
+  setup screen.
+- Setup screen `/setup`: **Connect to shared database** (main button) · *Open a local database (no sharing)* · *Create a new
+  local database*; the offer for existing installs; the damaged-database restore as today. Settings → Database shows the mode
+  and the central path.
+- Delays (30 s check, 60 s auto-publish) are constants in `shared/sync.ts`, inserted into Help.
+
+*Checks (`phase-c.checks.ts`):* the check file forks two worker processes, **PC A** and **PC B**, each with its own `userData`,
+`%LOCALAPPDATA%` and identity, sharing a temp `central\` folder holding a prepared copy of the sample database. Scenarios:
+connect + read mode on both, the central file unchanged by readers (sha256), read-only refusals and the `query_only` safety net,
+start editing (one backup), publish (generation, manifest, activity entry), B picks up A's change, two admins editing at once
+(second publish refused → `EPL-Conflicts/`, nothing overwritten), "still syncing", offline start from the cache, newer schema,
+local mode refusing a shared database, the existing-install offer, unpublished changes after a killed process, restore in
+shared mode, OneDrive conflict copies.
+
+*Build order (one commit each, for review):* 1) Migration 8 + `CentralStore` · 2) read mode + guard · 3) edit mode ·
+4) setup screen, status line, banners · 5) Help + docs → v0.7.0.
+
+- [x] **SharePoint access in one place:** a `CentralStore` interface and a `SyncedFolderStore` implementation that handles
+      (`main/sync/centralStore.ts`, done 9 Nov 2026, checked by `phase-c.checks.ts`):
+  - [x] download + verify
+  - [x] manifest
+  - [x] publishing with the generation check
+  - [x] spotting OneDrive conflict copies
+- [x] **Generation number:** stored in the database (Migration 8: `sync_meta`).
 - [ ] **Read mode:**
   - [ ] Open the local copy with `PRAGMA query_only`; in read mode, "read-only" errors become the message *"Read-only — click
         Start editing"* (the role check runs first).

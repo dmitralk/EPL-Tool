@@ -16,12 +16,12 @@ export function backupDirFor(dbPath: string): string {
   return path.join(path.dirname(dbPath), BACKUP_DIR_NAME);
 }
 
-function stamp(d = new Date()): string {
+export function fileStamp(d = new Date()): string {
   const p = (n: number) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}_${p(d.getHours())}-${p(d.getMinutes())}-${p(d.getSeconds())}`;
 }
 
-function escapeRegExp(s: string): string {
+export function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
@@ -79,7 +79,7 @@ export function pruneBackups(dbPath: string): void {
 export function createBackup(db: Database.Database, dbPath: string): string {
   const dir = backupDirFor(dbPath);
   fs.mkdirSync(dir, { recursive: true });
-  const final = path.join(dir, `${path.parse(dbPath).name}_${stamp()}.db`);
+  const final = path.join(dir, `${path.parse(dbPath).name}_${fileStamp()}.db`);
   const tmp = `${final}.partial`;
   try {
     if (fs.existsSync(tmp)) fs.unlinkSync(tmp);
@@ -101,7 +101,7 @@ export function createPreRestoreCopy(dbPath: string): string | null {
   if (!fs.existsSync(dbPath)) return null;
   const dir = backupDirFor(dbPath);
   fs.mkdirSync(dir, { recursive: true });
-  const dest = path.join(dir, `${path.parse(dbPath).name}_${stamp()}_pre-restore.db`);
+  const dest = path.join(dir, `${path.parse(dbPath).name}_${fileStamp()}_pre-restore.db`);
   fs.copyFileSync(dbPath, dest);
   return dest;
 }
