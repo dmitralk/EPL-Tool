@@ -1,6 +1,6 @@
 # What's new
 
-## v0.7.0 — Shared reading
+## v0.7.0 — Shared reading (9 Nov 2026)
 
 The database can now be used by several people at the same time. See [Shared database](help:shared-database).
 

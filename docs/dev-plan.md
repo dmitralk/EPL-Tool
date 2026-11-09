@@ -1,7 +1,7 @@
 # EPL Tool — Development plan: access rights + multi-user
 
-*Status: decisions recorded · Phases A + B done · v0.6 released as v0.6.1 · Phase C built 9 Nov 2026 (v0.7.0 release after
-the two-PC test) · updated 9 Nov 2026 · current version v0.6.1*
+*Status: decisions recorded · Phases A + B done · v0.6 released as v0.6.1 · Phase C released as v0.7.0 on 9 Nov 2026 (two-PC
+test with a colleague running on the release) · updated 9 Nov 2026 · current version v0.7.0*
 *Studies: [access-rights-study.md](./access-rights-study.md) · [multi-user-study.md](./multi-user-study.md) · AI features:
 `docs/local/ai-study.md` (local only, not in git — see CLAUDE.md → Known issues / open items)*
 
@@ -215,7 +215,7 @@ Checked on copies of the databases, by running the real main-process code outsid
 - An independent code review found two issues, both fixed: `price-lists:create` now inserts only the line fields (a crafted
   entry could carry another list's id), and lists of customers that no longer exist (orphans) can be deleted by admins.
 
-### Phase C — Read copy + publish (3–4 d) → release v0.7 — **built 9 Nov 2026; release after the two-PC test**
+### Phase C — Read copy + publish (3–4 d) → release v0.7 — **released as v0.7.0 on 9 Nov 2026**
 
 **Kickoff decisions (confirmed by the user on 9 Nov 2026 — all proposals accepted; the cache goes to `%LOCALAPPDATA%`).**
 The design itself is in the multi-user study §5, decisions in §8.
@@ -391,8 +391,9 @@ shared mode, OneDrive conflict copies.
       "?" link next to the sidebar status line (done 9 Nov 2026).
 
 **Status 9 Nov 2026:** all Phase C items are built and checked outside the app (`npm run test:main`: phase-c 165 checks on
-simulated PCs) and visually in an isolated development instance. **Before releasing v0.7.0:** the two-PC test with a
-colleague on a separate SharePoint test folder (decision 10), then `npm version 0.7.0`, tag and release.
+simulated PCs) and visually in an isolated development instance. **Released as v0.7.0 on 9 Nov 2026** at the user's request,
+so the two-PC test with a colleague (decision 10, separate SharePoint test folder) runs on the release build; Phase D starts in
+parallel.
 
 **Done when** (two PCs: you + a colleague):
 
@@ -517,6 +518,6 @@ All decisions are recorded (the last two on 5 Nov 2026):
 - **Historical import:** Admins plus Users, for the customers they may change.
 - **Session FX rates:** forgotten when the app closes.
 
-**Next step:** the two-PC test of Phase C with a colleague (separate SharePoint test folder with a copy of the database), then
-release **v0.7.0**; after that Phase D (edit slot). Phases A and B were released as **v0.6.1** on 6 Nov 2026 (v0.6.0 was
-not released separately).
+**Next step:** Phase D (edit slot) — started 9 Nov 2026 right after the v0.7.0 release, while the two-PC test of v0.7.0 runs
+with a colleague (separate SharePoint test folder with a copy of the database). Phases A and B were released as **v0.6.1** on
+6 Nov 2026 (v0.6.0 was not released separately); Phase C as **v0.7.0** on 9 Nov 2026.

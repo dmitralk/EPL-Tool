@@ -4,27 +4,24 @@ This file is read automatically by Claude Code at conversation start. It gives f
 
 ---
 
-## Current state & next session (updated 9 Nov 2026, end of session: Phase C built, not released)
+## Current state & next session (updated 9 Nov 2026: v0.7.0 released, Phase D starting)
 
-**Released:** **v0.6.1** (6 Nov 2026) = dev-plan Phase A (foundations) + Phase B (access rights + Guides & Help). GitHub release:
-https://github.com/dmitralk/EPL-Tool/releases/tag/v0.6.1
+**Released:** **v0.7.0** (9 Nov 2026) = dev-plan Phase C (read copy + publish): https://github.com/dmitralk/EPL-Tool/releases/tag/v0.7.0.
+Before: **v0.6.1** (6 Nov 2026) = Phase A (foundations) + Phase B (access rights + Guides & Help).
 
-**Built, not released: Phase C — read copy + publish → v0.7.0** (`docs/dev-plan.md` Phase C: kickoff decisions of 9 Nov and
-the **approved technical design**). Five commits, one per step: 1) Migration 8 `sync_meta` + `CentralStore`/`SyncedFolderStore`
-(`main/sync/centralStore.ts`) · 2) read mode (`main/sync/sync.ts`, `ipc/sync.ts`, guard `writes` flag) · 3) admin edit mode
-(publish + generation check, `EPL-Conflicts/`, recovery, restore, publish on quit) · 4) screens (setup screen, sidebar status
-line, banners, `useCan()` read-only gating, busy signal) · 5) Guides & Help topic *Shared database* + docs. Steps 1–2 are pushed;
-steps 3–5 are **local commits, not pushed** (the user pushes later). Commit `aff14b5` between steps 3 and 4 is another agent's
-docs-only pointer to a local-only AI study (`docs/local/`, excluded via `.git/info/exclude`).
+**Phase C (v0.7.0)** follows the dev-plan's Phase C section (kickoff decisions of 9 Nov and the **approved technical design**),
+built in five commits: 1) Migration 8 `sync_meta` + `CentralStore`/`SyncedFolderStore` (`main/sync/centralStore.ts`) · 2) read
+mode (`main/sync/sync.ts`, `ipc/sync.ts`, guard `writes` flag) · 3) admin edit mode (publish + generation check,
+`EPL-Conflicts/`, recovery, restore, publish on quit) · 4) screens (setup screen, sidebar status line, banners, `useCan()`
+read-only gating, busy signal) · 5) Guides & Help topic *Shared database* + docs. Commit `aff14b5` (between steps 3 and 4) is
+another agent's docs-only pointer to a local-only AI study (`docs/local/`, excluded via `.git/info/exclude`).
 
 **Next:**
-1. Before pushing, review with the user what goes public (see the public-repo rule below): the pending commits and the wording
-   of `aff14b5`. Company/proxy details were moved to `docs/local/corporate-network.md` on 9 Nov (they remain in the already
-   public git history); the tracked sample data files are still an open item (Known issues).
-2. The **two-PC test** with a colleague on a separate SharePoint **test** folder holding a copy of the database (decision 10;
-   scenarios in multi-user study §7 for read/publish, not the edit slot). Install a build on the colleague's PC.
-3. Release **v0.7.0** (`npm version 0.7.0 --no-git-tag-version`, What's new already describes it, tag, push). Then Phase D
-   (edit slot), which also brings *Start editing* for Users.
+1. The **two-PC test** of v0.7.0 with a colleague on a separate SharePoint **test** folder holding a copy of the database
+   (decision 10) — running in parallel; fix what it finds in a v0.7.x patch.
+2. **Phase D (edit slot) → v0.8** — started right after the v0.7.0 release at the user's request (no need to wait for the
+   test). As for Phase C: kickoff questions + technical design in the dev-plan, reviewed by the user before coding.
+3. Open item: the tracked sample data files (Known issues). Company/proxy details live in `docs/local/corporate-network.md`.
 
 **Working agreements with the user**
 - Ask (with a form) before committing; always add the `Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>`
@@ -734,7 +731,7 @@ The connection is kept only in the local **`settings.json`**: `connection: { mod
 
 **Release procedure**: bump `epl-tool/package.json` (`npm version X.Y.Z --no-git-tag-version`), commit, then `git tag -a vX.Y.Z -F notes.txt` (notes = tag message) and `git push origin main vX.Y.Z`. On Windows PowerShell 5 write `notes.txt` without a BOM (`[IO.File]::WriteAllText(path, text, (New-Object Text.UTF8Encoding($false)))`) — `Set-Content -Encoding utf8` adds one and it ends up at the start of the release notes. CI requires Node 22 (`@electron/rebuild` 4 needs >= 22.12).
 
-**Release history**: latest published release is **v0.6.1** (6 Nov 2026: users and roles, per-customer pricing management, activity log, New Customer, Preview as…, session FX rates, Guides & Help, logo in the DB, per-user email templates; Migration 7). v0.6.0 was never tagged. Before that: **v0.5.2** (Emails tab, backups, Analysis columns/column picker, searchable customer dropdowns, unified email dialog, price list delete, duplicate guard, dialog close fix). Tags v0.5.0 and v0.5.1 exist but their CI builds failed (Node 20; then native rebuild in the packager temp dir) — no releases for them.
+**Release history**: latest published release is **v0.7.0** (9 Nov 2026: shared database — local read copy, change detection, offline copy, admin edit mode with auto-publish and the generation check, `EPL-Conflicts/`, setup screen and status line, Guides & Help *Shared database*; Migration 8). Before: **v0.6.1** (6 Nov 2026: users and roles, per-customer pricing management, activity log, New Customer, Preview as…, session FX rates, Guides & Help, logo in the DB, per-user email templates; Migration 7). v0.6.0 was never tagged. Before that: **v0.5.2** (Emails tab, backups, Analysis columns/column picker, searchable customer dropdowns, unified email dialog, price list delete, duplicate guard, dialog close fix). Tags v0.5.0 and v0.5.1 exist but their CI builds failed (Node 20; then native rebuild in the packager temp dir) — no releases for them.
 
 ---
 
@@ -753,6 +750,6 @@ The connection is kept only in the local **`settings.json`**: `connection: { mod
 - **PBP emails in drafts**: the customer page displays PBP copy/common from `admin_emails` (Settings), but drafts use each customer's own `email_pbp_copy` / `email_pbp_common` columns. Changing an admin email in Settings does not change existing customers' drafts. Candidate fix: build recipients from `admin_emails` in `export:open-mail-bulk`.
 - **Data files in the repo**: `EPL-Database.db`, `EPL-Database BackUp.db`, `All_Prices.xlsx`, `All_PricesTest.xlsx` are tracked in git and contain customer names, emails and prices. If the repo is public, make it private or untrack them (history keeps old copies unless rewritten).
 - **Pre-existing type/lint errors**: see Build commands → Type check / lint.
-- **Multi-user access + user access rights (Phase C built; edit slot next)**: `docs/multi-user-study.md` (local read copy + single "edit slot" via claim files next to the DB on SharePoint + atomic publish with a generation check), `docs/access-rights-study.md` (Windows-account identity, Admin/User/Viewer roles, per-customer pricing mode Open / Managed by PBP / Managed by named users, server-side IPC guard, audit log) and `docs/dev-plan.md` (phases A–F, releases v0.6–v0.8.1, in-app Help plan, historical price-list import spec). Decisions are recorded in each study. **Phase A (Foundations) and Phase B (access rights + Guides & Help) done and released as v0.6.1 on 6 Nov 2026** (permission matrix checked by the user with *Preview as…*). **Phase C (read copy + publish) built 9 Nov 2026**, to be released as v0.7.0 after the two-PC test; in v0.7 only admins edit the shared database, and two admins editing at once is caught by the generation check (no edit slot until Phase D). Heads-up for Migration 7: the bootstrap admin is whoever's Windows identity first opens a database with v0.6.1 (on the Windows dev PC that is the account whose UPN is one of the named admins); the other admins are then added in Settings → Users. With v0.7, a shared database without users gets its first admin at *Start editing*.
+- **Multi-user access + user access rights (Phase C released; edit slot next)**: `docs/multi-user-study.md` (local read copy + single "edit slot" via claim files next to the DB on SharePoint + atomic publish with a generation check), `docs/access-rights-study.md` (Windows-account identity, Admin/User/Viewer roles, per-customer pricing mode Open / Managed by PBP / Managed by named users, server-side IPC guard, audit log) and `docs/dev-plan.md` (phases A–F, releases v0.6–v0.8.1, in-app Help plan, historical price-list import spec). Decisions are recorded in each study. **Phase A (Foundations) and Phase B (access rights + Guides & Help) done and released as v0.6.1 on 6 Nov 2026** (permission matrix checked by the user with *Preview as…*). **Phase C (read copy + publish) released as v0.7.0 on 9 Nov 2026** (two-PC test with a colleague running on the release); in v0.7 only admins edit the shared database, and two admins editing at once is caught by the generation check (no edit slot until Phase D). Heads-up for Migration 7: the bootstrap admin is whoever's Windows identity first opens a database with v0.6.1 (on the Windows dev PC that is the account whose UPN is one of the named admins); the other admins are then added in Settings → Users. With v0.7, a shared database without users gets its first admin at *Start editing*.
 - **Open product questions (not yet decided by the user)**: (1) mass wizard Step 1 customer dropdown currently only *filters* the table — the user may prefer that ticking in the dropdown also selects rows for repricing; (2) after deleting a price list, the customer falls back to the remaining list with the latest *effective* date (not the most recently *created*) — confirm if this is the desired rule.
 - **AI features (study only, nothing implemented; 9 Nov 2026)**: using the company's per-user LLM service from EPL Tool was studied and tested end to end on the Windows dev PC (browser sign-in, quota, model list, a model answer). Findings, connection details, integration design (sign-in in the main process, `net.fetch`, encrypted token cache, no AI write path), use cases, open questions and a re-runnable test script are in **`docs/local/ai-study.md`** + `docs/local/llmhub-test/`. That folder is **local only**: excluded through `.git/info/exclude` because this GitHub repo is public and the study contains internal company details — it exists only in the SharePoint-synced working folder, not in clones. Don't copy those details (hosts, IDs, internal links) into tracked files or code before the open questions in the study (incl. repo visibility) are settled.
