@@ -16,7 +16,8 @@ without damaging the file.
 ## Read mode (everybody)
 
 The app starts **read-only**. The status line at the bottom of the sidebar shows which data you see, for example
-*Read-only · data of 5 Nov 10:45 (Anna)*: when the data was published and by whom.
+*Read-only · data of 5 Nov 10:45 (Anna)*: when the data was published and by whom. While someone is editing, a second line
+says who, for example *Anna is editing* (point at it to see since when, on which PC, and her last change).
 
 - You can do everything that only reads data: look things up, Analysis, compare price lists, export to Excel, open email
   drafts.
@@ -31,38 +32,37 @@ The app starts **read-only**. The status line at the bottom of the sidebar shows
 - *Update EPL Tool to make changes*: the data was published by a newer version of EPL Tool. You can still read and export;
   install the new version to make changes.
 
-## Editing (admins in this version)
+## Making changes
 
-1. Click **Start editing** in the sidebar. The app takes a fresh copy, makes a backup in **EPL-Backups**, and a blue banner
-   shows that you are editing.
-2. Make your changes. They are saved on your PC and **published automatically** {{AUTO_PUBLISH_DELAY}} after your last
-   change; **Publish now** publishes at once. The sidebar shows *Editing · published 10:47* once it is done.
-3. Click **Finish editing** when you are done: the rest is published and the app goes back to read mode.
+Admins and Users click **Start editing** to make changes (Users only change what their rights allow, see
+[Roles & permissions](help:roles)); Viewers always stay read-only. **One person edits at a time**: whoever clicks
+**Start editing** gets the *edit slot*, and their changes are published for everybody {{AUTO_PUBLISH_DELAY}} after their
+last change. The others keep reading, see who is editing, and can wait for their turn.
 
-Closing the app while editing publishes first. If publishing is not possible (for example no network), you can **quit
-anyway**: your changes stay on your PC and the app offers **Publish now** or **Discard** the next time it starts.
-
-Users and Viewers stay read-only in this version (see [Roles & permissions](help:roles)); editing for Users comes with the
-next version, which also makes sure only one person edits at a time.
-
-## When two people edit at the same time
-
-Only one person should edit at a time. If somebody else publishes while you are editing:
-
-- a **red banner** warns you at once — click **Finish editing**;
-- your publish is then **refused**: nothing is overwritten. Your copy is kept in the **EPL-Conflicts** folder next to the
-  shared database, and the app goes back to read mode with the newer data;
-- ask an admin to look at the kept copy and enter your changes again.
+Everything about editing — waiting and notifications, taking over an inactive session, the automatic release after
+{{IDLE_RELEASE}} without changes, and what happens after a crash — is in [Editing the shared database](help:editing).
 
 ## Other messages
 
-- **OneDrive conflict copy** (*EPL-Database-PCNAME.db* next to the database): OneDrive kept a second copy because two PCs
-  changed the file. It may contain changes that were never published. Tell an admin.
+- **Conflict copies** (a number next to **Settings** in the sidebar): work that could not be published, kept by EPL Tool
+  instead of overwriting someone else's changes, or a copy OneDrive made itself (*EPL-Database-PCNAME.db* next to the
+  database). Nothing is lost: see [Conflict copies](help:conflict-copies).
 - **The shared database file is damaged**: you keep working on your last good copy. An admin restores a backup in
   **Settings → Backups**; the restored version is published to everybody (see [Backups](help:backups)).
 
+## What is in the shared folder
+
+| File or folder | What it is |
+|---|---|
+| `EPL-Database.db` (or the name the admins gave it) | The database. Only the person editing replaces it, always as a whole file |
+| `EPL-Database.manifest.json` | Who published last and when, and which version of EPL Tool is needed to make changes |
+| `EPL-EditSlot` | One small file per editing session: who is editing, since when, and their last sign of life |
+| `EPL-Backups` | Backups, one each time someone starts editing (see [Backups](help:backups)) |
+| `EPL-Conflicts` | Work that could not be published (see [Conflict copies](help:conflict-copies)) |
+
 ## Rules of use
 
+- Click **Start editing** only when you are about to change something, and **Finish editing** when you are done.
 - Don't move, rename or copy files in the shared folder, and don't open the database with other tools.
 - Keep OneDrive running and signed in. If its icon shows a problem, fix that before editing.
-- After editing, wait for *published* in the status line before you shut down the PC.
+- After editing, wait for *published* in the status line (or click **Finish editing**) before you shut down the PC.

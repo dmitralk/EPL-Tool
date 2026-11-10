@@ -4,36 +4,35 @@ This file is read automatically by Claude Code at conversation start. It gives f
 
 ---
 
-## Current state & next session (updated 10 Nov 2026: v0.7.0 released; Phase D steps 1–4 done, step 5 next)
+## Current state & next session (updated 10 Nov 2026: v0.7.0 released; Phase D steps 1–5 done, Phase E next)
 
 **Released:** **v0.7.0** (9 Nov 2026) = dev-plan Phase C (read copy + publish): https://github.com/dmitralk/EPL-Tool/releases/tag/v0.7.0.
 Before: **v0.6.1** (6 Nov 2026) = Phase A (foundations) + Phase B (access rights + Guides & Help).
 
-**Phase D (edit slot) → v0.8 — in progress.** Kickoff decisions (11 points) + approved technical design + progress notes are
-in the dev-plan's Phase D section (read it first). Built in reviewable steps, one commit each, all on `main` and **not
-pushed** (`origin/main` is still the v0.7.0 release commit `96f07f9`; ask before pushing):
+**Phase D (edit slot) → v0.8 — built (steps 1–5), two-PC test pending.** Kickoff decisions (11 points) + approved technical
+design + progress notes are in the dev-plan's Phase D section (read it first). Built in reviewable steps, one commit each,
+all on `main` and **not pushed** (`origin/main` is still the v0.7.0 release commit `96f07f9`; ask before pushing):
 1. `a9e446a` slot core — claim files in `EPL-EditSlot/`, waiting window, heartbeat, lost slot, take-over question + the
    `takesOver` record (accepted by the user), Users may start editing, `MIN_EDIT_APP_VERSION` 0.8.0
 2. `4150e96` idle release after 30 min (busy screens keep the slot, Keep editing), waiting + slot-free notification,
    `main/notify.ts`
 3. `0fefd30` recovery through the slot (Resume editing / Publish now / Discard, early refusal if someone published) +
    rescue tool (`main/sync/rescue.ts`, `ipc/conflicts.ts`, `main/priceLists.ts`); the user accepted the 5 design choices
-4. the latest commit on `main` — screens: `lib/editFlow.tsx` edit-slot dialog, "Ben is editing", Settings → Conflict
-   copies; checked visually in an isolated dev instance
+4. `332fd58` screens: `lib/editFlow.tsx` edit-slot dialog, "Ben is editing", Settings → Conflict copies; checked visually
+   in an isolated dev instance
+5. the latest commit on `main` — Guides & Help: *Shared database* rewritten for v0.8, new topics *Editing the shared
+   database* (`12-editing.md`, incl. a timings table) and *Conflict copies* (`13-conflict-copies.md`); delays come from
+   `shared/sync.ts` via `help/values.ts` (`HELP_VALUES`, checked by `help/help.test.ts`); "?" links from the waiting /
+   take-over dialog, the Conflict copies screens and the red banner; README; draft *What's new* v0.8.0
 
-**Next session — Phase D step 5 (Help + docs), then Phase E:**
-- **Guides & Help** (`epl-tool/src/renderer/help/*.md`, listed in `help/index.ts`): `11-shared-database.md` still says
-  "Editing (admins in this version)" — rewrite for v0.8 (Admins and Users edit, one at a time; Viewers read-only; v0.7 apps
-  must update). Add the editing topic(s) planned in the dev-plan §3 for v0.8: *Start editing* (reservation, waiting +
-  notification, take-over after 15 min), auto-publish, the 30-min release with *Keep editing*, *Finish editing*, crash
-  recovery (Resume / Publish now / Discard), conflicts and *Settings → Conflict copies* (review, re-apply, archive).
-  Timeouts should come from `shared/sync.ts` (e.g. a generated `{{TIMEOUTS}}` block like `{{PERMISSION_MATRIX}}`; the
-  matrix already has the three conflict-copy rows). Link "?" from the edit-slot dialog / banners to the new topic.
-- **README** (shared-database section still describes v0.7: admins only, "edit slot comes with v0.8") and a draft
-  **What's new** entry for v0.8.0 (`10-whats-new.md`; finalised at the release).
-- Ask before committing step 5. Then **Phase E** (dev-plan Phase E: Settings → Shared database card with current editor,
-  last publish, generation and *Force release* for admins; `Installer/` folder + `latest.json` + update banner; onboarding
-  Help, rules of use, FAQ; go-live checklist §6) → release **v0.8.0** (procedure under *GitHub Actions* below).
+**Next session — Phase E (dev-plan Phase E) → release v0.8.0:**
+- **Ask the Phase E kickoff points in a form first; the user reviews the designs before development.** Scope: Settings →
+  Shared database card (current editor, last publish, generation, *Force release* for admins — note: `slotLost` in
+  `sync.ts` then shows "Your editing session ended: this PC gave no sign of life…" for a released session, which needs its
+  own message); `Installer/` folder + `latest.json` + update banner (and a release-procedure step: copy the installer to
+  SharePoint); onboarding Help (multi-user study §6), rules of use (today in *Shared database*), FAQ / troubleshooting
+  (OneDrive, SmartScreen); go-live checklist §6 and a pilot. Then finalise *What's new* v0.8.0 (date + Phase E items) and
+  release (procedure under *GitHub Actions* below).
 - **Two-PC test of v0.7.0** with a colleague (separate SharePoint test folder) — results not reported yet. `main` now holds
   unreleased Phase D work, so a v0.7.x fix would go on a branch from tag `v0.7.0` (tag v0.7.x there, then bring the fix
   into `main`).
@@ -65,7 +64,7 @@ pushed** (`origin/main` is still the v0.7.0 release commit `96f07f9`; ask before
 variables in the same PowerShell call: the one-liner is in `docs/local/corporate-network.md`, local only — see *Corporate
 network* below):
 `npx tsc --noEmit -p .` (exactly 4 known errors: `export.ts` ×2, `Step2ConfigurePricing.tsx`, `Step3ReviewProducts.tsx`),
-`npx eslint <changed files>`, `npm test` (67 tests), `npm run test:main` (main-process checks, see below), and packaging into a temp folder (`out/` is often locked by OneDrive):
+`npx eslint <changed files>`, `npm test` (71 tests), `npm run test:main` (main-process checks, see below), and packaging into a temp folder (`out/` is often locked by OneDrive):
 `node -e "require('@electron-forge/core').api.package({dir:process.cwd(),outDir:process.env.TEMP+'\\epl-pkg-check',interactive:false})"`,
 then delete that folder. Release procedure: see *GitHub Actions* below (`npm version X.Y.Z --no-git-tag-version`, commit, BOM-free
 annotated tag, push `main` + tag; CI runs `npm test`, builds and publishes).
@@ -206,7 +205,7 @@ annotated tag, push `main` + tag; CI runs `npm test`, builds and publishes).
 │   │   └── renderer/
 │   │       ├── main.tsx
 │   │       ├── App.tsx     ← React Router, AuthProvider, AccessGuard (no DB → /setup, not on user list → /no-access), all routes
-│   │       ├── help/       ← Help topics as Markdown (NN-topic.md) + index.ts (?raw imports, display order)
+│   │       ├── help/       ← Help topics as Markdown (NN-topic.md) + index.ts (?raw imports, display order) + values.ts (inline {{VALUES}} from shared/sync.ts) + help.test.ts
 │   │       ├── lib/
 │   │       │   ├── ipc.ts  ← typed wrapper: `export const api = window.api`
 │   │       │   ├── auth.tsx  ← AuthProvider (auth:me), useAuth(), useCan() — mirrors shared/permissions.ts for UI gating
@@ -393,7 +392,7 @@ Removed: generic `settings:get` / `settings:set` (Phase A); `customers:delete`, 
 - **FX**: `fx_rates` = shared defaults (`fx:set-defaults`, admins, one audited call); the Analysis screen keeps **session rates** in a module variable (forgotten when the app closes), with *Reset to defaults* and *Save as default rates* (admins).
 - **Renderer**: `AuthProvider` (`auth:me`) + `AccessGuard` in App.tsx; `useCan()` exposes the shared rules for the effective user; `LockBadge` shows the reason; admin-only cards/buttons are hidden or locked. The UI only mirrors the rules — the guard is the protection. **Phase C**: `SyncProvider` (`lib/sync.tsx`, context in `lib/syncState.ts`) holds the pushed `SyncStatus`, applies new data when not busy (`lib/busy.ts`: open `Dialog`s + wizard routes) and bumps `dataVersion` (AppShell `<Outlet key={dataVersion}>` re-mounts the screen) when another copy was opened; `useCan()` ANDs every change permission with `writable` and offers `readOnly` + `why(roleAllows, roleReason)` for lock texts (use it for any new hard-coded "admins only" text); `SyncBanners.tsx`, sidebar status line, setup screen `/setup` (`DatabaseSelector.tsx`). **Phase D**: `lib/editFlow.tsx` (edit-slot dialog for Start editing / Resume editing / Publish now), Settings → Conflict copies.
 - **DevTools in releases**: admins only (Ctrl+Shift+I / F12 via `before-input-event`, real user, not the previewed one); otherwise closed on `devtools-opened`.
-- **Help — shown to users as "Guides & Help"** (sidebar entry above *Change Database*; code, routes `/help` and files keep the name `help`) **(`renderer/help/*.md`, `screens/Help/HelpScreen.tsx`)**: topics are Markdown files listed in `help/index.ts` (`?raw` imports; `import.meta.glob` can't be used because tsconfig `module` is CommonJS). `{{ROLES}}` and `{{PERMISSION_MATRIX}}` lines are replaced by content generated from `shared/permissions.ts`. Links `help:<id>`. "?" links: Pricing management card → `pricing-modes`, FX popover → `analysis-fx`. Update *What's new* (`10-whats-new.md`) with each release.
+- **Help — shown to users as "Guides & Help"** (sidebar entry above *Change Database*; code, routes `/help` and files keep the name `help`) **(`renderer/help/*.md`, `screens/Help/HelpScreen.tsx`)**: topics are Markdown files listed in `help/index.ts` (`?raw` imports; `import.meta.glob` can't be used because tsconfig `module` is CommonJS). `{{ROLES}}` and `{{PERMISSION_MATRIX}}` lines are replaced by content generated from `shared/permissions.ts` (`HELP_BLOCKS`); inline `{{NAME}}` values (delays, timeouts, minimum editing version) come from `help/values.ts` (`HELP_VALUES`, built from `shared/sync.ts`) — never write a delay as plain text. `help/help.test.ts` (in `npm test`) checks that every topic file is listed with a title, every placeholder is known and every `help:` link exists. Links `help:<id>`. "?" links: Pricing management card → `pricing-modes`, FX popover → `analysis-fx`, sidebar status line → `shared-database`, waiting / take-over dialog → `editing`, Conflict copies screens → `conflict-copies`, red conflict banner *What now?* → `conflict-copies` (or `editing` when nothing was kept). Update *What's new* (`10-whats-new.md`) with each release.
 
 ### Identity (main/auth.ts) and local settings (main/localSettings.ts)
 
@@ -738,7 +737,7 @@ npm install          # install dependencies
 npm start            # dev mode with Vite HMR (DevTools auto-open in dev)
 npm run package      # build unpackaged app (dev/testing only, no installer); prepackage prepares better-sqlite3 for Electron
 npm run make         # build distributable installers (Squirrel .exe + ZIP for Windows); premake does the same
-npm test             # unit tests (node:test via tsx): src/**/*.test.ts — shared/permissions.test.ts, shared/sync.test.ts, main/sync/editSlot.test.ts (67 tests); also run in CI
+npm test             # unit tests (node:test via tsx): src/**/*.test.ts — shared/permissions.test.ts, shared/sync.test.ts, main/sync/editSlot.test.ts, renderer/help/help.test.ts (71 tests); also run in CI
 npm run test:main    # main-process checks (scripts/main-checks/*.checks.ts) on temp copies of the sample DBs; local only
 ```
 
@@ -806,6 +805,6 @@ The connection is kept only in the local **`settings.json`**: `connection: { mod
 - **PBP emails in drafts**: the customer page displays PBP copy/common from `admin_emails` (Settings), but drafts use each customer's own `email_pbp_copy` / `email_pbp_common` columns. Changing an admin email in Settings does not change existing customers' drafts. Candidate fix: build recipients from `admin_emails` in `export:open-mail-bulk`.
 - **Data files in the repo**: `EPL-Database.db`, `EPL-Database BackUp.db`, `All_Prices.xlsx`, `All_PricesTest.xlsx` are tracked in git and contain customer names, emails and prices. If the repo is public, make it private or untrack them (history keeps old copies unless rewritten).
 - **Pre-existing type/lint errors**: see Build commands → Type check / lint.
-- **Multi-user access + user access rights (Phase C released; edit slot next)**: `docs/multi-user-study.md` (local read copy + single "edit slot" via claim files next to the DB on SharePoint + atomic publish with a generation check), `docs/access-rights-study.md` (Windows-account identity, Admin/User/Viewer roles, per-customer pricing mode Open / Managed by PBP / Managed by named users, server-side IPC guard, audit log) and `docs/dev-plan.md` (phases A–F, releases v0.6–v0.8.1, in-app Help plan, historical price-list import spec). Decisions are recorded in each study. **Phase A (Foundations) and Phase B (access rights + Guides & Help) done and released as v0.6.1 on 6 Nov 2026** (permission matrix checked by the user with *Preview as…*). **Phase C (read copy + publish) released as v0.7.0 on 9 Nov 2026** (two-PC test with a colleague running on the release); in v0.7 only admins edit the shared database, and two admins editing at once is caught by the generation check. **Phase D (edit slot) in progress** (steps 1–4 done: claim files, Users may start editing, v0.7 apps read-only after a v0.8 publish via `minAppVersion` 0.8.0, idle release after 30 min, waiting with notifications, Resume editing, rescue tool, the screens). Heads-up for Migration 7: the bootstrap admin is whoever's Windows identity first opens a database with v0.6.1 (on the Windows dev PC that is the account whose UPN is one of the named admins); the other admins are then added in Settings → Users. With v0.7, a shared database without users gets its first admin at *Start editing*.
+- **Multi-user access + user access rights (Phase C released; edit slot built, Phase E next)**: `docs/multi-user-study.md` (local read copy + single "edit slot" via claim files next to the DB on SharePoint + atomic publish with a generation check), `docs/access-rights-study.md` (Windows-account identity, Admin/User/Viewer roles, per-customer pricing mode Open / Managed by PBP / Managed by named users, server-side IPC guard, audit log) and `docs/dev-plan.md` (phases A–F, releases v0.6–v0.8.1, in-app Help plan, historical price-list import spec). Decisions are recorded in each study. **Phase A (Foundations) and Phase B (access rights + Guides & Help) done and released as v0.6.1 on 6 Nov 2026** (permission matrix checked by the user with *Preview as…*). **Phase C (read copy + publish) released as v0.7.0 on 9 Nov 2026** (two-PC test with a colleague running on the release); in v0.7 only admins edit the shared database, and two admins editing at once is caught by the generation check. **Phase D (edit slot) built on `main`, two-PC test pending** (steps 1–5 done: claim files, Users may start editing, v0.7 apps read-only after a v0.8 publish via `minAppVersion` 0.8.0, idle release after 30 min, waiting with notifications, Resume editing, rescue tool, the screens, the Help editing topics); Phase E next. Heads-up for Migration 7: the bootstrap admin is whoever's Windows identity first opens a database with v0.6.1 (on the Windows dev PC that is the account whose UPN is one of the named admins); the other admins are then added in Settings → Users. With v0.7, a shared database without users gets its first admin at *Start editing*.
 - **Open product questions (not yet decided by the user)**: (1) mass wizard Step 1 customer dropdown currently only *filters* the table — the user may prefer that ticking in the dropdown also selects rows for repricing; (2) after deleting a price list, the customer falls back to the remaining list with the latest *effective* date (not the most recently *created*) — confirm if this is the desired rule.
 - **AI features (study only, nothing implemented; 9 Nov 2026)**: using the company's per-user LLM service from EPL Tool was studied and tested end to end on the Windows dev PC (browser sign-in, quota, model list, a model answer). Findings, connection details, integration design (sign-in in the main process, `net.fetch`, encrypted token cache, no AI write path), use cases, open questions and a re-runnable test script are in **`docs/local/ai-study.md`** + `docs/local/llmhub-test/`. That folder is **local only**: excluded through `.git/info/exclude` because this GitHub repo is public and the study contains internal company details — it exists only in the SharePoint-synced working folder, not in clones. Don't copy those details (hosts, IDs, internal links) into tracked files or code before the open questions in the study (incl. repo visibility) are settled.

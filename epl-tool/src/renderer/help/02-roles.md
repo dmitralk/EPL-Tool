@@ -15,8 +15,8 @@ The table below is generated from the same rules the app enforces, so it is alwa
 ## How the rules are applied
 
 - Buttons you can't use are hidden or shown with a lock and the reason, e.g. *Managed by PBP — view only*.
-- With the shared database, every change also needs **edit mode**: until an admin clicks **Start editing**, the app is
-  read-only for everybody (see [Shared database](help:shared-database)).
+- With the shared database, every change also needs **edit mode**: Admins and Users click **Start editing** first, one
+  person at a time (see [Editing the shared database](help:editing)). Until then the app is read-only.
 - The rules are checked again in the background process before anything is written, so a change you are not allowed
   to make is always refused with a clear message.
 - Nothing is deleted when a person leaves: admins **deactivate** users, so their name stays in the history.

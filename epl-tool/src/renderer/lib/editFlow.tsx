@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { Hourglass, Loader2, UserX } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { HelpCircle, Hourglass, Loader2, UserX } from 'lucide-react';
 import { api } from './ipc';
 import { useAuth } from './auth';
 import { useSync } from './syncState';
@@ -127,7 +128,8 @@ export function EditFlowProvider({ children }: { children: React.ReactNode }) {
                 {recovering && <p className="text-gray-500">Your earlier changes stay on this PC meanwhile.</p>}
               </div>
             </div>
-            <div className="flex justify-end gap-2">
+            <div className="flex items-center justify-end gap-2">
+              <HelpLink onClick={() => setView(null)} />
               <Button variant="outline" onClick={close}>Cancel</Button>
               <Button onClick={wait}>Wait</Button>
             </div>
@@ -149,7 +151,8 @@ export function EditFlowProvider({ children }: { children: React.ReactNode }) {
                 </p>
               </div>
             </div>
-            <div className="flex justify-end gap-2">
+            <div className="flex items-center justify-end gap-2">
+              <HelpLink onClick={() => setView(null)} />
               <Button variant="outline" onClick={wait}>Wait</Button>
               <Button onClick={() => { void run(view.action, true); }}>Take over</Button>
             </div>
@@ -157,6 +160,15 @@ export function EditFlowProvider({ children }: { children: React.ReactNode }) {
         )}
       </Dialog>
     </EditFlowContext.Provider>
+  );
+}
+
+// "?" link to the Help topic about editing (closes the dialog).
+function HelpLink({ onClick }: { onClick: () => void }) {
+  return (
+    <Link to="/help/editing" onClick={onClick} className="mr-auto flex items-center gap-1 text-xs text-gray-500 hover:text-blue-600">
+      <HelpCircle size={13} /> How editing works
+    </Link>
   );
 }
 

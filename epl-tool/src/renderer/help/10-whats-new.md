@@ -1,5 +1,26 @@
 # What's new
 
+## v0.8.0 — Shared editing
+
+Several people can now make changes to the shared database, one at a time. See
+[Editing the shared database](help:editing).
+
+- **Admins and Users can edit** (Users only what their rights allow); Viewers stay read-only. **Start editing** reserves
+  the *edit slot* for you, and everybody else sees *Anna is editing* in their sidebar.
+- **Waiting for your turn:** when someone else is editing, click **Wait**. A Windows notification and a banner tell you
+  as soon as the slot is free.
+- **Take over** an editing session that has been inactive for {{TAKEOVER}} (PC asleep, app closed without finishing
+  editing). Its unpublished changes are kept, never lost.
+- **Editing ends by itself** after {{IDLE_RELEASE}} without a change, with a warning {{IDLE_WARNING}} before and
+  **Keep editing**; an open dialog or wizard keeps the slot.
+- **After a crash:** **Resume editing**, **Publish now** or **Discard** the changes that were not published.
+- **Conflict copies** (Settings, with a count in the sidebar): review work that could not be published, **re-apply its
+  price lists** and see what else was done in it; admins archive the reviewed copies. See
+  [Conflict copies](help:conflict-copies).
+- **Windows notifications** when the edit slot is free, when editing ended, and when changes could not be published.
+- **Update needed to edit:** once someone has published with this version, EPL Tool v0.7 can only read the data; install
+  version {{MIN_EDIT_VERSION}} or later to make changes.
+
 ## v0.7.0 — Shared reading (9 Nov 2026)
 
 The database can now be used by several people at the same time. See [Shared database](help:shared-database).

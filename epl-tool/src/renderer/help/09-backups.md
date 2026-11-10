@@ -3,7 +3,7 @@
 Backups are kept in the **EPL-Backups** folder next to the database file (so on SharePoint when the database is on
 SharePoint). Each one is checked before it is kept, and the 20 most recent are kept.
 
-- **Shared database:** a backup is taken automatically each time an admin clicks **Start editing** (and before a restore),
+- **Shared database:** a backup is taken automatically each time someone clicks **Start editing** (and before a restore),
   of the version they start from. Opening the app or reading never writes anything to SharePoint.
 - **Local database** (opened directly): a backup is taken each time the database is opened.
 - **Back up now** and **Restore** (Settings → Backups) are for **admins** — with a shared database, while editing.

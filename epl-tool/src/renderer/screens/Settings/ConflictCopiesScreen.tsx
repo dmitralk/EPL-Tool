@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Archive, ArrowLeft, ChevronDown, ChevronRight, FileWarning, Loader2, RotateCcw } from 'lucide-react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Archive, ArrowLeft, ChevronDown, ChevronRight, FileWarning, HelpCircle, Loader2, RotateCcw } from 'lucide-react';
 import { api } from '../../lib/ipc';
 import { useCan } from '../../lib/auth';
 import { useSync } from '../../lib/syncState';
@@ -68,7 +68,10 @@ function ConflictList({ onReview }: { onReview: (file: string) => void }) {
           <ArrowLeft size={15} /> Settings
         </Button>
         <div className="flex-1">
-          <h1 className="text-2xl font-bold text-gray-900">Conflict copies</h1>
+          <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
+            Conflict copies
+            <Link to="/help/conflict-copies" title="About conflict copies" className="text-gray-400 hover:text-blue-600"><HelpCircle size={16} /></Link>
+          </h1>
           <p className="text-gray-500 text-sm mt-0.5">
             Unpublished work kept when a publish was refused or the edit slot was lost, and OneDrive conflict copies. Nothing
             is lost: review a copy to re-apply its price lists and see what else was done in it.
@@ -190,7 +193,10 @@ function ConflictReview({ file, onBack }: { file: string; onBack: () => void }) 
           <ArrowLeft size={15} /> Conflict copies
         </Button>
         <div className="flex-1 min-w-0">
-          <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2"><FileWarning size={20} className="text-amber-500" /> Review a conflict copy</h1>
+          <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
+            <FileWarning size={20} className="text-amber-500" /> Review a conflict copy
+            <Link to="/help/conflict-copies" title="About conflict copies" className="text-gray-400 hover:text-blue-600"><HelpCircle size={16} /></Link>
+          </h1>
           <p className="font-mono text-xs text-gray-500 mt-1 break-all">{file}</p>
           {data && (
             <p className="text-sm text-gray-600 mt-1">

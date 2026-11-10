@@ -16,7 +16,8 @@ A desktop application for generating and managing customer Export Price Lists (E
 - Users and roles (Admin / User / Viewer, recognised by their Windows account — no passwords), a pricing management mode per
   customer, an activity log visible to everybody, and built-in **Guides & Help**
 - A **shared database** on SharePoint for several people: everybody works on a local copy that is kept up to date
-  (read-only by default); admins click *Start editing*, and their changes are published safely for everybody
+  (read-only by default); Admins and Users click *Start editing* — one person edits at a time — and their changes are
+  published safely for everybody
 
 ---
 
@@ -109,8 +110,8 @@ The original one-off Excel import (`All_Prices.xlsx`) has been removed. A wizard
 | **Analysis** | Every price list line vs the Standard EPL (USD, EUR, or All currencies via FX); choose columns; export to Excel |
 | **Products** | Add, edit, or delete products (admins) |
 | **Standard EPL** | Versioned standard prices (USD + EUR): draft → publish (admins), compare versions; packaging charges; export / email |
-| **Guides & Help** | Documentation and how-to guides: shared database, roles and permissions, pricing modes, wizards, emails, FX rates, activity log, backups, what's new (sidebar, above *Change Database*) |
-| **Settings** | Database, users (admins), activity log, backups, logo, PBP emails, units, packaging, currencies, hidden customers |
+| **Guides & Help** | Documentation and how-to guides: shared database, editing, roles and permissions, pricing modes, wizards, emails, FX rates, activity log, backups, conflict copies, what's new (sidebar, above *Change Database*) |
+| **Settings** | Database, users (admins), activity log, backups, conflict copies, logo, PBP emails, units, packaging, currencies, hidden customers |
 
 Customer pickers everywhere work like Power BI slicers: click the dropdown, type part of the name or SAP code, tick one or several customers.
 
@@ -159,12 +160,19 @@ The database is a single `.db` file. To switch databases, use **Change Database*
 - **Shared database** (*Connect to shared database*, from v0.7): the file stays in a SharePoint folder synced by OneDrive.
   EPL Tool never opens it directly: it copies it to `%LOCALAPPDATA%\epl-tool\cache` and works on that copy, read-only. Every
   30 seconds it looks for newer data and applies it (or offers *Refresh* while a dialog or wizard is open); when SharePoint
-  can't be reached it keeps working on the last copy (*Offline copy*). Admins click **Start editing** to work on a fresh
-  working copy; changes are published about a minute after the last change and on **Finish editing**. A publish is
-  refused if someone else published in between (generation check) — nothing is overwritten, the work is kept in
-  `EPL-Conflicts/`. The sidebar shows the status (*Read-only · data of …*, *Editing*, *Offline copy*). Users and Viewers are
-  read-only in v0.7; the edit slot for several editors comes with v0.8. Details: **Guides & Help → Shared database** and
-  [docs/multi-user-study.md](docs/multi-user-study.md).
+  can't be reached it keeps working on the last copy (*Offline copy*). The sidebar shows the status (*Read-only · data of …*,
+  *Editing*, *Offline copy*) and who is editing (*Anna is editing*).
+- **Editing the shared database** (v0.8): Admins and Users (within their rights) click **Start editing**. **One person edits
+  at a time**: *Start editing* reserves the **edit slot** — a claim file in `EPL-EditSlot/` next to the database, renewed
+  every 3 minutes while editing; after a waiting window of about 45 seconds the earliest claim wins. The editor works on a
+  fresh working copy; changes are published about a minute after the last change and on **Finish editing**. Others can
+  **wait** (Windows notification when the slot is free), **take over** a session without a sign of life for 15 minutes, and
+  an editing session ends by itself after 30 minutes without changes (warning 2 minutes before, *Keep editing*; an open
+  dialog or wizard keeps it). After a crash the app offers *Resume editing* / *Publish now* / *Discard*. A publish is
+  refused if someone else published in between (generation check) — nothing is overwritten: the work is kept in
+  `EPL-Conflicts/`, and **Settings → Conflict copies** re-applies its price lists and lists what else was done in it. Once
+  data is published with v0.8, v0.7 apps can only read it. Details: **Guides & Help → Shared database / Editing the shared
+  database / Conflict copies** and [docs/multi-user-study.md](docs/multi-user-study.md).
 - **Local database** (*Open a local database*): opened directly, as before v0.7 — for test databases. A database that has
   been published as shared (it has a `.manifest.json` next to it) can't be opened this way.
 
@@ -177,8 +185,8 @@ but changes need the update.
 
 ## Backups
 
-- A verified backup is written to an **`EPL-Backups`** folder next to the database file: for a **shared** database each time an
-  admin clicks *Start editing* (and before a restore) — reading never writes to SharePoint; for a **local** database each time
+- A verified backup is written to an **`EPL-Backups`** folder next to the database file: for a **shared** database each time
+  someone clicks *Start editing* (and before a restore) — reading never writes to SharePoint; for a **local** database each time
   it is opened. The 20 most recent are kept.
 - **Settings → Backups**: see the list and **Open folder** (everybody); **Back up now** and **Restore** (admins; with a shared
   database while editing — a restore is then published to everybody). Before restoring, the current database is saved as a

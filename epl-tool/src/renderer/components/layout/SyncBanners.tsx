@@ -86,7 +86,7 @@ export function SyncBanners() {
         }>
           {status.conflict.message}{' '}
           {status.conflict.savedTo && <><Link to="/settings/conflicts" className="underline">Review it in Conflict copies</Link> · </>}
-          <Link to="/help/shared-database" className="underline">What now?</Link>
+          <Link to={status.conflict.savedTo ? '/help/conflict-copies' : '/help/editing'} className="underline">What now?</Link>
         </Banner>
       )}
 

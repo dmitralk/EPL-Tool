@@ -22,8 +22,9 @@ access, the customers you manage and the admins to contact.
 ## Where the data lives
 
 The database is shared through a SharePoint folder. EPL Tool works on a copy on your PC that it keeps up to date, and
-starts **read-only**; admins click **Start editing** to make changes, which are then published for everybody. The status
-line at the bottom of the sidebar shows which data you see. See [Shared database](help:shared-database).
+starts **read-only**; Admins and Users click **Start editing** to make changes, which are then published for everybody.
+One person edits at a time. The status line at the bottom of the sidebar shows which data you see and who is editing. See
+[Shared database](help:shared-database) and [Editing the shared database](help:editing).
 
 ## The main screens
 
@@ -35,7 +36,7 @@ line at the bottom of the sidebar shows which data you see. See [Shared database
 | Emails | Every customer / internal email address and the customers that use it |
 | Analysis | Prices of all customers next to the Standard EPL |
 | Products, Standard EPL | The product catalogue and the versioned standard prices |
-| Settings | Database, users, activity log, backups, logo, PBP emails, units, packaging, currencies |
+| Settings | Database, users, activity log, backups, conflict copies, logo, PBP emails, units, packaging, currencies |
 
 ## Two things to remember
 

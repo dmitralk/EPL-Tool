@@ -10,6 +10,7 @@ import { useToast } from '../../components/ui/toast';
 import { Markdown } from '../../components/Markdown';
 import { MATRIX_CELL_LABELS, PERMISSION_MATRIX, ROLES, ROLE_DESCRIPTIONS, ROLE_LABELS } from '../../../shared/permissions';
 import { HELP_TOPICS } from '../../help';
+import type { HelpBlock } from '../../help/values';
 import type { Customer } from '../../../types';
 
 interface Topic { id: string; title: string; body: string }
@@ -54,6 +55,8 @@ function MatrixBlock() {
     </div>
   );
 }
+
+const BLOCKS: Record<HelpBlock, React.ReactNode> = { ROLES: <RolesBlock />, PERMISSION_MATRIX: <MatrixBlock /> };
 
 function YourAccess() {
   const { state } = useAuth();
@@ -132,7 +135,7 @@ export function HelpScreen() {
       </aside>
       <main className="flex-1 min-w-0 bg-white rounded-lg border border-gray-200 shadow-sm p-6">
         <YourAccess />
-        {current && <Markdown source={current.body} blocks={{ ROLES: <RolesBlock />, PERMISSION_MATRIX: <MatrixBlock /> }} />}
+        {current && <Markdown source={current.body} blocks={BLOCKS} />}
       </main>
     </div>
   );

@@ -1,7 +1,8 @@
 # EPL Tool — Development plan: access rights + multi-user
 
 *Status: decisions recorded · Phases A + B done · v0.6 released as v0.6.1 · Phase C released as v0.7.0 on 9 Nov 2026 (two-PC
-test with a colleague running on the release) · updated 9 Nov 2026 · current version v0.7.0*
+test with a colleague running on the release) · Phase D (edit slot) built on `main` 10 Nov 2026 (two-PC test pending), Phase
+E next · updated 10 Nov 2026 · current version v0.7.0*
 *Studies: [access-rights-study.md](./access-rights-study.md) · [multi-user-study.md](./multi-user-study.md) · AI features:
 `docs/local/ai-study.md` (local only, not in git — see CLAUDE.md → Known issues / open items)*
 
@@ -93,7 +94,7 @@ dialog, FX popover, import wizard). It is written for users; the files in `docs/
 |---|---|
 | v0.6 | Getting started & your access · Roles & permissions · Pricing management modes · Creating price lists (single / mass) · Customers & New Customer · Emails tab & PBP emails · Analysis & FX rates (session vs default) · Activity log · Backups · *What's new* |
 | v0.7 | Shared database: read mode, *data of …* status, refresh, offline copy, "newer data still syncing", updating the app, editing for admins and conflicts — **written 9 Nov 2026** (topic *Shared database*) |
-| v0.8 | Editing: *Start editing*, waiting for the slot, auto-publish, **timeouts**, take-over, crash recovery, conflicts and *Re-apply my price lists* · Onboarding a new user (admins, incl. SharePoint permissions) · Rules of use · FAQ / troubleshooting (OneDrive, SmartScreen) |
+| v0.8 | Editing: *Start editing*, waiting for the slot, auto-publish, **timeouts**, take-over, crash recovery, conflicts and *Re-apply my price lists* — **written 10 Nov 2026** (topics *Editing the shared database* and *Conflict copies*; *Shared database* rewritten for v0.8, incl. the rules of use) · Onboarding a new user (admins, incl. SharePoint permissions) · Rules of use · FAQ / troubleshooting (OneDrive, SmartScreen) — Phase E |
 | v0.8.1 | Historical import: template, validation messages, what is never created |
 
 **Effort:** 0.5 d to build the Help screen, then about 0.25 d of writing per release (included in the phase estimates).
@@ -402,7 +403,7 @@ parallel.
 - a publish on top of a newer central version is refused and the work is kept
 - offline start works from the last copy
 
-### Phase D — Edit slot (3–4 d)
+### Phase D — Edit slot (3–4 d) — **steps 1–5 built 10 Nov 2026** (on `main`; two-PC test pending; released with Phase E as v0.8.0)
 
 **Kickoff decisions (confirmed by the user on 9 Nov 2026 — all proposals accepted).** Design in the multi-user study
 §5.5–5.7; timeouts decided earlier (§8: take-over after 15 min without heartbeat, release after 30 min without changes).
@@ -542,6 +543,18 @@ expandable, with copy vs shared values). Found during the visual check (isolated
 activity list no longer counts the creation of a price list that the shared database has meanwhile (re-applied), the
 re-apply results name customer + version, the "started from" text for a never-published original. `phase-d.checks.ts`: 149.
 
+Step 5 (Help + docs) done 10 Nov 2026 — Guides & Help: *Shared database* rewritten for v0.8 (read mode, *Anna is editing*,
+making changes → the editing topic, conflict copies, what is in the shared folder, rules of use); new topics **Editing the
+shared database** (Start editing and the reservation, while you edit, waiting + notifications, taking over, the automatic
+release + *Keep editing*, closing the app and crash recovery, when editing ends unexpectedly, a timings table) and
+**Conflict copies** (sources, review, re-apply, archive). Every delay comes from `shared/sync.ts` (new placeholders
+`SLOT_WAIT`, `HEARTBEAT`, `TAKEOVER`, `IDLE_RELEASE`, `IDLE_WARNING`, `MIN_EDIT_VERSION` in `help/index.ts`). *Getting
+started*, *Roles* and *Backups* no longer say "admins" for editing. "?" links: *How editing works* in the waiting / take-over
+dialog, the Conflict copies screens, and the red banner's *What now?* (conflict copies, or editing when nothing was kept).
+README updated; *What's new* has a draft v0.8.0 entry (date and the Phase E items are added at release). The inline values
+live in `help/values.ts`; `help/help.test.ts` (4 tests, `npm test` now 71) checks that every topic file is listed with a
+title, every placeholder is known and every `help:` link exists (confirmed by breaking each on purpose).
+
 - [ ] **Edit slot:**
   - [x] a claim file per editing session in `EPL-EditSlot/`
   - [x] heartbeat every 3 min
@@ -554,7 +567,7 @@ re-apply results name customer + version, the "started from" text for a never-pu
   - [x] crash recovery (`work\session.json`): [Resume editing] [Publish now] [Discard], through the edit slot
   - [x] the `EPL-Conflicts/` folder
   - [x] **"Re-apply my price lists"** rescue tool, with a report of other differences (Settings → Conflict copies)
-- [ ] **Help:** the editing topics.
+- [x] **Help:** the editing topics.
 
 **Done when:** all scenarios in the multi-user study §7 (testing) work on two PCs.
 
@@ -658,6 +671,6 @@ All decisions are recorded (the last two on 5 Nov 2026):
 
 **Next step:** Phase D (edit slot) — started 9 Nov 2026 right after the v0.7.0 release, while the two-PC test of v0.7.0 runs
 with a colleague (separate SharePoint test folder with a copy of the database). Steps 1 (slot core), 2 (idle release,
-waiting, notifications), 3 (recovery with the slot + rescue tool) and 4 (screens) are done; next is step 5 (Help editing
-topics, README, *What's new*), then Phase E → v0.8.0. Phases A and B were
+waiting, notifications), 3 (recovery with the slot + rescue tool), 4 (screens) and 5 (Help editing topics, README, draft
+*What's new*) are done (10 Nov 2026); next is Phase E (kickoff questions first) → v0.8.0. Phases A and B were
 released as **v0.6.1** on 6 Nov 2026 (v0.6.0 was not released separately); Phase C as **v0.7.0** on 9 Nov 2026.
