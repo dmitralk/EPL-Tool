@@ -461,8 +461,10 @@ an expired claim never revived, re-applied price lists logged as normal creation
   otherwise claim again (waiting window / waiting) and continue on the kept working copy (the generation check decides at the
   next publish). *Publish now* = resume + Finish editing.
 - `MIN_EDIT_APP_VERSION = '0.8.0'`; `canStartEditing` = Admin or User (the matrix row in Help follows; unit tests updated).
-- **Notifications** (`main/notify.ts`): Electron `Notification`, with the app's Windows id set for the installed app (Squirrel
-  `com.squirrel.EPLTool.<exe>`); silently skipped where not supported.
+- **Notifications** (`main/notify.ts`): Electron `Notification`; `sync.ts` only emits events (`onNotice`: slot free, released,
+  refused, slot lost), so the checks record them without Electron. The installed app gets its Windows id from Squirrel
+  automatically (Electron detects the Squirrel install and calls `setAppUserModelId` itself — confirmed in the Electron docs,
+  10 Nov 2026); `npm start` sets `process.execPath`. Silently skipped where not supported; banners show the same events.
 - **Rescue tool** (`ipc/conflicts.ts`, `main/sync/rescue.ts`): `conflicts:list` (EPL-Conflicts + OneDrive copies with date,
   person, generation), `conflicts:analyze(file)` (the copy is first copied to a temp file — the shared folder is never opened
   with SQLite — then compared with the open database: price lists whose id is missing, and per table counts/rows of added,
@@ -495,13 +497,24 @@ and recovery go through the slot, Users may start editing, `MIN_EDIT_APP_VERSION
 the PC helpers now in `scripts/main-checks/pcs.ts` (each simulated PC has its own computer name). The screens still use the
 v0.7 *Start editing* button (waiting / take-over answers show as messages) until step 4; Help follows in step 5.
 
+Step 2 (idle release, waiting, notifications) done 10 Nov 2026 — the screens report open dialogs/wizards (`sync:set-busy`);
+the idle time counts from the later of the last change and the moment the last dialog/wizard closed; during the last 2 min
+the status carries `edit.releaseAt` (banner with [Keep editing] = `sync:keep-editing`); at 30 min: Finish editing (publish,
+slot freed, read mode), a "released" message (`released` in the status, `sync:dismiss-released`) and a notification; when
+the publish fails the slot is kept and the release tried again at the next check interval. Waiting: `sync:wait-for-slot` /
+`sync:stop-waiting` (`slot.waitingSince`); every check tells the waiting person once each time the slot goes from taken to
+free (or to an inactive session they may take over); it is never claimed automatically, and waiting ends when *Start
+editing* works. Notifications also for a refused publish and a lost slot. Interim screens until step 4: three banners
+(release warning, released, waiting / slot free), and *Start editing* starts waiting by itself when someone is editing.
+`phase-d.checks.ts`: 100 checks (real timers, shortened, on a dedicated PC for the idle release).
+
 - [ ] **Edit slot:**
   - [x] a claim file per editing session in `EPL-EditSlot/`
   - [x] heartbeat every 3 min
   - [x] about 45 s waiting window; the earliest claim wins
   - [x] take-over after 15 min without activity (question first; screens in step 4)
-  - [ ] automatic publish and release after 30 min without changes
-- [ ] **Waiting:** a waiting dialog, and a Windows notification when the slot is free.
+  - [x] automatic publish and release after 30 min without changes (warning 2 min before, open dialogs keep the slot)
+- [ ] **Waiting:** a waiting dialog (step 4), and a Windows notification when the slot is free (done).
 - [x] ***Start editing* for Users** as well (role check: Admin or User).
 - [ ] **Recovery:**
   - [ ] crash recovery (`work\session.json`)
@@ -610,6 +623,6 @@ All decisions are recorded (the last two on 5 Nov 2026):
 - **Session FX rates:** forgotten when the app closes.
 
 **Next step:** Phase D (edit slot) — started 9 Nov 2026 right after the v0.7.0 release, while the two-PC test of v0.7.0 runs
-with a colleague (separate SharePoint test folder with a copy of the database). Step 1 (slot core) is done; next is step 2
-(idle release, waiting / slot free, notifications). Phases A and B were released as **v0.6.1** on 6 Nov 2026 (v0.6.0 was not
-released separately); Phase C as **v0.7.0** on 9 Nov 2026.
+with a colleague (separate SharePoint test folder with a copy of the database). Steps 1 (slot core) and 2 (idle release,
+waiting, notifications) are done; next is step 3 (recovery with the slot + rescue tool). Phases A and B were released as
+**v0.6.1** on 6 Nov 2026 (v0.6.0 was not released separately); Phase C as **v0.7.0** on 9 Nov 2026.

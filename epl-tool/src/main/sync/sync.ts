@@ -61,6 +61,8 @@ interface Shared {
   conflict: { savedTo: string | null; at: string; message: string } | null;  // last refused publish / lost slot
   recovery: Session | null;     // unpublished working copy left by a previous run
   claims: SlotClaim[];          // edit slot claims seen at the last check
+  waiting: { since: string; heldBy: { slotId: string; user: string } | null } | null;  // told when the slot is free
+  released: { at: string; message: string } | null;  // the slot was released after the idle time
 }
 
 // Edit mode: the working copy in work\ and what the next publish must find in the shared folder.
@@ -69,6 +71,7 @@ interface EditState {
   workFile: string;
   slot: SlotClaim;              // my claim (holding)
   lastBeat: number;             // when my claim was last written (ms): a longer gap than the take-over time = slot lost
+  activeAt: number;             // last change, end of a dialog/wizard, or Keep editing (ms): the idle release counts from it
   baseGeneration: number;       // generation of the central file the next publish replaces
   baseSha: string;              // its exact content (sha256)
   publishedBy: string | null;   // of that central file (status line)
@@ -111,6 +114,14 @@ export type StartEditingResult =
   | { ok: false; takeOver: SlotPerson }
   | { ok: false; cancelled: true };
 
+// Something the person should hear about even when EPL Tool is in the background: shown as a Windows notification by
+// main/notify.ts (recorded by the checks). The screens show the same events as banners.
+export interface SyncNotice {
+  kind: 'slot-free' | 'released' | 'refused' | 'slot-lost';
+  title: string;
+  body: string;
+}
+
 // A shared file failing the integrity check this many times in a row is reported as damaged (a single failure is
 // usually a copy caught in the middle of a OneDrive download).
 const DAMAGED_REPORT_AFTER = 3;
@@ -126,6 +137,8 @@ let claiming: { claim: SlotClaim; until: number; cancelled: boolean } | null = n
 let timer: NodeJS.Timeout | null = null;
 let publishTimer: NodeJS.Timeout | null = null;
 let heartbeatTimer: NodeJS.Timeout | null = null;
+let idleTimer: NodeJS.Timeout | null = null;
+let busyNow = false;            // a dialog or wizard is open on the screens (reported by them)
 const MINUTE = 60_000;
 let timing = {
   checkMs: CHANGE_CHECK_SECONDS * 1000,
@@ -139,6 +152,7 @@ let timing = {
 };
 let timersOn = false;
 const listeners = new Set<(status: SyncStatus) => void>();
+const noticeListeners = new Set<(notice: SyncNotice) => void>();
 
 const nowIso = () => new Date().toISOString();
 const samePath = (a: string, b: string) => path.resolve(a).toLowerCase() === path.resolve(b).toLowerCase();
@@ -234,6 +248,22 @@ function emit(): void {
   }
 }
 
+export function onNotice(listener: (notice: SyncNotice) => void): () => void {
+  noticeListeners.add(listener);
+  return () => noticeListeners.delete(listener);
+}
+
+function notice(n: SyncNotice): void {
+  for (const l of noticeListeners) {
+    try { l(n); } catch { /* never let a notification break anything */ }
+  }
+}
+
+const timeOf = (iso: string | null | undefined) => {
+  const d = new Date(iso ?? '');
+  return Number.isNaN(d.getTime()) ? '' : d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+};
+
 // ── Connecting ─────────────────────────────────────────────────────────────────────────────────────────────────────
 
 function leaveCurrent(): void {
@@ -273,7 +303,7 @@ export async function connectShared(centralPath: string, opts: { save?: boolean 
   const s: Shared = {
     store, phase: 'connecting', copy: null, offline: null, syncing: null, pending: null, manifest: null, lastProbe: null,
     damagedCount: 0, centralDamaged: false, conflictCopies: [], lastCheckAt: null, error: null, conflict: null, recovery: null,
-    claims: [],
+    claims: [], waiting: null, released: null,
   };
   shared = s;
   mode = 'shared';
@@ -424,6 +454,7 @@ async function runCheck(): Promise<void> {
   s.manifest = probe.manifest;
   s.conflictCopies = await s.store.findConflictCopies();
   await readClaims(s);
+  watchSlotForWaiter(s);
   const key = probeKey(probe.size, probe.mtimeMs, probe.manifest);
   if (s.phase === 'edit') {
     if (edit && verifySlot(edit, s.claims) === 'lost') {
@@ -502,15 +533,20 @@ export function startBackgroundChecks(t: Partial<typeof timing> = {}): void {
   if (timer) clearInterval(timer);
   timer = setInterval(() => { void checkNow(); }, timing.checkMs);
   timer.unref?.();
-  if (edit) startHeartbeat();
+  if (edit) {
+    startHeartbeat();
+    scheduleIdle();
+  }
 }
 
 export function stopBackgroundChecks(): void {
   if (timer) clearInterval(timer);
   if (publishTimer) clearTimeout(publishTimer);
+  if (idleTimer) clearTimeout(idleTimer);
   stopHeartbeat();
   timer = null;
   publishTimer = null;
+  idleTimer = null;
   timersOn = false;
 }
 
@@ -596,6 +632,7 @@ async function acquireSlot(
   const claims = await s.store.listClaims();
   for (const c of claims.filter(x => isMyOldClaim(x, keep))) await s.store.deleteClaim(c.slotId);
   const current = claims.filter(x => !isMyOldClaim(x, keep));
+  s.claims = current.filter(c => !isStale(c, Date.now(), timing.cleanupMs));
   const now = Date.now();
   const kept = keep ? current.find(c => c.slotId === keep) : undefined;
   if (kept) {
@@ -695,7 +732,125 @@ async function slotLost(s: Shared, e: EditState): Promise<void> {
   const what = by ? `${by} took over the edit slot` : 'Your editing session ended: this PC gave no sign of life for too long';
   const work = !e.dirty ? '' : savedTo ? ` Your unpublished changes were saved as ${savedTo}.` : ' Your unpublished changes could not be saved.';
   s.conflict = { savedTo, at: nowIso(), message: `${what}.${work}` };
+  notice({
+    kind: 'slot-lost', title: 'EPL Tool: editing ended',
+    body: `${what}.${!e.dirty ? '' : savedTo ? ' Your unpublished changes were saved in EPL-Conflicts.' : ' Your unpublished changes could not be saved.'}`,
+  });
   await endEditing(s, e, false);
+}
+
+// ── Waiting for the edit slot (decision 3 of 9 Nov 2026: told when it is free, never given it automatically) ───────
+
+// Wait: from now on every check looks whether the slot became free. Waiting lasts until Start editing works or Stop waiting.
+export async function waitForSlot(): Promise<void> {
+  const s = shared;
+  if (!s || s.phase !== 'read') return;
+  await readClaims(s);
+  const holder = holderOf(s.claims, Date.now(), timing.takeoverMs);
+  s.waiting = { since: s.waiting?.since ?? nowIso(), heldBy: holder ? { slotId: holder.slotId, user: holder.user } : null };
+  emit();
+}
+
+export function stopWaiting(): void {
+  if (shared) shared.waiting = null;
+  emit();
+}
+
+// At every check: a waiting person is told once each time the slot goes from taken to free (or to an inactive session
+// they may take over). The screens show "The edit slot is free" for as long as it is.
+function watchSlotForWaiter(s: Shared): void {
+  const w = s.waiting;
+  if (!w || s.phase !== 'read') return;
+  const now = Date.now();
+  const holder = holderOf(s.claims, now, timing.takeoverMs);
+  if (holder) {
+    w.heldBy = { slotId: holder.slotId, user: holder.user };
+    return;
+  }
+  if (!w.heldBy) return;
+  const was = w.heldBy.user;
+  w.heldBy = null;
+  const inactive = inactiveHolderOf(s.claims, now, timing.takeoverMs);
+  notice({
+    kind: 'slot-free', title: 'EPL Tool: the edit slot is free',
+    body: inactive
+      ? `${inactive.user}'s editing session has been inactive since ${timeOf(inactive.heartbeatAt)}. Click Start editing to take over.`
+      : `${was} has finished editing. Click Start editing to make your changes.`,
+  });
+}
+
+// ── Releasing an idle edit slot (decision 4 of 9 Nov 2026) ─────────────────────────────────────────────────────────
+
+// The screens report whether a dialog or wizard is open: no release while one is, and the idle time restarts when it closes.
+export function setBusy(busy: boolean): void {
+  if (busy === busyNow) return;
+  busyNow = busy;
+  if (!busy && edit) edit.activeAt = Date.now();
+  scheduleIdle();
+  emit();
+}
+
+// [Keep editing] on the warning before the release.
+export function keepEditing(): void {
+  if (!edit) return;
+  edit.activeAt = Date.now();
+  scheduleIdle();
+  emit();
+}
+
+// When the slot will be released, shown during the warning before it (null otherwise).
+function releaseWarning(e: EditState): string | null {
+  if (!timersOn || busyNow) return null;
+  const at = e.activeAt + timing.idleMs;
+  return Date.now() >= at - timing.idleWarnMs ? new Date(at).toISOString() : null;
+}
+
+// One timer: to the warning, then to the release.
+function scheduleIdle(): void {
+  if (idleTimer) clearTimeout(idleTimer);
+  idleTimer = null;
+  const e = edit;
+  if (!e || !timersOn || busyNow) return;
+  const releaseAt = e.activeAt + timing.idleMs;
+  const warnAt = releaseAt - timing.idleWarnMs;
+  const now = Date.now();
+  idleTimer = setTimeout(() => {
+    idleTimer = null;
+    void idleTick(e);
+  }, Math.max(0, (now < warnAt ? warnAt : releaseAt) - now));
+  idleTimer.unref?.();
+}
+
+async function idleTick(e: EditState): Promise<void> {
+  if (edit !== e || busyNow) return;
+  if (Date.now() < e.activeAt + timing.idleMs) {
+    emit();                       // the warning (edit.releaseAt in the status)
+    scheduleIdle();
+    return;
+  }
+  const s = shared;
+  if (!s) return;
+  const hadChanges = e.dirty;
+  const r = await finishEditing();
+  if (r.ok && edit !== e) {
+    const message = `The edit slot was released after ${IDLE_RELEASE_MINUTES} minutes without changes, so others can edit` +
+      (hadChanges ? ': your last changes were published.' : '.');
+    s.released = { at: nowIso(), message };
+    notice({ kind: 'released', title: 'EPL Tool: editing ended', body: `${message} Click Start editing to make more changes.` });
+    emit();
+  } else if (edit === e && timersOn && !idleTimer) {
+    // Not published (e.g. the shared folder can't be reached): the slot is kept and the release tried again later.
+    idleTimer = setTimeout(() => {
+      idleTimer = null;
+      void idleTick(e);
+    }, timing.checkMs);
+    idleTimer.unref?.();
+  }
+}
+
+export function dismissReleased(): void {
+  if (shared) shared.released = null;
+  emit();
 }
 
 // ── Edit mode (multi-user study §5.5–5.7) ─────────────────────────────────────────────────────────────────────────
@@ -728,6 +883,8 @@ function noteChanges(): void {
   const n = totalChanges();
   if (n === e.seen) return;
   e.seen = n;
+  e.activeAt = Date.now();
+  scheduleIdle();
   if (n === e.baseline && !e.dirty) return;
   e.changedAt = nowIso();
   if (!e.dirty) {
@@ -829,18 +986,21 @@ export async function startEditing(opts: { restoreFrom?: string; takeOver?: bool
     await s.store.writeClaim(holding);
     const n = totalChanges();
     edit = {
-      since: nowIso(), workFile, slot: holding, lastBeat: Date.now(), baseGeneration: base.generation, baseSha: base.sha256,
-      publishedBy: base.publishedBy, publishedAt: base.publishedAt, baseline: n, seen: n, dirty: false, changedAt: null,
-      publishing: null, lastPublishedAt: null, lastPublishedGeneration: null, nextPublishAt: null, error: null,
+      since: nowIso(), workFile, slot: holding, lastBeat: Date.now(), activeAt: Date.now(), baseGeneration: base.generation,
+      baseSha: base.sha256, publishedBy: base.publishedBy, publishedAt: base.publishedAt, baseline: n, seen: n, dirty: false,
+      changedAt: null, publishing: null, lastPublishedAt: null, lastPublishedGeneration: null, nextPublishAt: null, error: null,
       centralKey: null, centralChanged: null,
     };
     claim = null;
     s.phase = 'edit';
     s.conflict = null;
     s.pending = null;
+    s.waiting = null;
+    s.released = null;
     await removeQuietly(incomingPath());
     writeSession(edit);
     startHeartbeat();
+    scheduleIdle();
     // Decided 9 Nov 2026: the first admin of a database without users is created here, and the Windows account of someone
     // added by email only is recorded now (the look-up records it). Both are changes to publish.
     bootstrapFirstAdmin(getDb());
@@ -1009,6 +1169,10 @@ async function keepRefusedCopy(s: Shared): Promise<string | null> {
 async function refused(s: Shared, e: EditState, message: string, savedTo: string | null): Promise<PublishOutcome> {
   const where = savedTo ? ` Your copy was saved as ${savedTo}.` : ' Your copy could not be saved.';
   s.conflict = { savedTo, at: nowIso(), message: `Your changes were not published: ${message}${where}` };
+  notice({
+    kind: 'refused', title: 'EPL Tool: your changes were not published',
+    body: `${message}${savedTo ? ' Your copy was saved in EPL-Conflicts.' : ' Your copy could not be saved.'}`,
+  });
   await endEditing(s, e, false);
   return { ok: false, conflict: true, error: s.conflict.message, savedTo };
 }
@@ -1017,7 +1181,9 @@ async function refused(s: Shared, e: EditState, message: string, savedTo: string
 // discarded and a fresh read copy is taken (or the old one reopened when the folder can't be reached).
 async function endEditing(s: Shared, e: EditState, published: boolean): Promise<void> {
   if (publishTimer) clearTimeout(publishTimer);
+  if (idleTimer) clearTimeout(idleTimer);
   publishTimer = null;
+  idleTimer = null;
   stopHeartbeat();
   edit = null;
   closeDatabase();
@@ -1106,7 +1272,8 @@ export async function recoverUnpublished(action: 'publish' | 'discard'): Promise
   const holding: SlotClaim = { ...got, state: 'holding', heartbeatAt: nowIso() };
   await s.store.writeClaim(holding).catch(() => undefined);
   const e: EditState = {
-    since: sess.startedAt, workFile, slot: holding, lastBeat: Date.now(), baseGeneration: sess.baseGeneration,
+    since: sess.startedAt, workFile, slot: holding, lastBeat: Date.now(), activeAt: Date.now(),
+    baseGeneration: sess.baseGeneration,
     baseSha: sess.baseSha, publishedBy: sess.publishedBy, publishedAt: sess.publishedAt, baseline: -1, seen: totalChanges(),
     dirty: true, changedAt: sess.changedAt, publishing: null, lastPublishedAt: null, lastPublishedGeneration: null,
     nextPublishAt: null, error: null, centralKey: null, centralChanged: null,
@@ -1261,8 +1428,10 @@ export function getStatus(): SyncStatus {
       nextPublishAt: e.dirty && e.nextPublishAt ? new Date(e.nextPublishAt).toISOString() : null,
       error: e.error,
       centralChanged: e.centralChanged,
+      releaseAt: releaseWarning(e),
     } : null,
     conflict: s?.conflict ?? null,
+    released: s?.released ?? null,
     recovery: s?.recovery ? { since: s.recovery.startedAt, changedAt: s.recovery.changedAt } : null,
     slot: {
       holder: e ? personOf(e.slot) : s ? (() => {
@@ -1270,6 +1439,7 @@ export function getStatus(): SyncStatus {
         return h ? personOf(h) : null;
       })() : null,
       claimingUntil: claiming ? new Date(claiming.until).toISOString() : null,
+      waitingSince: s?.phase === 'read' ? s.waiting?.since ?? null : null,
     },
     legacySuggestion,
   };

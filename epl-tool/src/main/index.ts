@@ -6,7 +6,8 @@ import { registerAllIpcHandlers } from './ipc';
 import { guardDevTools, installAppMenu } from './menu';
 import { getIdentity, initIdentity } from './auth';
 import { isRealUserAdmin } from './currentUser';
-import { finishEditing, isEditing, startBackgroundChecks, startup } from './sync/sync';
+import { initNotifications, showNotification } from './notify';
+import { finishEditing, isEditing, onNotice, startBackgroundChecks, startup } from './sync/sync';
 
 if (started) app.quit();
 
@@ -54,6 +55,8 @@ function createWindow() {
 app.on('ready', async () => {
   initIdentity({ allowOverride: !app.isPackaged });
   installAppMenu();
+  initNotifications();
+  onNotice(n => showNotification(n.title, n.body));
   registerAllIpcHandlers();
 
   // Reconnect the way this PC did last time (a local database, or a copy of the shared one) before the window asks for

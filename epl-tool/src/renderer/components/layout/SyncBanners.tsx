@@ -1,10 +1,12 @@
 import { Link } from 'react-router-dom';
-import { AlertTriangle, CloudOff, Download, History, Pencil, RefreshCw, ShieldAlert, X } from 'lucide-react';
+import {
+  AlertTriangle, Bell, Clock, CloudOff, Download, History, Hourglass, Info, Pencil, RefreshCw, ShieldAlert, X,
+} from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { useCan } from '../../lib/auth';
 import { useSync } from '../../lib/syncState';
 import { formatWhen, useSyncActions } from '../../lib/sync';
-import { AUTO_PUBLISH_SECONDS, describeSeconds } from '../../../shared/sync';
+import { AUTO_PUBLISH_SECONDS, IDLE_RELEASE_MINUTES, describeSeconds } from '../../../shared/sync';
 import type { SyncPublishInfo } from '../../../types';
 
 type Tone = 'blue' | 'amber' | 'red' | 'gray';
@@ -94,13 +96,51 @@ export function SyncBanners() {
         </Banner>
       )}
 
-      {edit && !edit.error && !edit.centralChanged && (
+      {edit?.releaseAt && !edit.error && !edit.centralChanged && (
+        <Banner tone="amber" icon={Clock} actions={<>
+          <BannerButton onClick={act.keepEditing} disabled={working}>Keep editing</BannerButton>
+          <BannerButton onClick={act.finishEditing} disabled={working || edit.publishing}>Finish editing</BannerButton>
+        </>}>
+          No changes for almost {IDLE_RELEASE_MINUTES} minutes: at {formatWhen(edit.releaseAt)} EPL Tool publishes your changes
+          and ends editing, so others can edit.
+        </Banner>
+      )}
+
+      {edit && !edit.error && !edit.centralChanged && !edit.releaseAt && (
         <Banner tone="blue" icon={Pencil} actions={<>
           {edit.dirty && <BannerButton onClick={act.publishNow} disabled={working || edit.publishing}>Publish now</BannerButton>}
           <BannerButton onClick={act.finishEditing} disabled={working || edit.publishing}>Finish editing</BannerButton>
         </>}>
           You are editing the shared database. Changes are saved on this PC and published automatically{' '}
           {describeSeconds(AUTO_PUBLISH_SECONDS)} after your last change.
+        </Banner>
+      )}
+
+      {status.released && (
+        <Banner tone="gray" icon={Info} actions={<>
+          {status.canStartEditing && <BannerButton onClick={act.startEditing} disabled={working}>Start editing</BannerButton>}
+          <button onClick={act.dismissReleased} title="Dismiss" className="p-1 rounded hover:bg-white/60"><X size={14} /></button>
+        </>}>
+          {status.released.message}
+        </Banner>
+      )}
+
+      {status.slot.waitingSince && status.slot.holder && !status.slot.holder.mine && (
+        <Banner tone="gray" icon={Hourglass} actions={
+          <BannerButton onClick={act.stopWaiting} disabled={working}>Stop waiting</BannerButton>
+        }>
+          Waiting for the edit slot: {status.slot.holder.user} has been editing since {formatWhen(status.slot.holder.since)}
+          {status.slot.holder.lastChangeAt ? ` (last change ${formatWhen(status.slot.holder.lastChangeAt)})` : ''}. You'll get a
+          notification when it is free.
+        </Banner>
+      )}
+
+      {status.slot.waitingSince && !status.slot.holder && (
+        <Banner tone="blue" icon={Bell} actions={<>
+          <BannerButton onClick={act.startEditing} disabled={working || !status.canStartEditing}>Start editing</BannerButton>
+          <BannerButton onClick={act.stopWaiting} disabled={working}>Stop waiting</BannerButton>
+        </>}>
+          The edit slot is free.
         </Banner>
       )}
 

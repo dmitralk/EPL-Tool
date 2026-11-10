@@ -167,6 +167,9 @@ async function slotChecks(tmp: string) {
       path.dirname(sa.conflict.savedTo) === path.join(c.centralDir, 'EPL-Conflicts') &&
       spocOf(c, ref, sa.conflict.savedTo) === 'Anna, lost to Ola' && generationOf(c) === genLate && spocOf(c, ref) === 'Anna 1', sa.conflict);
     check("A's claim deleted, Ola's stays", claimsOf(c).map(x => x.slotId).join() === ola.slotId, claimsOf(c));
+    let na = await A.notices();
+    check('A gets a notification: editing ended, Ola took over, work in EPL-Conflicts', na.length === 1 && na[0].kind === 'slot-lost' &&
+      na[0].body === 'Ola Other took over the edit slot. Your unpublished changes were saved in EPL-Conflicts.', na);
     await A.invoke('sync:dismiss-conflict');
     removeClaim(c, ola.slotId);
 
@@ -178,6 +181,8 @@ async function slotChecks(tmp: string) {
     sa = await A.status();
     check('Publish now finds the slot lost: nothing published, work kept', !p.ok && p.conflict && !!p.savedTo &&
       spocOf(c, ref, p.savedTo) === 'Anna, lost at publish' && generationOf(c) === genLate && sa.phase === 'read', { p, sa: sa.phase });
+    na = await A.notices();
+    check('…with a notification', na.length === 1 && na[0].kind === 'slot-lost', na);
     await A.invoke('sync:dismiss-conflict');
     removeClaim(c, ola.slotId);
 
@@ -190,6 +195,8 @@ async function slotChecks(tmp: string) {
     check('A finds its session in a take-over: read mode, work in EPL-Conflicts/', sa.phase === 'read' &&
       /^Ola Other took over the edit slot/.test(sa.conflict?.message ?? '') && spocOf(c, ref, sa.conflict?.savedTo) === 'Anna, taken over',
       sa.conflict);
+    na = await A.notices();
+    check('…with a notification', na.length === 1 && na[0].kind === 'slot-lost' && /^Ola Other took over/.test(na[0].body), na);
     await A.invoke('sync:dismiss-conflict');
     removeClaim(c, ola.slotId);
 
@@ -237,6 +244,9 @@ async function slotChecks(tmp: string) {
     check("B: Publish now once the slot is free → refused (Anna published meanwhile), Ben's work in EPL-Conflicts/",
       !p.ok && p.conflict && !!p.savedTo && spocOf(c, ref, p.savedTo) === 'Ben before the crash' &&
       spocOf(c, ref) === 'Anna after the take-over' && sb.phase === 'read' && !sb.recovery && claimsOf(c).length === 0, { p, sb: sb.phase });
+    const nb = await B.notices();
+    check('B gets a notification: not published, copy in EPL-Conflicts', nb.length === 1 && nb[0].kind === 'refused' &&
+      nb[0].title === 'EPL Tool: your changes were not published' && /saved in EPL-Conflicts\.$/.test(nb[0].body), nb);
     await B.invoke('sync:dismiss-conflict');
 
     // ── Crash and quick restart: the claim still holds the slot, the recovered change is published ──
@@ -277,6 +287,8 @@ async function slotChecks(tmp: string) {
       sa.conflict);
     check('its unpublished change is in EPL-Conflicts/, its claim deleted', spocOf(c, ref, sa.conflict?.savedTo) === 'Anna before sleeping' &&
       spocOf(c, ref) === 'Anna before a crash' && claimsOf(c).length === 0, sa.conflict);
+    na = await A.notices();
+    check('…with a notification', na.length === 1 && na[0].kind === 'slot-lost' && /gave no sign of life/.test(na[0].body), na);
     await A.configure({ takeoverMs: 15 * 60_000 });
     await A.invoke('sync:dismiss-conflict');
 
@@ -322,6 +334,104 @@ async function slotChecks(tmp: string) {
     r = await A.invoke('sync:start-editing');
     check('the next Start editing is not asked again', r.ok, r);
     await A.invoke('sync:finish-editing');
+
+    // ── Waiting: told once each time the slot becomes free; nobody gets it automatically ──
+    await U.notices();
+    await A.invoke('sync:start-editing');
+    r = await U.invoke('sync:start-editing');
+    let su = await U.invoke('sync:wait-for-slot');
+    check('U waits: the status says so, with who is editing', !r.ok && !!r.waiting && !!su.slot.waitingSince &&
+      su.slot.holder?.user === 'Anna Admin', { r, slot: su.slot });
+    await U.invoke('sync:check');
+    check('no notification while Anna edits', (await U.notices()).length === 0);
+    await A.invoke('sync:finish-editing');
+    su = await U.invoke('sync:check');
+    let nu = await U.notices();
+    check('Anna finishes: U is notified at the next check', nu.length === 1 && nu[0].kind === 'slot-free' &&
+      nu[0].title === 'EPL Tool: the edit slot is free' &&
+      nu[0].body === 'Anna Admin has finished editing. Click Start editing to make your changes.', nu);
+    check('U is not given the slot: read mode, still waiting ("the edit slot is free"), no claim', su.phase === 'read' &&
+      !!su.slot.waitingSince && su.slot.holder === null && claimsOf(c).length === 0, su.slot);
+    await U.invoke('sync:check');
+    check('notified only once', (await U.notices()).length === 0);
+    await B.invoke('sync:start-editing');
+    su = await U.invoke('sync:check');
+    check('Ben is quicker: U still waits, now for Ben', !!su.slot.waitingSince && su.slot.holder?.user === 'Ben Admin', su.slot);
+    await B.invoke('sync:finish-editing');
+    await U.invoke('sync:check');
+    nu = await U.notices();
+    check('Ben finishes: U is notified again', nu.length === 1 && /^Ben Admin has finished editing/.test(nu[0].body), nu);
+    r = await U.invoke('sync:start-editing');
+    su = await U.status();
+    check('U starts editing: waiting ends', r.ok && su.phase === 'edit' && su.slot.waitingSince === null, su.slot);
+    await U.invoke('sync:finish-editing');
+
+    await A.invoke('sync:start-editing');
+    await U.invoke('sync:wait-for-slot');
+    su = await U.invoke('sync:stop-waiting');
+    await A.invoke('sync:finish-editing');
+    await U.invoke('sync:check');
+    check('Stop waiting: no notification afterwards', su.slot.waitingSince === null && (await U.notices()).length === 0);
+
+    // The editor's PC stops answering: the person waiting is told they may take over.
+    await B.invoke('sync:start-editing');
+    const bGone = claimsOf(c)[0];
+    await U.invoke('sync:wait-for-slot');
+    await B.kill();
+    await U.invoke('sync:check');
+    check('…not before 15 min without heartbeat', (await U.notices()).length === 0);
+    ageClaim(c, bGone.slotId, 16);
+    await U.invoke('sync:check');
+    nu = await U.notices();
+    check("Ben's session inactive: U is told they can take over", nu.length === 1 && nu[0].kind === 'slot-free' &&
+      /^Ben Admin's editing session has been inactive since \d\d:\d\d\. Click Start editing to take over\.$/.test(nu[0].body), nu);
+    r = await U.invoke('sync:start-editing', { takeOver: true });
+    check('U takes over', r.ok, r);
+    await U.invoke('sync:finish-editing');
+    await B.start();
+    sb = await B.startup();
+    check('B restarts: nothing to recover (no changes), its claim is gone', !sb.recovery && claimsOf(c).length === 0,
+      { recovery: sb.recovery, claims: claimsOf(c) });
+
+    // ── Released after 30 min without changes (shortened here): warning, Keep editing; an open dialog keeps the slot ──
+    const I = await pc('I', PEOPLE.ben);
+    await I.timers({ checkMs: 60_000, heartbeatMs: 60_000, publishMs: 60_000, idleMs: 1500, idleWarnMs: 700 });
+    r = await I.invoke('sync:start-editing');
+    let si = await I.status();
+    check('I (Ben on another PC) starts editing: no release warning yet', r.ok && si.phase === 'edit' && si.edit?.releaseAt === null,
+      { r, edit: si.edit });
+    si = await waitFor('the release warning', () => I.status(), x => !!x.edit?.releaseAt);
+    check('shortly before the release: the status says when', si.phase === 'edit' && Date.parse(si.edit?.releaseAt) > Date.now(), si.edit);
+    si = await I.invoke('sync:keep-editing');
+    check('Keep editing: the warning goes away, still editing', si.phase === 'edit' && si.edit?.releaseAt === null, si.edit);
+    await allowed('I edits', () => I.invoke('customers:update', ref, { customer_spoc: 'Ben, published at the release' }));
+    await I.invoke('sync:set-busy', true);
+    await sleep(2000);
+    si = await I.status();
+    check('a dialog or wizard open longer than the idle time: no warning, no release', si.phase === 'edit' &&
+      si.edit?.releaseAt === null && claimsOf(c).length === 1, si.edit);
+    const genIdle = generationOf(c);
+    await I.invoke('sync:set-busy', false);
+    const busyEnded = Date.now();
+    await sleep(400);
+    si = await I.status();
+    check('the idle time restarts when the dialog closes', si.phase === 'edit' && si.edit?.releaseAt === null, si.edit);
+    si = await waitFor('the release', () => I.status(), x => x.phase === 'read', 4000);
+    const releasedAfter = Date.now() - busyEnded;
+    check('released: the last change published, read mode, slot free', si.phase === 'read' && generationOf(c) === genIdle + 1 &&
+      spocOf(c, ref) === 'Ben, published at the release' && claimsOf(c).length === 0 && releasedAfter >= 1400,
+      { releasedAfter, phase: si.phase, claims: claimsOf(c) });
+    check('banner text', si.released?.message ===
+      'The edit slot was released after 30 minutes without changes, so others can edit: your last changes were published.', si.released);
+    const ni = await I.notices();
+    check('notification: editing ended', ni.length === 1 && ni[0].kind === 'released' && ni[0].title === 'EPL Tool: editing ended', ni);
+    si = await I.invoke('sync:dismiss-released');
+    check('the message can be dismissed', si.released === null);
+    r = await I.invoke('sync:start-editing');
+    si = await I.status();
+    check('Start editing again works; no message left', r.ok && si.phase === 'edit' && si.released === null, r);
+    await I.invoke('sync:finish-editing');
+
     check('the edit slot folder is empty at the end (no temp files)', ls(slotDirOf(c)).length === 0, ls(slotDirOf(c)));
   } finally {
     for (const p of pcs) await p.stop();

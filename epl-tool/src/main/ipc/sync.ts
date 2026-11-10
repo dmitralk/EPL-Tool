@@ -1,13 +1,13 @@
 import { BrowserWindow, dialog } from 'electron';
 import { getIdentity } from '../auth';
 import {
-  applyUpdate, cancelClaim, checkNow, connectShared, dismissConflict, finishEditing, getStatus, onStatus, publishNow,
-  recoverUnpublished, refresh, startEditing,
+  applyUpdate, cancelClaim, checkNow, connectShared, dismissConflict, dismissReleased, finishEditing, getStatus, keepEditing,
+  onStatus, publishNow, recoverUnpublished, refresh, setBusy, startEditing, stopWaiting, waitForSlot,
 } from '../sync/sync';
 import { handle } from './guard';
 
-// Shared database (Phase C). The channels are public like db:*: the setup and no-access screens need the status, and the
-// edit actions check the rights themselves (Start editing: admins, or anybody on a database without users).
+// Shared database (Phases C–D). The channels are public like db:*: the setup and no-access screens need the status, and the
+// edit actions check the rights themselves (Start editing: Admins and Users, or anybody on a database without users).
 export function registerSyncHandlers() {
   onStatus(status => {
     for (const win of BrowserWindow.getAllWindows?.() ?? []) {
@@ -64,6 +64,32 @@ export function registerSyncHandlers() {
 
   handle('sync:cancel-claim', 'public', () => {
     cancelClaim();
+    return getStatus();
+  });
+
+  // Waiting for the edit slot: the app tells when it is free (notification + banner); it never claims it automatically.
+  handle('sync:wait-for-slot', 'public', async () => {
+    await waitForSlot();
+    return getStatus();
+  });
+
+  handle('sync:stop-waiting', 'public', () => {
+    stopWaiting();
+    return getStatus();
+  });
+
+  // The screens report open dialogs and wizards: the edit slot is not released while one is open.
+  handle('sync:set-busy', 'public', (_e, busy: boolean) => {
+    setBusy(!!busy);
+  });
+
+  handle('sync:keep-editing', 'public', () => {
+    keepEditing();
+    return getStatus();
+  });
+
+  handle('sync:dismiss-released', 'public', () => {
+    dismissReleased();
     return getStatus();
   });
 

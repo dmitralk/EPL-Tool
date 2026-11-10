@@ -327,12 +327,15 @@ export interface SyncStatus {
     nextPublishAt: string | null;
     error: string | null;
     centralChanged: string | null;  // someone else published meanwhile: the next publish will be refused
+    releaseAt: string | null;       // the slot is released then (no change, nothing open): shown during the warning only
   } | null;
-  conflict: { savedTo: string | null; at: string; message: string } | null;  // last refused publish
+  conflict: { savedTo: string | null; at: string; message: string } | null;  // last refused publish / lost slot
+  released: { at: string; message: string } | null;  // the slot was released after the idle time
   recovery: { since: string; changedAt: string | null } | null;  // unpublished changes from a previous run
   slot: {
     holder: SlotPerson | null;      // who is editing right now (as seen at the last check)
     claimingUntil: string | null;   // my claim is in its waiting window until then
+    waitingSince: string | null;    // I asked to be told when the slot is free
   };
   legacySuggestion: { path: string } | null;  // v0.6 database in a synced folder: offer to connect as shared
 }

@@ -11,7 +11,7 @@ import { closeDatabase, getDb, openDatabase, SCHEMA_VERSION } from '../../src/ma
 import { getIdentity, initIdentity } from '../../src/main/auth';
 import { SyncedFolderStore, describeDbFile, type DbFileInfo } from '../../src/main/sync/centralStore';
 import { newSlotId, type SlotClaim } from '../../src/main/sync/editSlot';
-import { configureTimings, getStatus, heartbeatNow, startBackgroundChecks, startup } from '../../src/main/sync/sync';
+import { configureTimings, getStatus, heartbeatNow, onNotice, startBackgroundChecks, startup, type SyncNotice } from '../../src/main/sync/sync';
 import { MIN_EDIT_APP_VERSION } from '../../src/shared/sync';
 import { registerAllIpcHandlers } from '../../src/main/ipc/index';
 import { SAMPLE_DBS, invoke, sample, stub, userVersion } from './harness';
@@ -40,6 +40,8 @@ export function worker(): void {
   configureTimings({ slotWaitMs: 150, ...(process.env.EPL_TIMINGS ? JSON.parse(process.env.EPL_TIMINGS) : {}) });
   initIdentity({ allowOverride: true });
   registerAllIpcHandlers();
+  const notices: SyncNotice[] = [];          // what the app would show as Windows notifications
+  onNotice(n => notices.push(n));
   process.on('disconnect', () => process.exit(0));
   process.on('message', async (m: { id: number; op: string; args: any[] }) => {
     const reply = (x: object) => process.send?.({ id: m.id, ...x });
@@ -52,6 +54,7 @@ export function worker(): void {
       else if (m.op === 'timers') startBackgroundChecks(m.args[0]);
       else if (m.op === 'configure') configureTimings(m.args[0]);
       else if (m.op === 'heartbeat') { await heartbeatNow(); result = getStatus(); }
+      else if (m.op === 'notices') result = notices.splice(0);
       else if (m.op === 'exit') { reply({ ok: true }); process.exit(0); }
       reply({ ok: true, result });
     } catch (e) {
@@ -122,6 +125,8 @@ export class Pc {
   timers(t: Record<string, number>) { return this.ok('timers', t); }
   configure(t: Record<string, number>) { return this.ok('configure', t); }
   heartbeat() { return this.ok('heartbeat'); }
+  // The notifications shown since the last call (then forgotten).
+  notices(): Promise<SyncNotice[]> { return this.ok('notices'); }
 
   // A crash: no chance to publish.
   async kill(): Promise<void> {

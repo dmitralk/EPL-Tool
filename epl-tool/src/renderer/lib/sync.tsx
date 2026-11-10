@@ -61,6 +61,11 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
     if (pendingKey && !busy) void api.applySyncUpdate();
   }, [pendingKey, busy]);
 
+  // An open dialog or wizard keeps the edit slot (no release after the idle time while something is open).
+  useEffect(() => {
+    void api.setSyncBusy(busy);
+  }, [busy]);
+
   const value = useMemo(() => ({ status, busy, dataVersion, setStatus }), [status, busy, dataVersion]);
   return <SyncContext.Provider value={value}>{children}</SyncContext.Provider>;
 }
@@ -155,7 +160,12 @@ export function useSyncActions() {
       const r = await api.startEditing() as {
         ok: boolean; error?: string; waiting?: SlotPerson; takeOver?: SlotPerson; cancelled?: boolean;
       };
-      if (r.waiting) { toast(`${r.waiting.user} is editing right now (since ${formatWhen(r.waiting.since)}).`, 'info'); return; }
+      // Until the claim / waiting / take-over dialogs (Phase D step 4): waiting starts at once, with a message.
+      if (r.waiting) {
+        await api.waitForSlot();
+        toast(`${r.waiting.user} is editing right now (since ${formatWhen(r.waiting.since)}). You'll be told when the edit slot is free.`, 'info');
+        return;
+      }
       if (r.takeOver) { toast(`${r.takeOver.user}'s editing session is inactive since ${formatWhen(r.takeOver.heartbeatAt)}.`, 'info'); return; }
       if (r.cancelled) return;
       if (!r.ok) throw new Error(r.error ?? 'Editing could not be started.');
@@ -176,5 +186,8 @@ export function useSyncActions() {
       report(r, action === 'publish' ? 'Your earlier changes were published' : 'Your earlier changes were discarded');
     }),
     dismissConflict: () => run('dismiss', async () => { await api.dismissSyncConflict(); }),
+    stopWaiting: () => run('stop-waiting', async () => { await api.stopWaitingForSlot(); }),
+    keepEditing: () => run('keep', async () => { await api.keepEditing(); }),
+    dismissReleased: () => run('dismiss-released', async () => { await api.dismissSlotReleased(); }),
   };
 }
