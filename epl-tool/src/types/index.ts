@@ -342,6 +342,39 @@ export interface SyncStatus {
   conflictCount: number;            // conflict copies to review (EPL-Conflicts/, OneDrive copies, kept on this PC)
 }
 
+// Settings → Shared database card (Phase E): every editing session in EPL-EditSlot/, and what was published.
+export interface SlotSession extends SlotPerson {
+  slotId: string;
+  state: 'editing' | 'reserving' | 'inactive' | 'taken-over' | 'released';
+  holder: boolean;                  // holds the edit slot right now
+  appVersion: string;
+  endedBy: string | null;           // who took it over / released it
+}
+
+export interface SlotReleaseInfo {
+  slotId: string;
+  user: string;                     // whose session it was
+  machine: string;
+  by: string;                       // the admin who released it
+  at: string;                       // ISO UTC
+}
+
+export interface SyncDetails {
+  dbPath: string;                   // the central database
+  folder: string;                   // the shared folder
+  localCopy: string | null;         // the copy open on this PC (read copy, or working copy while editing)
+  manifest: {
+    generation: number;
+    publishedBy: string | null;
+    publishedAt: string | null;
+    appVersion: string;
+    minAppVersion: string;
+    schemaVersion: number;
+  } | null;
+  sessions: SlotSession[];
+  releases: SlotReleaseInfo[];
+}
+
 // Conflict copies (Phase D rescue tool): unpublished work kept in EPL-Conflicts/, OneDrive conflict copies of the shared
 // database, and copies kept on this PC when the shared folder could not take them.
 export interface ConflictCopyInfo {

@@ -4,7 +4,7 @@ import path from 'path';
 import crypto from 'crypto';
 import Database from 'better-sqlite3';
 import { escapeRegExp, fileStamp, isHealthy } from '../backup';
-import { isValidClaim, type SlotClaim } from './editSlot';
+import { isValidClaim, isValidRelease, type SlotClaim, type SlotRelease } from './editSlot';
 
 // All access to the shared folder goes through a CentralStore (multi-user study §5, §7). The app never opens the central
 // database with SQLite: it only copies it (to read) and replaces it in one step (to publish). SyncedFolderStore works on the
@@ -12,6 +12,7 @@ import { isValidClaim, type SlotClaim } from './editSlot';
 
 export const CONFLICTS_DIR_NAME = 'EPL-Conflicts';
 export const EDIT_SLOT_DIR_NAME = 'EPL-EditSlot';
+const RELEASE_SUFFIX = '.release.json';
 const MANIFEST_SUFFIX = '.manifest.json';
 
 // <name>.manifest.json next to the central database, rewritten by every publish.
@@ -85,6 +86,9 @@ export interface CentralStore {
   listClaims(): Promise<SlotClaim[]>;
   writeClaim(claim: SlotClaim): Promise<void>;
   deleteClaim(slotId: string): Promise<void>;
+  listReleases(): Promise<SlotRelease[]>;
+  writeRelease(release: SlotRelease): Promise<void>;
+  deleteRelease(slotId: string): Promise<void>;
 }
 
 // ── Helpers for local copies ───────────────────────────────────────────────────────────────────────────────────────
@@ -372,14 +376,16 @@ export class SyncedFolderStore implements CentralStore {
     }
   }
 
-  // ── Edit slot: EPL-EditSlot/<slotId>.json, one file per editing session, written only by its owner ──
+  // ── Edit slot: EPL-EditSlot/<slotId>.json, one file per editing session, written only by its owner; plus
+  // <slotId>.release.json when an admin released that session (written once, by that admin) ──
 
   private get slotDir(): string {
     return path.join(this.folder, EDIT_SLOT_DIR_NAME);
   }
 
-  // Claims for this database; unreadable files (half-synced, foreign) are skipped. Throws when the folder can't be read.
-  async listClaims(): Promise<SlotClaim[]> {
+  // The JSON files of one kind in EPL-EditSlot/ for this database; unreadable files (half-synced, foreign) are skipped.
+  // Throws when the folder can't be read.
+  private async readSlotFiles<T extends { db: string }>(release: boolean, valid: (x: unknown) => x is T): Promise<T[]> {
     let names: string[];
     try {
       names = await fsp.readdir(this.slotDir);
@@ -391,23 +397,29 @@ export class SyncedFolderStore implements CentralStore {
       throw e;
     }
     const db = path.basename(this.dbPath).toLowerCase();
-    const claims: SlotClaim[] = [];
-    for (const name of names.filter(n => n.toLowerCase().endsWith('.json'))) {
+    const out: T[] = [];
+    for (const name of names) {
+      const lower = name.toLowerCase();
+      if (!lower.endsWith('.json') || lower.endsWith(RELEASE_SUFFIX) !== release) continue;
       try {
         const data = JSON.parse(await fsp.readFile(path.join(this.slotDir, name), 'utf-8'));
-        if (isValidClaim(data) && data.db === db) claims.push(data);
+        if (valid(data) && data.db === db) out.push(data);
       } catch {
-        // being synced or not a claim
+        // being synced or not ours
       }
     }
-    return claims;
+    return out;
   }
 
-  async writeClaim(claim: SlotClaim): Promise<void> {
+  // Claims for this database.
+  listClaims(): Promise<SlotClaim[]> {
+    return this.readSlotFiles(false, isValidClaim);
+  }
+
+  private async writeSlotFile(file: string, data: unknown): Promise<void> {
     await fsp.mkdir(this.slotDir, { recursive: true });
-    const file = path.join(this.slotDir, `${claim.slotId}.json`);
     const tmp = `${file}.tmp`;
-    await fsp.writeFile(tmp, JSON.stringify(claim, null, 2));
+    await fsp.writeFile(tmp, JSON.stringify(data, null, 2));
     try {
       await retry(() => fsp.rename(tmp, file));
     } catch (e) {
@@ -416,9 +428,30 @@ export class SyncedFolderStore implements CentralStore {
     }
   }
 
-  async deleteClaim(slotId: string): Promise<void> {
-    await retry(() => fsp.unlink(path.join(this.slotDir, `${slotId}.json`))).catch(e => {
+  private async deleteSlotFile(file: string): Promise<void> {
+    await retry(() => fsp.unlink(file)).catch(e => {
       if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e;
     });
+  }
+
+  writeClaim(claim: SlotClaim): Promise<void> {
+    return this.writeSlotFile(path.join(this.slotDir, `${claim.slotId}.json`), claim);
+  }
+
+  deleteClaim(slotId: string): Promise<void> {
+    return this.deleteSlotFile(path.join(this.slotDir, `${slotId}.json`));
+  }
+
+  // Release records for this database (Force release).
+  listReleases(): Promise<SlotRelease[]> {
+    return this.readSlotFiles(true, isValidRelease);
+  }
+
+  writeRelease(release: SlotRelease): Promise<void> {
+    return this.writeSlotFile(path.join(this.slotDir, `${release.slotId}${RELEASE_SUFFIX}`), release);
+  }
+
+  deleteRelease(slotId: string): Promise<void> {
+    return this.deleteSlotFile(path.join(this.slotDir, `${slotId}${RELEASE_SUFFIX}`));
   }
 }

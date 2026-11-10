@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-// Simulated PCs for the main-process checks (phase-c, phase-d): each check file forks itself into worker processes ("PC A",
+// Simulated PCs for the main-process checks (phase-c, phase-d, phase-e): each check file forks itself into worker processes ("PC A",
 // "PC B", …) that run the real IPC handlers with their own userData, %LOCALAPPDATA% and Windows identity, sharing one temp
 // "central" folder. The orchestrator plays "someone else" by publishing new versions with the CentralStore.
 import fs from 'fs';
@@ -10,7 +10,7 @@ import Database from 'better-sqlite3';
 import { closeDatabase, getDb, openDatabase, SCHEMA_VERSION } from '../../src/main/database';
 import { getIdentity, initIdentity } from '../../src/main/auth';
 import { SyncedFolderStore, describeDbFile, type DbFileInfo } from '../../src/main/sync/centralStore';
-import { newSlotId, type SlotClaim } from '../../src/main/sync/editSlot';
+import { newSlotId, type SlotClaim, type SlotRelease } from '../../src/main/sync/editSlot';
 import { configureTimings, getStatus, heartbeatNow, onNotice, startBackgroundChecks, startup, type SyncNotice } from '../../src/main/sync/sync';
 import { MIN_EDIT_APP_VERSION } from '../../src/shared/sync';
 import { registerAllIpcHandlers } from '../../src/main/ipc/index';
@@ -236,8 +236,25 @@ export const conflictsOf = (c: Central) => ls(path.join(c.centralDir, 'EPL-Confl
 
 // The edit slot as the shared folder holds it.
 export const slotDirOf = (c: Central) => path.join(c.centralDir, 'EPL-EditSlot');
-export const claimsOf = (c: Central): SlotClaim[] => ls(slotDirOf(c)).filter(f => f.endsWith('.json'))
+const isReleaseFile = (f: string) => f.endsWith('.release.json');
+export const claimsOf = (c: Central): SlotClaim[] => ls(slotDirOf(c)).filter(f => f.endsWith('.json') && !isReleaseFile(f))
   .map(f => JSON.parse(fs.readFileSync(path.join(slotDirOf(c), f), 'utf-8')));
+export const releasesOf = (c: Central): SlotRelease[] => ls(slotDirOf(c)).filter(isReleaseFile)
+  .map(f => JSON.parse(fs.readFileSync(path.join(slotDirOf(c), f), 'utf-8')));
+
+// A release record as an admin's PC would have written it (Force release, Phase E).
+export async function writeReleaseAs(
+  c: Central, by: { name: string; account: string; machine: string },
+  of: Pick<SlotClaim, 'slotId' | 'user' | 'account' | 'machine'>, at: Date, extra: Partial<SlotRelease> = {},
+): Promise<SlotRelease> {
+  const release: SlotRelease = {
+    format: 1, kind: 'release', db: path.basename(c.central).toLowerCase(), slotId: of.slotId,
+    released: { user: of.user, account: of.account, machine: of.machine },
+    user: by.name, account: by.account, machine: by.machine, at: at.toISOString(), ...extra,
+  };
+  await new SyncedFolderStore(c.central).writeRelease(release);
+  return release;
+}
 
 // A claim file as another PC would have written it (OneDrive delivers it some time later).
 export async function writeClaimAs(

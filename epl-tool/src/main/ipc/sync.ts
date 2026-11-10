@@ -1,8 +1,8 @@
 import { BrowserWindow, dialog } from 'electron';
 import { getIdentity } from '../auth';
 import {
-  applyUpdate, cancelClaim, checkNow, connectShared, dismissConflict, dismissReleased, finishEditing, getStatus, keepEditing,
-  onStatus, publishNow, recoverUnpublished, refresh, setBusy, startEditing, stopWaiting, waitForSlot,
+  applyUpdate, cancelClaim, checkNow, connectShared, dismissConflict, dismissReleased, finishEditing, forceRelease, getDetails,
+  getStatus, keepEditing, onStatus, publishNow, recoverUnpublished, refresh, setBusy, startEditing, stopWaiting, waitForSlot,
 } from '../sync/sync';
 import { handle } from './guard';
 
@@ -111,4 +111,18 @@ export function registerSyncHandlers() {
     dismissConflict();
     return getStatus();
   });
+
+  // Settings → Shared database card (Phase E): sessions in EPL-EditSlot/, release records, last publish.
+  handle('sync:details', 'viewer', () => getDetails());
+
+  // Force release (admins): a release record in the shared folder; the database is not changed (the next publish records
+  // it in the activity log), so it also works in read mode.
+  handle('sync:force-release', 'admin', async (_e, slotId: string) => {
+    try {
+      await getIdentity();
+      return await forceRelease(String(slotId ?? ''));
+    } catch (err) {
+      return { ok: false, error: (err as Error).message };
+    }
+  }, { writes: false });
 }

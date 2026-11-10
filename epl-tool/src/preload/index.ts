@@ -31,6 +31,8 @@ const api = {
   recoverUnpublished: (action: 'resume' | 'publish' | 'discard', opts?: { takeOver?: boolean }) =>
     ipcRenderer.invoke('sync:recover', action, opts),
   dismissSyncConflict: () => ipcRenderer.invoke('sync:dismiss-conflict'),
+  getSyncDetails: () => ipcRenderer.invoke('sync:details'),
+  forceReleaseSlot: (slotId: string) => ipcRenderer.invoke('sync:force-release', slotId),
   onSyncStatus: (listener: (status: SyncStatus) => void) => {
     const wrapped = (_e: IpcRendererEvent, status: SyncStatus) => listener(status);
     ipcRenderer.on('sync:status', wrapped);

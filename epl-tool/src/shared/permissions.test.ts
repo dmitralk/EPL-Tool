@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import type { PricingMode, Role } from '../types';
 import {
   PERMISSION_MATRIX, accessChangeError, canArchiveConflictCopies, canBackup, canChangeCustomer, canChangeCustomerAccess,
-  canCreateCustomer, canEditReferenceData, canExport, canHideCustomer, canManageUsers, canRestoreCustomer,
+  canCreateCustomer, canEditReferenceData, canExport, canForceRelease, canHideCustomer, canManageUsers, canRestoreCustomer,
   canReviewConflictCopies, canStartEditing, canView, canViewActivity, customerChangeError, customerLockReason,
   hideCustomerError, isEditor, managesCustomer, pricingModeLabel, readOnlyMessage, type PermCustomer, type PermUser,
 } from './permissions';
@@ -79,6 +79,7 @@ describe('global rules', () => {
     startEditing: [canStartEditing, ['admin', 'user']],
     reviewConflicts: [canReviewConflictCopies, ['admin', 'user', 'viewer']],
     archiveConflicts: [canArchiveConflictCopies, ['admin']],
+    forceRelease: [canForceRelease, ['admin']],
   };
   for (const [name, [fn, roles]] of Object.entries(expect)) {
     it(name, () => {
@@ -171,6 +172,7 @@ describe('generated permission matrix (Help) matches the study §3.2', () => {
     ['Try own FX rates', 'yes', 'yes', 'yes'],
     ['Back up now', 'yes', 'no', 'no'],
     ['Start editing the shared database', 'yes', 'yes', 'no'],
+    ['Force release the edit slot', 'yes', 'no', 'no'],
     ['Review conflict copies', 'yes', 'yes', 'yes'],
     ['Re-apply price lists from a conflict copy', 'yes', 'own', 'no'],
     ['Archive a reviewed conflict copy', 'yes', 'no', 'no'],

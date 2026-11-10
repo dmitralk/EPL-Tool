@@ -119,6 +119,11 @@ export function canArchiveConflictCopies(u: U): boolean {
   return isAdmin(u);
 }
 
+// Force release (Phase E, decided 10 Nov 2026): admins end someone else's editing session (Settings → Shared database).
+export function canForceRelease(u: U): boolean {
+  return isAdmin(u);
+}
+
 // Why the open copy of a shared database can't be changed: read mode, offline copy, or a newer app is needed.
 export type WriteBlock = 'read' | 'offline' | 'update';
 
@@ -243,6 +248,7 @@ export const PERMISSION_MATRIX: readonly MatrixRow[] = [
   { action: 'Try own FX rates on the Analysis screen for the current session', cells: global(canUseSessionFxRates) },
   { action: 'Back up now, restore a backup', cells: global(canBackup) },
   { action: 'Start editing the shared database (changes are then published for everybody)', cells: global(canStartEditing) },
+  { action: 'Force release the edit slot (Settings → Shared database)', cells: global(canForceRelease) },
   { action: 'Review conflict copies (unpublished work kept in EPL-Conflicts)', cells: global(canReviewConflictCopies) },
   { action: 'Re-apply price lists from a conflict copy', cells: perCustomer(canReapplyPriceLists) },
   { action: 'Archive a reviewed conflict copy', cells: global(canArchiveConflictCopies) },

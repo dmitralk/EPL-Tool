@@ -47,8 +47,9 @@ run(async () => {
   const publicOnes = [...decl].filter(([, r]) => r.rule === 'public').map(([c]) => c).sort();
   check('public channels are only db:*, auth:*, sync:* and backup recovery',
     publicOnes.every(c => /^(db|auth|sync):/.test(c) || ['backup:list', 'backup:open-folder', 'backup:restore'].includes(c)), publicOnes);
-  // Exceptions: channels that don't change the database (moving a reviewed conflict copy to EPL-Conflicts/archive/).
-  const NOT_WRITING_ON_PURPOSE = ['conflicts:archive'];
+  // Exceptions: channels that don't change the database (moving a reviewed conflict copy to EPL-Conflicts/archive/; a force
+  // release only writes a release record in EPL-EditSlot/).
+  const NOT_WRITING_ON_PURPOSE = ['conflicts:archive', 'sync:force-release'];
   const notWriting = [...decl].filter(([c, r]) => (r.rule === 'editor' || r.rule === 'admin') && !r.writes &&
     !NOT_WRITING_ON_PURPOSE.includes(c)).map(([c]) => c);
   check('every editor/admin channel is refused on a read-only copy (writes flag)', notWriting.length === 0, notWriting);

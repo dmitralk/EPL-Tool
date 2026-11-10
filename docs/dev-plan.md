@@ -573,6 +573,112 @@ title, every placeholder is known and every `help:` link exists (confirmed by br
 
 ### Phase E — Rollout (1.5–2 d) → release v0.8
 
+**Kickoff decisions (confirmed by the user on 10 Nov 2026 — all proposals accepted, except the release order).**
+
+1. **Settings → Shared database** card for everybody (information); *Force release* only for admins.
+2. **Card content:** current editor (name, PC, since, last change, last sign of life) · every session in `EPL-EditSlot/`
+   (editing / reserving / inactive) · last publish (who, when, generation, app version) · minimum EPL Tool version to edit ·
+   my copy (data of, copied at, folder path) · buttons *Open shared folder*, *Backups*, *Conflict copies*.
+3. **Force release = a release record** written by the admin in `EPL-EditSlot/`, like the take-over record: that session
+   never holds the slot again and the slot is free for anybody (people waiting are told); the editor's app gives up at its
+   next check (unpublished work → `EPL-Conflicts/`, banner + notification *"Dmitri released your edit slot at 11:02"*). Also
+   for active sessions — an open dialog or wizard keeps the slot indefinitely — after a confirmation that shows the last
+   change and the last sign of life.
+4. **`Installer/` next to the shared database** (nothing to configure).
+5. **Update banner** *"EPL Tool 0.8.1 is available"* with [Install update] (copies the setup to this PC, starts it and closes
+   EPL Tool — publishing first when editing) and [Open folder].
+6. The banner can be **dismissed until the next start**, but not when the update is needed to edit (manifest
+   `minAppVersion`).
+7. **Publishing an installer:** an admin action on the card, *Publish an installer…*: pick the downloaded setup, the version
+   is read from the file name, the file is copied to `Installer/` (`.tmp` + rename) and `latest.json` is written — any admin,
+   no dev tools.
+8. **Help:** *Onboarding a new user* (admins, incl. the go-live checklist) · *Installing EPL Tool & first start* · *Rules of
+   use* as its own topic · *FAQ & troubleshooting*.
+9. **Release order:** tag v0.8.0 right after Phase E; the two-PC test runs on the release, fixes as v0.8.x (as with
+   v0.7.0).
+
+**Technical design (approved by the user on 10 Nov 2026, with: two installers kept, Install update refused in a dev run, and
+force releases recorded in the Activity log by the next publish)**
+
+*Force release (main process):*
+
+- `editSlot.ts`: a release record `SlotRelease { format: 1, kind: 'release', db, slotId (the released session), released
+  { user, account, machine } (whom), user, account, machine (who released it), at }` + `isValidRelease`. `holderOf` / `inactiveHolderOf` take the releases into account like
+  `takesOver`: a released session never holds the slot again and is never offered for take-over; `releaseOf(releases,
+  slotId)` names who released it. Unit tests.
+- `CentralStore`: `listReleases()` / `writeRelease()` → `EPL-EditSlot/<slotId>.release.json`, written once by the admin
+  (`.tmp` + rename; nobody writes another person's file). `listClaims()` skips them. Release records older than 7 days are
+  deleted like stale claims — safe, because a session silent for 15 min gives up by itself (heartbeat-gap rule).
+- `sync.ts`: `readClaims` also reads the releases; `verifySlot` → lost when my session was released → `slotLost` with
+  *"Dmitri released your edit slot at 11:02."* (+ where the unpublished changes went), notice `slot-lost`. A person
+  waiting is told *"Anna's edit slot was released by Dmitri"* instead of *"has finished editing"*. `forceRelease(slotId)`
+  refuses my own session (*Finish editing*) and sessions that are gone or already ended, writes the record and re-reads the
+  claims: the slot is free on this PC at once, on the others within one check. The admin is usually in read mode, so the
+  database isn't written then; instead **the next publish (by anybody) adds a `sync.force-release` entry to the Activity
+  log** for each release record not logged yet (in the same transaction as the `sync.publish` stamp, attributed to the
+  admin, at the time of the release, de-duplicated by the released session). The card also lists the release records for 7
+  days.
+  As with take-over, an editor whose OneDrive is paused keeps editing until the record arrives; the generation check still
+  refuses their publish once someone else has published.
+- IPC: `sync:force-release(slotId)` (admin, no `writes` flag — the database isn't changed); `sync:details` (viewer) for the
+  card: central folder, manifest (generation, who, when, app version, `minAppVersion`, schema), my copy, sessions (user,
+  PC, claimed, last change, last sign of life, state *editing / reserving / inactive / taken over / released*, holder,
+  mine), release records, installer info.
+- `shared/permissions.ts`: `canForceRelease` (admin) + matrix row *"Force release the edit slot (Settings → Shared
+  database)"*.
+
+*Installer + updates (main process):*
+
+- `Installer/latest.json`: `{ format: 1, version, file, size, sha256, publishedBy, publishedAt }`.
+- `CentralStore.readInstallerInfo()` (null when missing or malformed), `publishInstaller(src, info)` (copy to
+  `Installer/<file>.tmp` → size + sha256 checked → rename; then `latest.json` via `.tmp` + rename; **the two newest
+  installers are kept**, older ones deleted — each is about 140 MB), `copyInstaller(dest)`.
+- Version from the file name: `installerVersion(name)` in `shared/sync.ts`, `/(\d+\.\d+\.\d+)[ .]Setup\.exe$/i` — matches
+  the built `EPL Tool-0.8.1 Setup.exe` and the GitHub download name `EPL.Tool-0.8.1.Setup.exe`; unit-tested. Publishing is
+  refused for a name without a version, a version lower than the one in `latest.json` (the same version may be published
+  again, e.g. after a broken copy) and without write access to the folder.
+- Status: `SyncStatus.update: { version, file, publishedAt, required } | null` when `latest.json` names a newer version than
+  the running app — read at startup and at every check (one small file). `required` = the manifest's `minAppVersion` is
+  newer than the app; the existing *"Update EPL Tool to … to make changes"* banner then gets [Install update].
+- `sync:install-update` (public, shared mode, installed app only — refused in `npm start`): finish editing first when
+  editing (a failed or refused publish stops it with the message); copy the setup to `%TEMP%\epl-tool-update\` and check its
+  sha256 against `latest.json` (catches a half-synced file); `shell.openPath(setup)` (like a double-click, so SmartScreen
+  behaves as documented), then `app.quit()`. Squirrel installs the new version next to the old one and starts it.
+- `sync:publish-installer` (admin, no `writes` flag): file dialog (`.exe`), confirmation with the version found and the
+  current one, publish. `sync:open-installer-folder` (viewer).
+
+*Screens:* Settings → **Shared database** card in shared mode (replaces the *Database* card there; local mode unchanged):
+status + data of; current editor; sessions table; last publish; minimum version; my copy; buttons. Admins: *Force release*
+per session (not their own) with a confirmation; *Publish an installer…*. Update banner (blue): [Install update] [Open
+folder] [×], then *"Preparing the update…"*; [×] hidden when the update is required.
+
+*Help:* new topics *Installing EPL Tool & first start*, *Rules of use* (moved out of *Shared database*, which links to it),
+*Onboarding a new user* (admins: Users list, SharePoint permissions, the Installer link + checklist, a first Start/Finish
+cycle, the go-live checklist §6), *FAQ & troubleshooting*; *Shared database* gains the card and Force release; *What's new*
+finalised. Delays through `HELP_VALUES` as in Phase D step 5.
+
+*Checks (`phase-e.checks.ts`, simulated PCs from `pcs.ts`):* an admin releases an active holder → the holder gives up at
+its next check (conflict copy when it had changes, message and notification name the admin); a person waiting is told; the
+released claim revived with a fresh heartbeat never holds again; the next publish logs the release once in the Activity log;
+a User / Viewer can't force-release, nor anybody their own session; release records cleaned after 7 days. Installer: publish
+(admin only, name / version checks, an older version
+refused, `.tmp` + rename, `latest.json`, two installers kept), update detection (newer / same / older / malformed / missing),
+`required`, install (copy + sha256 check, `shell.openPath` and quit recorded by the Electron stub with `isPackaged` set;
+refused unpackaged). Unit tests for the release rules and `installerVersion`.
+
+*Build order (one commit each, asking first):* 1) Force release (rules, store, sync, IPC, permission row, checks) ·
+2) installer folder: update detection, publish, install (checks) · 3) screens (card, banners) · 4) Help topics, docs,
+*What's new* → release v0.8.0 (version bump, tag, push — asking first).
+
+**Progress:** step 1 (Force release) done 10 Nov 2026 — release records `EPL-EditSlot/<slotId>.release.json`
+(`SlotRelease`, `releaseOf`, `isStaleRelease` in `editSlot.ts`; `holderOf` / `inactiveHolderOf` now take the releases as a
+required argument, so no caller can forget them), `CentralStore.listReleases / writeRelease / deleteRelease` (`listClaims`
+skips release records), `forceRelease` and `getDetails` in `sync.ts` (the card reads the manifest fresh), `logReleases` in
+the publish stamp, `sync:force-release` (admin, no `writes` flag — listed with `conflicts:archive` as the exceptions in the
+phase-b guard check) and `sync:details` (viewer), `canForceRelease` + matrix row. Choice within the design: an admin can't
+release a session of their own, including one left by an earlier run on this PC (Resume editing or Discard instead).
+`phase-e.checks.ts`: 46 checks (each new rule broken on purpose once to confirm the checks catch it); unit tests: 76.
+
 - [ ] **Settings → Shared database** card: current editor, last publish, generation, and *Force release* for admins.
 - [ ] **Updates:**
   - [ ] An `Installer/` folder on SharePoint with `latest.json`; the app shows an update banner.
@@ -672,5 +778,6 @@ All decisions are recorded (the last two on 5 Nov 2026):
 **Next step:** Phase D (edit slot) — started 9 Nov 2026 right after the v0.7.0 release, while the two-PC test of v0.7.0 runs
 with a colleague (separate SharePoint test folder with a copy of the database). Steps 1 (slot core), 2 (idle release,
 waiting, notifications), 3 (recovery with the slot + rescue tool), 4 (screens) and 5 (Help editing topics, README, draft
-*What's new*) are done (10 Nov 2026); next is Phase E (kickoff questions first) → v0.8.0. Phases A and B were
+*What's new*) are done (10 Nov 2026). Phase E: kickoff decisions and technical design approved 10 Nov 2026; step 1 (Force
+release) done, next step 2 (installer folder + updates), then 3 (screens) and 4 (Help, docs) → v0.8.0. Phases A and B were
 released as **v0.6.1** on 6 Nov 2026 (v0.6.0 was not released separately); Phase C as **v0.7.0** on 9 Nov 2026.
