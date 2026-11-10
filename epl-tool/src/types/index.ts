@@ -334,6 +334,7 @@ export interface SyncStatus {
   recovery: { since: string; changedAt: string | null } | null;  // unpublished changes from a previous run
   slot: {
     holder: SlotPerson | null;      // who is editing right now (as seen at the last check)
+    inactive: SlotPerson | null;    // nobody holds the slot, but this session stopped without finishing (may be taken over)
     claimingUntil: string | null;   // my claim is in its waiting window until then
     waitingSince: string | null;    // I asked to be told when the slot is free
   };

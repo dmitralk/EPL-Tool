@@ -3,7 +3,8 @@ import { LayoutDashboard, FileText, Users, Settings, Database, Package, BookOpen
 import { cn } from '../../lib/utils';
 import { useAuth } from '../../lib/auth';
 import { useSync } from '../../lib/syncState';
-import { statusLine, useSyncActions } from '../../lib/sync';
+import { editorLine, statusLine, useSyncActions } from '../../lib/sync';
+import { useEditFlow } from '../../lib/editFlow';
 import { ROLE_LABELS, canStartEditing } from '../../../shared/permissions';
 
 const navItems = [
@@ -35,9 +36,11 @@ export function Sidebar() {
   const { state } = useAuth();
   const { status } = useSync();
   const act = useSyncActions();
+  const flow = useEditFlow();
   const editing = status?.phase === 'edit';
   const line = status ? statusLine(status) : null;
-  const working = !!act.working;
+  const editor = status ? editorLine(status) : null;
+  const working = !!act.working || flow.running;
 
   return (
     <aside className="w-52 shrink-0 bg-gray-900 text-white flex flex-col h-full">
@@ -87,6 +90,12 @@ export function Sidebar() {
         <NavLink to={settingsItem.to} className={linkClass}>
           <settingsItem.icon size={16} />
           {settingsItem.label}
+          {!!status?.conflictCount && (
+            <span className="ml-auto px-1.5 rounded-full bg-amber-400 text-gray-900 text-[10px] font-semibold"
+              title={`${status.conflictCount} conflict cop${status.conflictCount === 1 ? 'y' : 'ies'} to review`}>
+              {status.conflictCount}
+            </span>
+          )}
         </NavLink>
         {status && line && status.mode !== 'none' && (
           <div className="px-3 pt-3 mt-2 border-t border-gray-800 text-xs">
@@ -99,13 +108,19 @@ export function Sidebar() {
                 </NavLink>
               )}
             </div>
+            {editor && (
+              <div className="flex items-center gap-2 mt-1 text-gray-400" title={editor.detail}>
+                <Pencil size={10} className="ml-[1px] shrink-0" />
+                <span className="leading-snug">{editor.text}</span>
+              </div>
+            )}
             {status.mode === 'shared' && (
               <div className="flex flex-wrap gap-1.5 mt-2">
                 {status.phase === 'read' && canStartEditing(state?.user) && (
-                  <button onClick={act.startEditing} disabled={working || !status.canStartEditing}
+                  <button onClick={flow.start} disabled={working || !status.canStartEditing}
                     title={status.startEditingBlocked ?? 'Get a fresh copy and make changes; they are published for everybody'}
                     className={cn(smallButton, 'bg-blue-600 text-white hover:bg-blue-500')}>
-                    <Pencil size={11} /> {act.working === 'start' ? 'Starting…' : 'Start editing'}
+                    <Pencil size={11} /> {flow.running ? 'Starting…' : 'Start editing'}
                   </button>
                 )}
                 {editing && (

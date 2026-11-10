@@ -1507,6 +1507,10 @@ export function getStatus(): SyncStatus {
         const h = holderOf(s.claims, Date.now(), timing.takeoverMs);
         return h ? personOf(h) : null;
       })() : null,
+      inactive: !e && s ? (() => {
+        const i = inactiveHolderOf(s.claims, Date.now(), timing.takeoverMs);
+        return i && !personOf(i).mine ? personOf(i) : null;
+      })() : null,
       claimingUntil: claiming ? new Date(claiming.until).toISOString() : null,
       waitingSince: s?.phase === 'read' ? s.waiting?.since ?? null : null,
     },

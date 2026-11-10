@@ -23,6 +23,7 @@ import { StandardEplScreen } from './screens/StandardEpl/StandardEplScreen';
 import { NoAccessScreen } from './screens/NoAccessScreen';
 import { UsersScreen } from './screens/Settings/UsersScreen';
 import { ActivityScreen } from './screens/Settings/ActivityScreen';
+import { ConflictCopiesScreen } from './screens/Settings/ConflictCopiesScreen';
 import { HelpScreen } from './screens/Help/HelpScreen';
 import { ToastProvider } from './components/ui/toast';
 import { AuthProvider, useAuth } from './lib/auth';
@@ -96,6 +97,7 @@ export function App() {
               <Route path="settings" element={<SettingsScreen />} />
               <Route path="settings/users" element={<UsersScreen />} />
               <Route path="settings/activity" element={<ActivityScreen />} />
+              <Route path="settings/conflicts" element={<ConflictCopiesScreen />} />
               <Route path="settings/deleted-customers" element={<DeletedCustomersScreen />} />
               <Route path="settings/currencies" element={<CurrenciesScreen />} />
               <Route path="settings/packaging" element={<PackagingScreen />} />

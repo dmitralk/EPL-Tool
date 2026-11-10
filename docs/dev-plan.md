@@ -527,18 +527,33 @@ moves the file to `archive/`). Copies are only read through a temporary copy on 
 copies of this database are accepted. `conflictCount` in the status (Settings badge in step 4). Permission matrix: three new
 rows (review: everybody; re-apply: like creating price lists; archive: admins). `phase-d.checks.ts`: 148 checks.
 
+Step 4 (screens) done 10 Nov 2026 — `lib/editFlow.tsx`: one dialog for Start editing, Resume editing and Publish now
+(earlier changes) that follows the claim: *"Reserving the edit slot…"* with countdown and Cancel (closing it cancels the
+claim) → *"Getting a fresh copy…"* · *Someone is editing* (who, which PC, since, last change) [Cancel] [Wait] · *Take over
+the edit slot?* (inactive since, why, unpublished changes kept as a conflict copy) [Wait] [Take over]. Sidebar: *"Ben is
+editing"* under the status line (tooltip: who, PC, since, last change), count badge on Settings. Banners: recovery
+[Resume editing] [Publish now] [Discard] (Discard asks first), slot free / *"Ben's editing session has been inactive since
+…: you can take over"* (new `slot.inactive` in the status), lost slot / refused publish link to Conflict copies, OneDrive
+conflict copies [Review]. **Settings → Conflict copies** (`screens/Settings/ConflictCopiesScreen.tsx`, route
+`/settings/conflicts`, `?file=` keeps the copy under review across reloads): list (copy, source, saved, started from, last
+change; Review, Archive for admins with confirmation) and review (price lists only in the copy with tick + *Re-apply
+selected*, or *Start editing to re-apply*; results per list; *What was done in this copy*; *Other differences* per table,
+expandable, with copy vs shared values). Found during the visual check (isolated dev instance, 10 Nov 2026) and fixed: the
+activity list no longer counts the creation of a price list that the shared database has meanwhile (re-applied), the
+re-apply results name customer + version, the "started from" text for a never-published original. `phase-d.checks.ts`: 149.
+
 - [ ] **Edit slot:**
   - [x] a claim file per editing session in `EPL-EditSlot/`
   - [x] heartbeat every 3 min
   - [x] about 45 s waiting window; the earliest claim wins
-  - [x] take-over after 15 min without activity (question first; screens in step 4)
+  - [x] take-over after 15 min without activity (question first)
   - [x] automatic publish and release after 30 min without changes (warning 2 min before, open dialogs keep the slot)
-- [ ] **Waiting:** a waiting dialog (step 4), and a Windows notification when the slot is free (done).
+- [x] **Waiting:** a waiting dialog, and a Windows notification when the slot is free.
 - [x] ***Start editing* for Users** as well (role check: Admin or User).
-- [ ] **Recovery:**
+- [x] **Recovery:**
   - [x] crash recovery (`work\session.json`): [Resume editing] [Publish now] [Discard], through the edit slot
   - [x] the `EPL-Conflicts/` folder
-  - [x] **"Re-apply my price lists"** rescue tool, with a report of other differences (main process; screen in step 4)
+  - [x] **"Re-apply my price lists"** rescue tool, with a report of other differences (Settings → Conflict copies)
 - [ ] **Help:** the editing topics.
 
 **Done when:** all scenarios in the multi-user study §7 (testing) work on two PCs.
@@ -643,5 +658,6 @@ All decisions are recorded (the last two on 5 Nov 2026):
 
 **Next step:** Phase D (edit slot) — started 9 Nov 2026 right after the v0.7.0 release, while the two-PC test of v0.7.0 runs
 with a colleague (separate SharePoint test folder with a copy of the database). Steps 1 (slot core), 2 (idle release,
-waiting, notifications) and 3 (recovery with the slot + rescue tool) are done; next is step 4 (screens). Phases A and B were
+waiting, notifications), 3 (recovery with the slot + rescue tool) and 4 (screens) are done; next is step 5 (Help editing
+topics, README, *What's new*), then Phase E → v0.8.0. Phases A and B were
 released as **v0.6.1** on 6 Nov 2026 (v0.6.0 was not released separately); Phase C as **v0.7.0** on 9 Nov 2026.

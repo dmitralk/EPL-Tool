@@ -6,7 +6,7 @@ import { useBusyCount } from './busy';
 import { SyncContext, useSync } from './syncState';
 import { ipcErrorMessage } from './utils';
 import { useToast } from '../components/ui/toast';
-import type { SlotPerson, SyncStatus } from '../../types';
+import type { SyncStatus } from '../../types';
 
 // Shared database on the screens (multi-user study §5): the status pushed by the main process, new data applied when
 // nothing is open, and the current screen re-rendered whenever another copy of the database was opened.
@@ -126,10 +126,20 @@ export function statusLine(s: SyncStatus): StatusLine {
 
 // ── Actions ───────────────────────────────────────────────────────────────────────────────────────────────────────
 
+// "Anna is editing" while someone else holds the edit slot (read mode), with the details for the tooltip.
+export function editorLine(s: SyncStatus): { text: string; detail: string } | null {
+  const h = s.slot?.holder;
+  if (s.mode !== 'shared' || s.phase !== 'read' || !h || h.mine) return null;
+  return {
+    text: `${firstName(h.user)} is editing`,
+    detail: `${h.user} (${h.machine}) has been editing since ${formatWhen(h.since)}` +
+      `${h.lastChangeAt ? `; last change ${formatWhen(h.lastChangeAt)}` : ''}.`,
+  };
+}
+
 export function useSyncActions() {
   const { toast } = useToast();
   const { setStatus } = useSync();
-  const { refresh: refreshAuth } = useAuth();
   const [working, setWorking] = useState<string | null>(null);
 
   const run = useCallback(async <T,>(label: string, fn: () => Promise<T>): Promise<T | null> => {
@@ -154,24 +164,9 @@ export function useSyncActions() {
     }
   }, [toast]);
 
+  // Start editing, Resume editing and Publish now (earlier changes) go through the edit slot: useEditFlow (lib/editFlow.tsx).
   return {
     working,
-    startEditing: () => run('start', async () => {
-      const r = await api.startEditing() as {
-        ok: boolean; error?: string; waiting?: SlotPerson; takeOver?: SlotPerson; cancelled?: boolean;
-      };
-      // Until the claim / waiting / take-over dialogs (Phase D step 4): waiting starts at once, with a message.
-      if (r.waiting) {
-        await api.waitForSlot();
-        toast(`${r.waiting.user} is editing right now (since ${formatWhen(r.waiting.since)}). You'll be told when the edit slot is free.`, 'info');
-        return;
-      }
-      if (r.takeOver) { toast(`${r.takeOver.user}'s editing session is inactive since ${formatWhen(r.takeOver.heartbeatAt)}.`, 'info'); return; }
-      if (r.cancelled) return;
-      if (!r.ok) throw new Error(r.error ?? 'Editing could not be started.');
-      await refreshAuth();
-      toast('You are editing. Changes are published automatically.', 'success');
-    }),
     publishNow: () => run('publish', async () => {
       const r = await api.publishNow() as PublishOutcome;
       report(r, r.ok && r.published ? `Published (generation ${r.generation})` : r.ok ? 'Nothing new to publish' : undefined);
@@ -181,25 +176,8 @@ export function useSyncActions() {
       report(r, 'Published — you are back in read mode');
     }),
     refresh: () => run('refresh', async () => { await api.refreshSync(); }),
-    recover: (action: 'resume' | 'publish' | 'discard') => run('recover', async () => {
-      const r = await api.recoverUnpublished(action) as {
-        ok: boolean; error?: string; conflict?: boolean; published?: boolean; generation?: number;
-        waiting?: SlotPerson; takeOver?: SlotPerson; cancelled?: boolean;
-      };
-      // Until the waiting / take-over dialogs (Phase D step 4): messages, and waiting starts at once.
-      if (r.waiting) {
-        await api.waitForSlot();
-        toast(`${r.waiting.user} is editing right now. Your changes are kept; you'll be told when the edit slot is free.`, 'info');
-        return;
-      }
-      if (r.takeOver) { toast(`${r.takeOver.user}'s editing session is inactive since ${formatWhen(r.takeOver.heartbeatAt)}.`, 'info'); return; }
-      if (r.cancelled) return;
-      if (action === 'resume' && r.ok) {
-        await refreshAuth();
-        toast('You are editing again, with your earlier changes.', 'success');
-        return;
-      }
-      report(r as PublishOutcome, action === 'publish' ? 'Your earlier changes were published' : 'Your earlier changes were discarded');
+    discardRecovery: () => run('discard', async () => {
+      report(await api.recoverUnpublished('discard') as PublishOutcome, 'Your earlier changes were discarded');
     }),
     dismissConflict: () => run('dismiss', async () => { await api.dismissSyncConflict(); }),
     stopWaiting: () => run('stop-waiting', async () => { await api.stopWaitingForSlot(); }),

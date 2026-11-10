@@ -255,14 +255,16 @@ function diffTable(src: Database.Database, cur: Database.Database, spec: TableSp
 }
 
 // Activity entries in the copy that the shared database doesn't have: what was done in the copy (the shared database's
-// own newer entries are not listed). Publishing stamps are left out.
+// own newer entries are not listed). Publishing stamps are left out, and so are creations of price lists that the shared
+// database has meanwhile (re-applied, or created there with the same id).
 function lostActivity(src: Database.Database, cur: Database.Database): { list: ConflictAnalysis['activity']; count: number } {
   if (!hasTable(src, 'audit_log') || !hasTable(cur, 'audit_log')) return { list: [], count: 0 };
   type Entry = { at: string; user_label: string; action: string; entity_key: string | null; summary: string };
   const sig = (e: Entry) => `${e.at}|${e.action}|${e.entity_key ?? ''}|${e.summary}`;
   const known = new Set((cur.prepare('SELECT at, action, entity_key, summary FROM audit_log').all() as Entry[]).map(sig));
+  const sharedLists = new Set(cur.prepare('SELECT price_list_id FROM price_lists').pluck().all() as string[]);
   const lost = (src.prepare("SELECT at, user_label, action, entity_key, summary FROM audit_log WHERE action <> 'sync.publish' ORDER BY id")
-    .all() as Entry[]).filter(e => !known.has(sig(e)));
+    .all() as Entry[]).filter(e => !known.has(sig(e)) && !(e.action === 'price_list.create' && sharedLists.has(e.entity_key ?? '')));
   return {
     list: lost.slice(-MAX_ACTIVITY).map(e => ({ at: e.at, by: e.user_label, action: e.action, summary: e.summary })),
     count: lost.length,

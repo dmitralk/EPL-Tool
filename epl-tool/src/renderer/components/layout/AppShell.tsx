@@ -5,6 +5,7 @@ import { SyncBanners } from './SyncBanners';
 import { api } from '../../lib/ipc';
 import { useAuth } from '../../lib/auth';
 import { useSync } from '../../lib/syncState';
+import { EditFlowProvider } from '../../lib/editFlow';
 import { ROLE_LABELS } from '../../../shared/permissions';
 import type { AuthState } from '../../../types';
 
@@ -17,6 +18,7 @@ export function AppShell() {
   }
 
   return (
+    <EditFlowProvider>
     <div className="flex h-screen overflow-hidden bg-gray-50">
       <Sidebar />
       <main className="flex-1 overflow-y-auto">
@@ -37,5 +39,6 @@ export function AppShell() {
         <Outlet key={dataVersion} />
       </main>
     </div>
+    </EditFlowProvider>
   );
 }

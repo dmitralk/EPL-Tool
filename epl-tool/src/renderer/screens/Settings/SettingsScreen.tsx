@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Activity, Plus, Trash2, Users } from 'lucide-react';
+import { Activity, FileWarning, Plus, Trash2, Users } from 'lucide-react';
 import { api } from '../../lib/ipc';
 import { useCan } from '../../lib/auth';
 import { useSync } from '../../lib/syncState';
@@ -178,6 +178,31 @@ export function SettingsScreen() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Conflict copies (shared database) */}
+      {status?.mode === 'shared' && (
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle className="flex items-center gap-2">
+                <FileWarning size={16} className="text-gray-400" /> Conflict copies
+                {status.conflictCount > 0 && (
+                  <span className="ml-1 px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-xs font-semibold">{status.conflictCount}</span>
+                )}
+              </CardTitle>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-gray-600 mb-3">
+              Unpublished work kept when a publish was refused or the edit slot was lost, and OneDrive conflict copies. Review
+              them and re-apply their price lists.
+            </p>
+            <Button variant="outline" onClick={() => navigate('/settings/conflicts')}>
+              {status.conflictCount > 0 ? `Review ${status.conflictCount} conflict cop${status.conflictCount === 1 ? 'y' : 'ies'} →` : 'Open Conflict copies →'}
+            </Button>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Backups */}
       {dbOpen && (

@@ -209,7 +209,8 @@ async function slotChecks(tmp: string) {
     check('right after the crash Ben still holds the slot: A waits', !r.ok && r.waiting?.user === 'Ben Admin', r);
     ageClaim(c, bSlot.slotId, 16);
     sa = await A.invoke('sync:check');
-    check('16 min without heartbeat: nobody holds the slot', sa.slot.holder === null, sa.slot);
+    check('16 min without heartbeat: nobody holds the slot; the status names the inactive session', sa.slot.holder === null &&
+      sa.slot.inactive?.user === 'Ben Admin' && sa.slot.inactive.machine === 'PC-B', sa.slot);
     r = await A.invoke('sync:start-editing');
     check("A is asked first: Ben's session is inactive", !r.ok && r.takeOver?.user === 'Ben Admin' && r.takeOver.machine === 'PC-B', r);
     check('asking writes nothing', claimsOf(c).map(x => x.slotId).join() === bSlot.slotId, claimsOf(c));
@@ -588,6 +589,8 @@ async function slotChecks(tmp: string) {
       centralQuery(c, 'SELECT 1 FROM price_lists WHERE price_list_id = ?', [r1.price_list_id]).length === 1, p);
     const an2 = await A.invoke('conflicts:analyze', kept);
     check('review again: only RESCUE-2 is left', an2.priceLists.map((l: any) => l.price_list_version).join() === 'RESCUE-2', an2.priceLists);
+    check("…and RESCUE-1's creation is no longer listed as lost work", an2.activityCount === 3 &&
+      an2.activity.filter((x: any) => x.action === 'price_list.create').length === 1, an2.activity);
 
     const countBefore = (await A.status()).conflictCount;
     const arch = await A.invoke('conflicts:archive', kept);

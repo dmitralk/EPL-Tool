@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   AlertTriangle, Bell, Clock, CloudOff, Download, History, Hourglass, Info, Pencil, RefreshCw, ShieldAlert, X,
@@ -6,6 +7,8 @@ import { cn } from '../../lib/utils';
 import { useCan } from '../../lib/auth';
 import { useSync } from '../../lib/syncState';
 import { formatWhen, useSyncActions } from '../../lib/sync';
+import { useEditFlow } from '../../lib/editFlow';
+import { ConfirmDialog } from '../ui/dialog';
 import { AUTO_PUBLISH_SECONDS, IDLE_RELEASE_MINUTES, describeSeconds } from '../../../shared/sync';
 import type { SyncPublishInfo } from '../../../types';
 
@@ -55,28 +58,34 @@ export function SyncBanners() {
   const { status, busy } = useSync();
   const can = useCan();
   const act = useSyncActions();
+  const flow = useEditFlow();
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
   if (!status || status.mode !== 'shared') return null;
-  const working = !!act.working;
+  const working = !!act.working || flow.running;
   const edit = status.edit;
 
   return (
     <div>
       {status.recovery && (
         <Banner tone="amber" icon={History} actions={<>
-          <BannerButton onClick={() => act.recover('resume')} disabled={working}>Resume editing</BannerButton>
-          <BannerButton onClick={() => act.recover('publish')} disabled={working}>Publish now</BannerButton>
-          <BannerButton onClick={() => act.recover('discard')} disabled={working}>Discard</BannerButton>
+          <BannerButton onClick={() => flow.recover('resume')} disabled={working}>Resume editing</BannerButton>
+          <BannerButton onClick={() => flow.recover('publish')} disabled={working}>Publish now</BannerButton>
+          <BannerButton onClick={() => setConfirmDiscard(true)} disabled={working}>Discard</BannerButton>
         </>}>
           You have changes from {formatWhen(status.recovery.changedAt ?? status.recovery.since)} that were not published
           (EPL Tool was closed before it could publish them).
         </Banner>
       )}
+      <ConfirmDialog open={confirmDiscard} onClose={() => setConfirmDiscard(false)} onConfirm={act.discardRecovery}
+        title="Discard your earlier changes?" confirmLabel="Discard changes"
+        description={`The changes from ${formatWhen(status.recovery?.changedAt ?? status.recovery?.since)} that were not published are deleted from this PC. This can't be undone.`} />
 
       {status.conflict && (
         <Banner tone="red" icon={ShieldAlert} actions={
           <button onClick={act.dismissConflict} title="Dismiss" className="p-1 rounded hover:bg-white/60"><X size={14} /></button>
         }>
           {status.conflict.message}{' '}
+          {status.conflict.savedTo && <><Link to="/settings/conflicts" className="underline">Review it in Conflict copies</Link> · </>}
           <Link to="/help/shared-database" className="underline">What now?</Link>
         </Banner>
       )}
@@ -119,7 +128,7 @@ export function SyncBanners() {
 
       {status.released && (
         <Banner tone="gray" icon={Info} actions={<>
-          {status.canStartEditing && <BannerButton onClick={act.startEditing} disabled={working}>Start editing</BannerButton>}
+          {status.canStartEditing && <BannerButton onClick={flow.start} disabled={working}>Start editing</BannerButton>}
           <button onClick={act.dismissReleased} title="Dismiss" className="p-1 rounded hover:bg-white/60"><X size={14} /></button>
         </>}>
           {status.released.message}
@@ -138,10 +147,12 @@ export function SyncBanners() {
 
       {status.slot.waitingSince && !status.slot.holder && (
         <Banner tone="blue" icon={Bell} actions={<>
-          <BannerButton onClick={act.startEditing} disabled={working || !status.canStartEditing}>Start editing</BannerButton>
+          <BannerButton onClick={flow.start} disabled={working || !status.canStartEditing}>Start editing</BannerButton>
           <BannerButton onClick={act.stopWaiting} disabled={working}>Stop waiting</BannerButton>
         </>}>
-          The edit slot is free.
+          {status.slot.inactive
+            ? `${status.slot.inactive.user}'s editing session has been inactive since ${formatWhen(status.slot.inactive.heartbeatAt)}: you can take over.`
+            : 'The edit slot is free.'}
         </Banner>
       )}
 
@@ -182,10 +193,14 @@ export function SyncBanners() {
       )}
 
       {status.conflictCopies.length > 0 && (
-        <Banner tone="amber" icon={AlertTriangle}>
+        <Banner tone="amber" icon={AlertTriangle} actions={
+          <Link to="/settings/conflicts" className="px-2.5 py-1 rounded border border-black/10 bg-white/70 hover:bg-white font-medium text-xs">
+            Review
+          </Link>
+        }>
           OneDrive created a conflict copy next to the shared database
           ({status.conflictCopies.map(f => f.split(/[\\/]/).pop()).join(', ')}). It may contain changes that were not
-          published. {can.isAdmin ? 'Check it, then delete or move it.' : 'Please tell an admin.'}
+          published: review it in Conflict copies{can.isAdmin ? ', then archive it' : ''}.
         </Banner>
       )}
     </div>
