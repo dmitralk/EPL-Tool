@@ -19,7 +19,8 @@ import {
   MIN_EDIT_APP_VERSION, SLOT_HEARTBEAT_SECONDS, SLOT_TAKEOVER_MINUTES, SLOT_WAIT_SECONDS, compareVersions,
 } from '../../shared/sync';
 import {
-  CentralError, SyncedFolderStore, describeDbFile, sha256File, type CentralStore, type DbFileInfo, type Manifest,
+  CentralError, SyncedFolderStore, describeDbFile, sha256File, type CentralStore, type DbFileInfo, type InstallerInfo,
+  type Manifest,
 } from './centralStore';
 import {
   holderOf, inactiveHolderOf, isActive, isStale, isStaleRelease, newSlotId, releaseOf, takenOverBy, type SlotClaim,
@@ -67,6 +68,7 @@ interface Shared {
   recovery: Session | null;     // unpublished working copy left by a previous run
   claims: SlotClaim[];          // edit slot claims seen at the last check
   releases: SlotRelease[];      // sessions released by an admin (Force release), seen at the last check
+  installer: InstallerInfo | null;  // Installer/latest.json (update banner, Phase E)
   waiting: { since: string; heldBy: { slotId: string; user: string } | null } | null;  // told when the slot is free
   released: { at: string; message: string } | null;  // the slot was released after the idle time
 }
@@ -148,6 +150,7 @@ let publishTimer: NodeJS.Timeout | null = null;
 let heartbeatTimer: NodeJS.Timeout | null = null;
 let idleTimer: NodeJS.Timeout | null = null;
 let busyNow = false;            // a dialog or wizard is open on the screens (reported by them)
+let updateDismissed: string | null = null;   // the update banner for this version was closed (until the next start)
 const MINUTE = 60_000;
 let timing = {
   checkMs: CHANGE_CHECK_SECONDS * 1000,
@@ -312,7 +315,7 @@ export async function connectShared(centralPath: string, opts: { save?: boolean 
   const s: Shared = {
     store, phase: 'connecting', copy: null, offline: null, syncing: null, pending: null, manifest: null, lastProbe: null,
     damagedCount: 0, centralDamaged: false, conflictCopies: [], conflictCount: 0, lastCheckAt: null, error: null, conflict: null,
-    recovery: null, claims: [], releases: [], waiting: null, released: null,
+    recovery: null, claims: [], releases: [], installer: null, waiting: null, released: null,
   };
   shared = s;
   mode = 'shared';
@@ -325,6 +328,7 @@ export async function connectShared(centralPath: string, opts: { save?: boolean 
     if (shared !== s) return;
     installReadCopy(s, info, probe.exists ? new Date(probe.mtimeMs).toISOString() : null);
     s.manifest = probe.manifest;
+    s.installer = await store.readInstallerInfo();
     s.syncing = probe.manifest && probe.manifest.generation > info.generation ? publishInfo(probe.manifest) : null;
     s.lastProbe = probeKey(probe.size, probe.mtimeMs, probe.manifest);
   } catch (e) {
@@ -462,6 +466,7 @@ async function runCheck(): Promise<void> {
   const wasOffline = !!s.offline;
   s.offline = null;
   s.manifest = probe.manifest;
+  s.installer = await s.store.readInstallerInfo();
   s.conflictCopies = await s.store.findConflictCopies();
   await updateConflictCount(s);
   await readClaims(s);
@@ -766,6 +771,9 @@ export async function getDetails(): Promise<SyncDetails | null> {
     releases: [...s.releases].sort((a, b) => b.at.localeCompare(a.at)).map(r => ({
       slotId: r.slotId, user: r.released.user, machine: r.released.machine, by: r.user, at: r.at,
     })),
+    installer: s.installer ? {
+      version: s.installer.version, file: s.installer.file, publishedBy: s.installer.publishedBy, publishedAt: s.installer.publishedAt,
+    } : null,
   };
 }
 
@@ -1311,6 +1319,37 @@ export function getSharedStore(): CentralStore | null {
   return mode === 'shared' && shared ? shared.store : null;
 }
 
+// ── Installer/ and the update banner (dev-plan Phase E; actions in updates.ts) ─────────────────────────────────────
+
+export function getInstallerInfo(): InstallerInfo | null {
+  return mode === 'shared' ? shared?.installer ?? null : null;
+}
+
+// After an admin published a setup: the banner follows at once on this PC.
+export function noteInstallerPublished(info: InstallerInfo): void {
+  if (shared) shared.installer = info;
+  emit();
+}
+
+// The banner can be closed until the next start — not when the update is needed to make changes.
+export function dismissUpdate(): void {
+  updateDismissed = shared?.installer?.version ?? null;
+  emit();
+}
+
+// Who is doing something in the shared folder (claims, release records, published installers).
+export function whoAmI(): { user: string; account: string | null; machine: string } {
+  return me();
+}
+
+function updateInfo(s: Shared | null): SyncStatus['update'] {
+  const i = s?.installer;
+  if (mode !== 'shared' || !i || compareVersions(i.version, app.getVersion()) <= 0) return null;
+  const required = getNewerSchema() !== null || !!minAppVersionNeeded();
+  if (!required && updateDismissed === i.version) return null;
+  return { version: i.version, file: i.file, publishedBy: i.publishedBy, publishedAt: i.publishedAt, required };
+}
+
 // Decided 9 Nov 2026: after a refused publish the app goes back to read mode on the fresh data.
 async function refused(s: Shared, e: EditState, message: string, savedTo: string | null): Promise<PublishOutcome> {
   const where = savedTo ? ` Your copy was saved as ${savedTo}.` : ' Your copy could not be saved.';
@@ -1631,5 +1670,6 @@ export function getStatus(): SyncStatus {
     },
     legacySuggestion,
     conflictCount: s?.conflictCount ?? 0,
+    update: updateInfo(s),
   };
 }

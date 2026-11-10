@@ -4,7 +4,7 @@ This file is read automatically by Claude Code at conversation start. It gives f
 
 ---
 
-## Current state & next session (updated 10 Nov 2026: v0.7.0 released; Phase D built; Phase E step 1 done)
+## Current state & next session (updated 10 Nov 2026: v0.7.0 released; Phase D built; Phase E steps 1–2 done)
 
 **Released:** **v0.7.0** (9 Nov 2026) = dev-plan Phase C (read copy + publish): https://github.com/dmitralk/EPL-Tool/releases/tag/v0.7.0.
 Before: **v0.6.1** (6 Nov 2026) = Phase A (foundations) + Phase B (access rights + Guides & Help).
@@ -29,20 +29,25 @@ all on `main` and **not pushed** (`origin/main` is still the v0.7.0 release comm
 release order — v0.8.0 is tagged right after Phase E, the two-PC test runs on the release, fixes as v0.8.x) and the
 **approved technical design** (with: two installers kept, Install update refused in a dev run, force releases recorded in
 the Activity log by the next publish) are in the dev-plan's Phase E section. Build order, one commit each, asking first:
-1. the latest commit on `main` — Force release: release records `EPL-EditSlot/<slotId>.release.json`, `forceRelease` /
+1. `1c7c6fc` Force release: release records `EPL-EditSlot/<slotId>.release.json`, `forceRelease` /
    `getDetails` in `sync.ts`, `logReleases` at publish, `sync:force-release` (admin) + `sync:details` (viewer),
    `canForceRelease` + matrix row; `phase-e.checks.ts` (46)
-2. **next:** installer folder + updates (`Installer/latest.json`, `installerVersion()` in `shared/sync.ts`,
-   `SyncStatus.update`, `sync:publish-installer` / `sync:install-update` / `sync:open-installer-folder`; checks with the
-   stub's `isPackaged` set)
-3. screens: Settings → Shared database card (replaces the *Database* card in shared mode; sessions, releases, last publish,
-   Force release with confirmation, Publish an installer…), update banner; also add `['sync.', 'Shared database']` to the
-   Activity screen's `AREAS` so publishes and force releases can be filtered
+2. the latest commit on `main` — installer folder + updates: `Installer/latest.json`, `installerVersion()` /
+   `INSTALLERS_KEPT` in `shared/sync.ts`, `CentralStore.readInstallerInfo / publishInstaller / copyInstaller`,
+   `SyncStatus.update` (`required`, dismissed until restart), `main/sync/updates.ts` (`sync:pick-installer`,
+   `sync:publish-installer`, `sync:install-update`, `sync:open-installer-folder`, `sync:dismiss-update`); the Electron stub
+   records `shell.openPath` / `app.quit` and plays an installed app (`Pc.stub({ isPackaged: true })`); phase-e 84
+3. **next:** screens: Settings → Shared database card (replaces the *Database* card in shared mode; sessions, releases, last
+   publish, installer, Force release with confirmation, *Publish an installer…* with confirmation of the version found),
+   update banner ([Install update] [Open folder] [×]; [×] hidden when `required`; the newer-app banner gets [Install
+   update] too); also add `['sync.', 'Shared database']` to the Activity screen's `AREAS` so publishes and force releases
+   can be filtered
 4. Help (Installing & first start, Rules of use moved out of *Shared database*, Onboarding a new user incl. go-live §6, FAQ
-   & troubleshooting; Force release in *Shared database*), docs, final *What's new* → release v0.8.0 (ask before tag/push)
+   & troubleshooting; Force release and updates in *Shared database*), docs (README release procedure: publish the setup
+   with the card after the GitHub release), final *What's new* → release v0.8.0 (ask before tag/push)
 
 **Next session:**
-- Phase E step 2 (see above), then 3 and 4.
+- Phase E step 3 (see above), then 4.
 - **Two-PC test of v0.7.0** with a colleague (separate SharePoint test folder) — results not reported yet. `main` now holds
   unreleased Phase D work, so a v0.7.x fix would go on a branch from tag `v0.7.0` (tag v0.7.x there, then bring the fix
   into `main`).
@@ -74,7 +79,7 @@ the Activity log by the next publish) are in the dev-plan's Phase E section. Bui
 variables in the same PowerShell call: the one-liner is in `docs/local/corporate-network.md`, local only — see *Corporate
 network* below):
 `npx tsc --noEmit -p .` (exactly 4 known errors: `export.ts` ×2, `Step2ConfigurePricing.tsx`, `Step3ReviewProducts.tsx`),
-`npx eslint <changed files>`, `npm test` (76 tests), `npm run test:main` (main-process checks, see below), and packaging into a temp folder (`out/` is often locked by OneDrive):
+`npx eslint <changed files>`, `npm test` (78 tests), `npm run test:main` (main-process checks, see below), and packaging into a temp folder (`out/` is often locked by OneDrive):
 `node -e "require('@electron-forge/core').api.package({dir:process.cwd(),outDir:process.env.TEMP+'\\epl-pkg-check',interactive:false})"`,
 then delete that folder. Release procedure: see *GitHub Actions* below (`npm version X.Y.Z --no-git-tag-version`, commit, BOM-free
 annotated tag, push `main` + tag; CI runs `npm test`, builds and publishes).
@@ -129,6 +134,14 @@ annotated tag, push `main` + tag; CI runs `npm test`, builds and publishes).
   `logReleases` inside the `applyStamp` transaction (`sync.force-release` entries, attributed to the admin, at the release
   time, de-duplicated by `entity_key` = slotId). `getDetails()` = the card data (`SyncDetails`: sessions with states, release
   records, a fresh manifest, the local copy). Release records are deleted after 7 days like stale claims.
+  **Installer + updates (Phase E step 2):** `Installer/` next to the shared database with `latest.json` (`InstallerInfo`:
+  version, file, size, sha256, publishedBy, publishedAt; ignored unless the file name's version matches). `s.installer` is
+  read at connect and at every check; `getStatus().update` when it names a newer version than `app.getVersion()`
+  (`required` = the open data needs a newer app; otherwise `sync:dismiss-update` hides it until the next start).
+  `main/sync/updates.ts`: `publishInstaller` (admins; version from the file name via `installerVersion()`, older than
+  latest.json refused, same version replaces the earlier file, the `INSTALLERS_KEPT` = 2 newest kept), `installUpdate`
+  (installed app only; finish editing first; copy to `%TEMP%\epl-tool-update\` checked against the sha256;
+  `shell.openPath`; `app.quit()` 1.5 s later), `openInstallerFolder`.
 - Simulated PCs for the checks: `scripts/main-checks/pcs.ts` (used by `phase-c`, `phase-d` and `phase-e`): each check file forks itself
   into worker "PCs" (`EPL_PC` env) with their own userData, `%LOCALAPPDATA%`, identity and computer name (`EPL_MACHINE`); the
   orchestrator publishes as "someone else" and writes/ages claim files and release records (`writeReleaseAs`, `releasesOf`).
@@ -136,7 +149,7 @@ annotated tag, push `main` + tag; CI runs `npm test`, builds and publishes).
 - The stored legacy logo path was a macOS path; the logo must be selected once in Settings (done by the user or still to do —
   ask if exports lack a logo).
 - The main-process checks are in the repo: `epl-tool/scripts/main-checks/` (`npm run test:main`: phase-a 51, phase-b 106,
-  phase-c 166, phase-d 149, phase-e 46 — phase-e grows with each Phase E step; temp copies of the sample DBs; not run in CI). The sample DBs are at schema 0 (WAL, no
+  phase-c 166, phase-d 149, phase-e 84 — phase-e grows with each Phase E step; temp copies of the sample DBs; not run in CI). The sample DBs are at schema 0 (WAL, no
   users), so the checks build their own databases from copies.
 - npm on this PC: `npm install <pkg>` also bumped an existing dev dependency (tsx) — check the `package.json`/lockfile diff and
   revert unintended changes; npm warns that package install scripts are held back (`allow-scripts`), so avoid a fresh `npm ci`
@@ -187,7 +200,7 @@ annotated tag, push `main` + tag; CI runs `npm test`, builds and publishes).
 │   │   │   ├── customerAccess.ts ← customer managers, requireCustomerChange / requireCustomerHide (per-customer refusals)
 │   │   │   ├── audit.ts    ← audit(db, entry) — call inside the same transaction as the change; diffFields()
 │   │   │   ├── localSettings.ts ← per-PC settings.json (connection {mode local|shared, path}, lastDbPath, per-user prefs); never in the DB
-│   │   │   ├── sync/       ← Phase C/D shared database: centralStore.ts (CentralStore/SyncedFolderStore — the only code touching the shared folder, incl. edit-slot claim files and conflict copies), sync.ts (connection, read/edit modes, edit slot, publish, recovery, status), editSlot.ts (slot rules, pure), rescue.ts (conflict copies: list, review, re-apply, archive), paths.ts (%LOCALAPPDATA%\epl-tool cache/work/conflicts), oneDrive.ts (synced-folder detection)
+│   │   │   ├── sync/       ← Phase C–E shared database: centralStore.ts (CentralStore/SyncedFolderStore — the only code touching the shared folder, incl. edit-slot claim files, release records, conflict copies and Installer/), sync.ts (connection, read/edit modes, edit slot, force release, publish, recovery, status), editSlot.ts (slot rules, pure), rescue.ts (conflict copies: list, review, re-apply, archive), updates.ts (publish an installer, install update, open Installer/), paths.ts (%LOCALAPPDATA%\epl-tool cache/work/conflicts), oneDrive.ts (synced-folder detection)
 │   │   │   ├── priceLists.ts ← createPriceList (rights, duplicate guard, customer update, audit) — used by price-lists:create and the rescue tool
 │   │   │   ├── logo.ts     ← logo stored in the DB as a data URL (app_settings.logo_data_url)
 │   │   │   ├── menu.ts     ← release menu policy (none on Windows) + DevTools guard (admins only in releases)
@@ -377,6 +390,7 @@ P  sync:status, sync:select-central, sync:connect, sync:check, sync:apply-update
 P  sync:start-editing ({ takeOver }; Admins/Users, or anybody on a DB without users), sync:cancel-claim, sync:wait-for-slot, sync:stop-waiting
 P  sync:set-busy, sync:keep-editing, sync:dismiss-released, sync:publish, sync:finish-editing, sync:recover (resume/publish/discard, { takeOver }), sync:dismiss-conflict
 V  sync:details (Shared database card)      A  sync:force-release (no writes flag: writes a release record in EPL-EditSlot/ only)
+A  sync:pick-installer, sync:publish-installer (no writes flag: Installer/ only)      V  sync:install-update, sync:open-installer-folder      P  sync:dismiss-update
 V  conflicts:list, conflicts:analyze      E  conflicts:reapply (edit mode; per-customer + duplicate checks per list)      A  conflicts:archive (no writes flag: moves a file only)
 P  backup:list, backup:open-folder, backup:restore (A when a DB is open; else admin in the backup)      A  backup:create
 V  users:list      A  users:create, users:update
@@ -757,7 +771,7 @@ npm install          # install dependencies
 npm start            # dev mode with Vite HMR (DevTools auto-open in dev)
 npm run package      # build unpackaged app (dev/testing only, no installer); prepackage prepares better-sqlite3 for Electron
 npm run make         # build distributable installers (Squirrel .exe + ZIP for Windows); premake does the same
-npm test             # unit tests (node:test via tsx): src/**/*.test.ts — shared/permissions.test.ts, shared/sync.test.ts, main/sync/editSlot.test.ts, renderer/help/help.test.ts (76 tests); also run in CI
+npm test             # unit tests (node:test via tsx): src/**/*.test.ts — shared/permissions.test.ts, shared/sync.test.ts, main/sync/editSlot.test.ts, renderer/help/help.test.ts (78 tests); also run in CI
 npm run test:main    # main-process checks (scripts/main-checks/*.checks.ts) on temp copies of the sample DBs; local only
 ```
 
@@ -772,7 +786,7 @@ A packaged app does not pick up source changes — rebuild it after every change
 
 **Type check / lint**: `npx tsc --noEmit -p .` and `npx eslint <files>` from `epl-tool/`. Pre-existing tsc errors (not blocking Vite builds): `export.ts` lines ~48/~358 (`Promise<Buffer>` casts) and `Step2ConfigurePricing.tsx` / `Step3ReviewProducts.tsx` (currency `string` passed where `'USD' | 'EUR'` expected). ESLint config lacks the `react-hooks` plugin, so existing `eslint-disable react-hooks/...` comments report "rule not found". ExcelJS's own `Buffer` type clashes with Node's `Buffer<ArrayBufferLike>`: pass images as `addImage({ base64 })` rather than `{ buffer }`.
 
-**Testing main-process code without launching the app** (launching opens the real SharePoint DB and writes a startup backup): **`npm run test:main`** runs `epl-tool/scripts/main-checks/*.checks.ts`. `run.js` bundles each file with esbuild (`platform: 'node'`, `external: ['better-sqlite3', 'exceljs']`, `alias: { electron: electron-stub.js }` — the stub captures `ipcMain.handle` into a Map, fakes `app.getPath` / `dialog`, and records `shell.openExternal` so mailto drafts don't open Outlook) and runs it with Electron's own Node (`ELECTRON_RUN_AS_NODE=1`, `NODE_PATH=epl-tool/node_modules`) — `better-sqlite3` is built for Electron's ABI, so plain `node` can't load it. `harness.ts` has the helpers (`invoke(channel, …)` calls the real handlers, `check`, `expectError`, `allowed`, `sha`, `userVersion`, `setupTemp`, `finish`). The checks only work on **copies** of the repo-root sample DBs in `%TEMP%`. `phase-a.checks.ts` (51: migrations, byte-identical re-open, allow-list, logo export, prefs, identity — the UPN/OneDrive checks are skipped off Windows work PCs) and `phase-b.checks.ts` (106: Migration 7 on both DB files, bootstrap, guard declarations, Admin/User/Viewer/unknown/deactivated rules via `EPL_DEV_*` + `initIdentity({ allowOverride: true })`, preview, email skip-reporting, audit entries, orphan/crafted-entry price-list cases, damaged-DB restore), `phase-c.checks.ts` (166: Migration 8, the shared-folder store, then read/edit mode on simulated PCs) and `phase-d.checks.ts` (149: the edit slot on simulated PCs — claim/hold, waiting, waiting window + cancel, competing and late claims, take-over and revived claims, crash recovery with the slot, sleeping laptop, Users within their rights, a v0.7 app read-only, 7-day cleanup, waiting + slot-free notifications, idle release with real shortened timers, notifications, Resume editing / take-over / early refusal on recovery, rescue tool: list, review, re-apply with rights and duplicate checks, archive, OneDrive and local copies, refused paths), `phase-e.checks.ts` (46: Force release — the card data, who may release, an active editor released (gives up, conflict copy, notification naming the admin), the waiter told, a revived released claim, the Activity entry at the next publish (once), a session without changes, a crashed PC released at once + its Resume, another database's record ignored, 7-day cleanup). `npm run test:main -- phase-b` runs one file; `EPL_CHECKS_VERBOSE=1` prints passing checks too. Not in CI (needs the local sample DBs). The scripts are type-checked by `tsc` (tsconfig includes `scripts/**/*`).
+**Testing main-process code without launching the app** (launching opens the real SharePoint DB and writes a startup backup): **`npm run test:main`** runs `epl-tool/scripts/main-checks/*.checks.ts`. `run.js` bundles each file with esbuild (`platform: 'node'`, `external: ['better-sqlite3', 'exceljs']`, `alias: { electron: electron-stub.js }` — the stub captures `ipcMain.handle` into a Map, fakes `app.getPath` / `dialog`, and records `shell.openExternal` so mailto drafts don't open Outlook) and runs it with Electron's own Node (`ELECTRON_RUN_AS_NODE=1`, `NODE_PATH=epl-tool/node_modules`) — `better-sqlite3` is built for Electron's ABI, so plain `node` can't load it. `harness.ts` has the helpers (`invoke(channel, …)` calls the real handlers, `check`, `expectError`, `allowed`, `sha`, `userVersion`, `setupTemp`, `finish`). The checks only work on **copies** of the repo-root sample DBs in `%TEMP%`. `phase-a.checks.ts` (51: migrations, byte-identical re-open, allow-list, logo export, prefs, identity — the UPN/OneDrive checks are skipped off Windows work PCs) and `phase-b.checks.ts` (106: Migration 7 on both DB files, bootstrap, guard declarations, Admin/User/Viewer/unknown/deactivated rules via `EPL_DEV_*` + `initIdentity({ allowOverride: true })`, preview, email skip-reporting, audit entries, orphan/crafted-entry price-list cases, damaged-DB restore), `phase-c.checks.ts` (166: Migration 8, the shared-folder store, then read/edit mode on simulated PCs) and `phase-d.checks.ts` (149: the edit slot on simulated PCs — claim/hold, waiting, waiting window + cancel, competing and late claims, take-over and revived claims, crash recovery with the slot, sleeping laptop, Users within their rights, a v0.7 app read-only, 7-day cleanup, waiting + slot-free notifications, idle release with real shortened timers, notifications, Resume editing / take-over / early refusal on recovery, rescue tool: list, review, re-apply with rights and duplicate checks, archive, OneDrive and local copies, refused paths), `phase-e.checks.ts` (84: Force release — the card data, who may release, an active editor released (gives up, conflict copy, notification naming the admin), the waiter told, a revived released claim, the Activity entry at the next publish (once), a session without changes, a crashed PC released at once + its Resume, another database's record ignored, 7-day cleanup; then `Installer/`: who may publish, picking (name checks), publishing (latest.json, older refused, same version replaced, two kept), the banner (damaged / same / older / mismatched latest.json, dismissed until restart), Install update (dev run refused, copy checked + started + quit, still-syncing and missing setups refused, editing finished first), the required update). `npm run test:main -- phase-b` runs one file; `EPL_CHECKS_VERBOSE=1` prints passing checks too. Not in CI (needs the local sample DBs). The scripts are type-checked by `tsc` (tsconfig includes `scripts/**/*`).
 
 ### Corporate network (company Windows machines)
 Direct access to GitHub/npm/Electron downloads is blocked and HTTPS is SSL-inspected. The working setup — session environment

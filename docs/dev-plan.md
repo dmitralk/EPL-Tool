@@ -679,6 +679,20 @@ phase-b guard check) and `sync:details` (viewer), `canForceRelease` + matrix row
 release a session of their own, including one left by an earlier run on this PC (Resume editing or Discard instead).
 `phase-e.checks.ts`: 46 checks (each new rule broken on purpose once to confirm the checks catch it); unit tests: 76.
 
+Step 2 (installer folder + updates) done 10 Nov 2026 — `installerVersion()` + `INSTALLERS_KEPT` in `shared/sync.ts` (unit
+tests); `CentralStore.readInstallerInfo / publishInstaller / copyInstaller` (latest.json validated: version, a file name
+inside `Installer/` whose version matches, sha256); `s.installer` read at connect and at every check → `SyncStatus.update`
+(`required` when the manifest's `minAppVersion` or the schema needs a newer app; *dismissed until the next start* otherwise,
+`sync:dismiss-update`); `main/sync/updates.ts`: `pickInstaller` / `publishInstaller` (admins), `installUpdate`,
+`openInstallerFolder`; channels `sync:pick-installer`, `sync:publish-installer` (admin, no `writes` flag — phase-b
+exceptions), `sync:install-update`, `sync:open-installer-folder` (viewer), `sync:dismiss-update`; the card data gains
+`installer`. Choices within the design: publishing the same version again replaces the earlier file of that version (e.g.
+the built name by the GitHub name); a `latest.json` whose file name doesn't match its version is ignored; the update copy
+goes to `%TEMP%\epl-tool-update\`, and EPL Tool closes 1.5 s after the setup was started. The Electron stub records
+`shell.openPath` / `app.quit` and can play an installed app (`isPackaged`); each PC of the checks has its own `%TEMP%`.
+`phase-e.checks.ts`: 84 checks (sha256 check, required banner, pruning and the dev-run refusal broken on purpose once);
+unit tests: 78.
+
 - [ ] **Settings → Shared database** card: current editor, last publish, generation, and *Force release* for admins.
 - [ ] **Updates:**
   - [ ] An `Installer/` folder on SharePoint with `latest.json`; the app shows an update banner.
@@ -779,5 +793,5 @@ All decisions are recorded (the last two on 5 Nov 2026):
 with a colleague (separate SharePoint test folder with a copy of the database). Steps 1 (slot core), 2 (idle release,
 waiting, notifications), 3 (recovery with the slot + rescue tool), 4 (screens) and 5 (Help editing topics, README, draft
 *What's new*) are done (10 Nov 2026). Phase E: kickoff decisions and technical design approved 10 Nov 2026; step 1 (Force
-release) done, next step 2 (installer folder + updates), then 3 (screens) and 4 (Help, docs) → v0.8.0. Phases A and B were
+release) and 2 (installer folder + updates) done, next step 3 (screens), then 4 (Help, docs) → v0.8.0. Phases A and B were
 released as **v0.6.1** on 6 Nov 2026 (v0.6.0 was not released separately); Phase C as **v0.7.0** on 9 Nov 2026.

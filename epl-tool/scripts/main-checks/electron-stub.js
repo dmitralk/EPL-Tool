@@ -1,6 +1,9 @@
 // Minimal stand-in for the electron module so main-process code can run under ELECTRON_RUN_AS_NODE.
 const handlers = new Map();
-const state = { userData: process.env.TEST_USERDATA, nextOpen: null, nextSave: null, opened: [], appVersion: null };
+const state = {
+  userData: process.env.TEST_USERDATA, nextOpen: null, nextSave: null, opened: [], appVersion: null,
+  isPackaged: false, openedPaths: [], quitCalls: 0,
+};
 
 const ipcMain = { handle: (channel, fn) => handlers.set(channel, fn) };
 
@@ -11,14 +14,18 @@ module.exports = {
     getPath: () => state.userData,
     // eslint-disable-next-line @typescript-eslint/no-var-requires -- CommonJS stub; esbuild inlines package.json
     getVersion: () => state.appVersion ?? require('../../package.json').version,
-    isPackaged: false,
+    get isPackaged() { return state.isPackaged; },
+    quit: () => { state.quitCalls++; },
   },
   ipcMain,
   dialog: {
     showOpenDialog: async () => ({ canceled: false, filePaths: [state.nextOpen] }),
     showSaveDialog: async () => (state.nextSave ? { canceled: false, filePath: state.nextSave } : { canceled: true }),
   },
-  shell: { openPath: async () => '', openExternal: async url => { state.opened.push(url); } },
+  shell: {
+    openPath: async p => { state.openedPaths.push(p); return ''; },
+    openExternal: async url => { state.opened.push(url); },
+  },
   BrowserWindow: class { static getAllWindows() { return []; } },
   Menu: { setApplicationMenu() {}, buildFromTemplate() { return {}; } },
 };

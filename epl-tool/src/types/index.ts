@@ -340,6 +340,22 @@ export interface SyncStatus {
   };
   legacySuggestion: { path: string } | null;  // v0.6 database in a synced folder: offer to connect as shared
   conflictCount: number;            // conflict copies to review (EPL-Conflicts/, OneDrive copies, kept on this PC)
+  update: {                         // a newer EPL Tool in Installer/ next to the shared database (Phase E)
+    version: string;
+    file: string;
+    publishedBy: string | null;
+    publishedAt: string;
+    required: boolean;              // needed to make changes (the banner can't be closed then)
+  } | null;
+}
+
+// "Publish an installer…" (admins): the setup picked, before it is copied to Installer/.
+export interface InstallerPick {
+  file: string;
+  name: string;
+  version: string;                  // from the file name
+  size: number;
+  current: string | null;           // the version published now (latest.json)
 }
 
 // Settings → Shared database card (Phase E): every editing session in EPL-EditSlot/, and what was published.
@@ -373,6 +389,7 @@ export interface SyncDetails {
   } | null;
   sessions: SlotSession[];
   releases: SlotReleaseInfo[];
+  installer: { version: string; file: string; publishedBy: string | null; publishedAt: string } | null;  // Installer/latest.json
 }
 
 // Conflict copies (Phase D rescue tool): unpublished work kept in EPL-Conflicts/, OneDrive conflict copies of the shared

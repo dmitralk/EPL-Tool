@@ -33,6 +33,11 @@ const api = {
   dismissSyncConflict: () => ipcRenderer.invoke('sync:dismiss-conflict'),
   getSyncDetails: () => ipcRenderer.invoke('sync:details'),
   forceReleaseSlot: (slotId: string) => ipcRenderer.invoke('sync:force-release', slotId),
+  pickInstaller: () => ipcRenderer.invoke('sync:pick-installer'),
+  publishInstaller: (file: string) => ipcRenderer.invoke('sync:publish-installer', file),
+  installUpdate: () => ipcRenderer.invoke('sync:install-update'),
+  openInstallerFolder: () => ipcRenderer.invoke('sync:open-installer-folder'),
+  dismissUpdate: () => ipcRenderer.invoke('sync:dismiss-update'),
   onSyncStatus: (listener: (status: SyncStatus) => void) => {
     const wrapped = (_e: IpcRendererEvent, status: SyncStatus) => listener(status);
     ipcRenderer.on('sync:status', wrapped);

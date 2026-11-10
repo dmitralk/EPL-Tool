@@ -5,6 +5,7 @@ import crypto from 'crypto';
 import Database from 'better-sqlite3';
 import { escapeRegExp, fileStamp, isHealthy } from '../backup';
 import { isValidClaim, isValidRelease, type SlotClaim, type SlotRelease } from './editSlot';
+import { INSTALLERS_KEPT, compareVersions, installerVersion } from '../../shared/sync';
 
 // All access to the shared folder goes through a CentralStore (multi-user study §5, §7). The app never opens the central
 // database with SQLite: it only copies it (to read) and replaces it in one step (to publish). SyncedFolderStore works on the
@@ -13,6 +14,26 @@ import { isValidClaim, isValidRelease, type SlotClaim, type SlotRelease } from '
 export const CONFLICTS_DIR_NAME = 'EPL-Conflicts';
 export const EDIT_SLOT_DIR_NAME = 'EPL-EditSlot';
 const RELEASE_SUFFIX = '.release.json';
+export const INSTALLER_DIR_NAME = 'Installer';
+const LATEST_FILE = 'latest.json';
+
+// Installer/latest.json (Phase E): the setup everybody should run.
+export interface InstallerInfo {
+  format: 1;
+  version: string;
+  file: string;                     // file name in Installer/
+  size: number;
+  sha256: string;
+  publishedBy: string | null;
+  publishedAt: string;              // ISO UTC
+}
+
+function isInstallerInfo(x: unknown): x is InstallerInfo {
+  const i = x as InstallerInfo;
+  return !!i && typeof i === 'object' && typeof i.version === 'string' && /^\d+\.\d+\.\d+$/.test(i.version) &&
+    typeof i.file === 'string' && path.basename(i.file) === i.file && installerVersion(i.file) === i.version &&
+    Number.isFinite(i.size) && typeof i.sha256 === 'string' && /^[0-9a-f]{64}$/.test(i.sha256) && typeof i.publishedAt === 'string';
+}
 const MANIFEST_SUFFIX = '.manifest.json';
 
 // <name>.manifest.json next to the central database, rewritten by every publish.
@@ -89,6 +110,10 @@ export interface CentralStore {
   listReleases(): Promise<SlotRelease[]>;
   writeRelease(release: SlotRelease): Promise<void>;
   deleteRelease(slotId: string): Promise<void>;
+  readonly installerDir: string;
+  readInstallerInfo(): Promise<InstallerInfo | null>;
+  publishInstaller(src: string, meta: { version: string; publishedBy: string | null }): Promise<InstallerInfo>;
+  copyInstaller(info: InstallerInfo, dest: string): Promise<void>;
 }
 
 // ── Helpers for local copies ───────────────────────────────────────────────────────────────────────────────────────
@@ -211,6 +236,74 @@ export class SyncedFolderStore implements CentralStore {
       // missing, being synced or invalid: treated as no manifest
     }
     return null;
+  }
+
+  // ── Installer/: the setup everybody should run, announced by latest.json (Phase E) ──
+
+  get installerDir(): string {
+    return path.join(this.folder, INSTALLER_DIR_NAME);
+  }
+
+  async readInstallerInfo(): Promise<InstallerInfo | null> {
+    try {
+      const data = JSON.parse(await fsp.readFile(path.join(this.installerDir, LATEST_FILE), 'utf-8'));
+      return isInstallerInfo(data) ? data : null;
+    } catch {
+      return null;   // missing, being synced or invalid
+    }
+  }
+
+  // Copies a setup into Installer/ (as .tmp, checked, renamed — OneDrive never uploads half a file), writes latest.json, and
+  // keeps only the newest installers (an older file of the same version is replaced).
+  async publishInstaller(src: string, meta: { version: string; publishedBy: string | null }): Promise<InstallerInfo> {
+    const name = path.basename(src);
+    const size = (await fsp.stat(src)).size;
+    const sha256 = await sha256File(src);
+    await fsp.mkdir(this.installerDir, { recursive: true });
+    const dest = path.join(this.installerDir, name);
+    const tmp = `${dest}.tmp`;
+    try {
+      await retry(() => fsp.copyFile(src, tmp));
+      if ((await fsp.stat(tmp)).size !== size || await sha256File(tmp) !== sha256) {
+        throw new Error('The copy of the installer in the shared folder is incomplete.');
+      }
+      await retry(() => fsp.rename(tmp, dest), 8);
+    } catch (e) {
+      await removeQuietly(tmp);
+      throw e;
+    }
+    const info: InstallerInfo = {
+      format: 1, version: meta.version, file: name, size, sha256, publishedBy: meta.publishedBy, publishedAt: new Date().toISOString(),
+    };
+    const latest = path.join(this.installerDir, LATEST_FILE);
+    await fsp.writeFile(`${latest}.tmp`, JSON.stringify(info, null, 2));
+    await retry(() => fsp.rename(`${latest}.tmp`, latest), 8);
+    const setups = (await fsp.readdir(this.installerDir))
+      .map(f => ({ f, v: installerVersion(f) }))
+      .filter((x): x is { f: string; v: string } => !!x.v && x.f !== name && compareVersions(x.v, meta.version) !== 0)
+      .sort((a, b) => compareVersions(b.v, a.v));
+    for (const old of setups.slice(INSTALLERS_KEPT - 1)) await removeQuietly(path.join(this.installerDir, old.f));
+    for (const same of (await fsp.readdir(this.installerDir)).filter(f => f !== name && installerVersion(f) === meta.version)) {
+      await removeQuietly(path.join(this.installerDir, same));
+    }
+    return info;
+  }
+
+  // Copies the announced setup to this PC and checks it against latest.json (a file still being synced is refused).
+  async copyInstaller(info: InstallerInfo, dest: string): Promise<void> {
+    const src = path.join(this.installerDir, info.file);
+    await fsp.mkdir(path.dirname(dest), { recursive: true });
+    const notYet = 'The installer is not complete on this PC yet (OneDrive may still be syncing it). Try again in a minute.';
+    try {
+      await retry(() => fsp.copyFile(src, dest));
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code === 'ENOENT') throw new Error(notYet);
+      throw e;
+    }
+    if ((await fsp.stat(dest)).size !== info.size || await sha256File(dest) !== info.sha256) {
+      await removeQuietly(dest);
+      throw new Error(notYet);
+    }
   }
 
   // Copies the central file to dest (via dest.download), verifies it and describes it. dest must not be open.

@@ -1,16 +1,18 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-// Phase E checks (dev-plan Phase E): Force release of the edit slot and the Shared database card, on simulated PCs sharing
-// one temp "central" folder (pcs.ts). The orchestrator plays PCs that OneDrive hears from late (claims, release records).
+// Phase E checks (dev-plan Phase E): Force release of the edit slot and the Shared database card, then Installer/ and the
+// update banner, on simulated PCs sharing one temp "central" folder (pcs.ts). The orchestrator plays PCs that OneDrive hears
+// from late (claims, release records) and writes Installer/ files by hand.
 //   npm run test:main -- phase-e
+import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import { getIdentity, initIdentity } from '../../src/main/auth';
 import { SCHEMA_VERSION } from '../../src/main/database';
 import { MIN_EDIT_APP_VERSION } from '../../src/shared/sync';
-import { allowed, check, expectError, finish, run, setupTemp, sha } from './harness';
+import { allowed, check, expectError, finish, run, setupTemp, sha, sleep } from './harness';
 import {
-  PEOPLE, Pc, centralQuery, claimsOf, conflictsOf, ls, manifestOf, prepareCentral, releasesOf, slotDirOf, spocOf, worker,
-  writeClaimAs, writeReleaseAs, type Person,
+  PEOPLE, Pc, centralQuery, claimsOf, conflictsOf, ls, manifestOf, prepareCentral, publishAs, releasesOf, slotDirOf, spocOf,
+  worker, writeClaimAs, writeReleaseAs, type Person,
 } from './pcs';
 
 const BEN_PC = { name: 'Ben Admin', account: PEOPLE.ben.account, machine: 'PC-B' };
@@ -208,6 +210,177 @@ async function releaseChecks(tmp: string) {
   }
 }
 
+// ── Installer/ and the update banner ────────────────────────────────────────────────────────────────────────────────
+
+async function installerChecks(root: string) {
+  const tmp = path.join(root, 'installer');
+  fs.mkdirSync(tmp, { recursive: true });
+  const c = prepareCentral(tmp);
+  const instDir = path.join(c.centralDir, 'Installer');
+  const latestOf = () => JSON.parse(fs.readFileSync(path.join(instDir, 'latest.json'), 'utf-8'));
+  const downloads = path.join(tmp, 'downloads');
+  fs.mkdirSync(downloads, { recursive: true });
+  const setup = (name: string, bytes = 64 * 1024) => {
+    const file = path.join(downloads, name);
+    fs.writeFileSync(file, crypto.randomBytes(bytes));
+    return file;
+  };
+  const s081 = setup('EPL Tool-0.8.1 Setup.exe');
+  const s081gh = setup('EPL.Tool-0.8.1.Setup.exe');
+  const s082 = setup('EPL Tool-0.8.2 Setup.exe');
+  const s083 = setup('EPL Tool-0.8.3 Setup.exe');
+  const s079 = setup('EPL Tool-0.7.9 Setup.exe');
+  const notSetup = setup('notes.exe');
+
+  const pcs: Pc[] = [];
+  const pc = async (name: string, who: Person) => {
+    const dir = path.join(tmp, `pc${name}`);
+    const temp = path.join(dir, 'temp');
+    fs.mkdirSync(temp, { recursive: true });
+    const p = new Pc(name, dir, who, { TEMP: temp, TMP: temp });
+    pcs.push(p);
+    await p.start();
+    await p.startup();
+    const r = await p.invoke('sync:connect', c.central);
+    if (!r.ok) check(`${name} connects`, false, r);
+    return p;
+  };
+  try {
+    const A = await pc('A', PEOPLE.anna);
+    const U = await pc('U', PEOPLE.uma);
+    const V = await pc('V', PEOPLE.vic);
+    const ref = (await A.sql('SELECT customer_ref_sap AS ref FROM customers WHERE is_deleted = 0 ORDER BY id LIMIT 1'))[0].ref;
+
+    let sv = await V.invoke('sync:check');
+    check('no Installer folder: no update banner, nothing on the card', sv.update === null &&
+      (await V.invoke('sync:details')).installer === null, sv.update);
+    let o = await V.invoke('sync:open-installer-folder');
+    check('Open folder: told there is no Installer folder yet', !o.ok && /^There is no Installer folder/.test(o.error), o);
+    let i = await V.invoke('sync:install-update');
+    check('Install update without a published setup: refused', !i.ok && i.error === `No newer EPL Tool is published (this is version ${MIN_EDIT_APP_VERSION}).`, i);
+
+    // ── Publishing a setup (admins) ──
+    await expectError('U (user): picking a setup refused', () => U.invoke('sync:pick-installer'), /^Only admins can do this\.$/);
+    await expectError('U: publishing refused', () => U.invoke('sync:publish-installer', s081), /^Only admins can do this\.$/);
+    await expectError('V (viewer): publishing refused', () => V.invoke('sync:publish-installer', s081), /^Only admins can do this\.$/);
+    await A.stub({ nextOpen: notSetup });
+    let pk = await A.invoke('sync:pick-installer');
+    check('a file that is not a setup is refused (name without version)', !pk.ok && /is not an EPL Tool setup/.test(pk.error), pk);
+    await A.stub({ nextOpen: s081 });
+    pk = await A.invoke('sync:pick-installer');
+    check('picking the setup: version from the name, nothing published yet', pk.ok && pk.pick.version === '0.8.1' &&
+      pk.pick.name === 'EPL Tool-0.8.1 Setup.exe' && pk.pick.size === 64 * 1024 && pk.pick.current === null && !fs.existsSync(instDir), pk);
+    let pub = await A.invoke('sync:publish-installer', s081);
+    const latest = latestOf();
+    check('A publishes 0.8.1: the setup and latest.json in Installer/, no temp file left', pub.ok && pub.version === '0.8.1' &&
+      ls(instDir).join('|') === 'EPL Tool-0.8.1 Setup.exe|latest.json', { pub, files: ls(instDir) });
+    check('latest.json: version, file, size, sha256, who', latest.format === 1 && latest.version === '0.8.1' &&
+      latest.file === 'EPL Tool-0.8.1 Setup.exe' && latest.size === 64 * 1024 && latest.sha256 === sha(s081) &&
+      latest.publishedBy === 'Anna Admin' && !Number.isNaN(Date.parse(latest.publishedAt)), latest);
+    check('the copy in Installer/ is the picked file', sha(path.join(instDir, 'EPL Tool-0.8.1 Setup.exe')) === sha(s081));
+    const sa = await A.status();
+    check("A (0.8.0) sees the update at once", sa.update?.version === '0.8.1' && sa.update.required === false, sa.update);
+    sv = await V.invoke('sync:check');
+    check('V sees the update at its next check (who published it, not required)', sv.update?.version === '0.8.1' &&
+      sv.update.file === 'EPL Tool-0.8.1 Setup.exe' && sv.update.publishedBy === 'Anna Admin' && sv.update.required === false, sv.update);
+    const dv = await V.invoke('sync:details');
+    check('the card shows the published setup', dv.installer?.version === '0.8.1' && dv.installer.publishedBy === 'Anna Admin', dv.installer);
+    o = await V.invoke('sync:open-installer-folder');
+    check('Open folder opens Installer/', o.ok && (await V.stub()).openedPaths.at(-1) === instDir, o);
+
+    pub = await A.invoke('sync:publish-installer', s079);
+    check('an older version than the published one is refused', !pub.ok &&
+      pub.error === 'EPL Tool 0.8.1 is already published: an older setup (0.7.9) can\'t replace it.' && latestOf().version === '0.8.1', pub);
+    pub = await A.invoke('sync:publish-installer', path.join(downloads, 'missing 0.9.0 Setup.exe'));
+    check('a file that is not there is refused', !pub.ok && /can't be read/.test(pub.error), pub);
+    pub = await A.invoke('sync:publish-installer', s081gh);
+    check('the same version again (GitHub file name): replaces the earlier file', pub.ok &&
+      ls(instDir).join('|') === 'EPL.Tool-0.8.1.Setup.exe|latest.json' && latestOf().sha256 === sha(s081gh), ls(instDir));
+    await A.invoke('sync:publish-installer', s082);
+    pub = await A.invoke('sync:publish-installer', s083);
+    check('0.8.2 then 0.8.3: the two newest setups are kept', pub.ok && latestOf().version === '0.8.3' &&
+      ls(instDir).join('|') === 'EPL Tool-0.8.2 Setup.exe|EPL Tool-0.8.3 Setup.exe|latest.json', ls(instDir));
+
+    // ── What the banner shows ──
+    const goodLatest = fs.readFileSync(path.join(instDir, 'latest.json'));
+    const writeLatest = (x: unknown) => fs.writeFileSync(path.join(instDir, 'latest.json'), typeof x === 'string' ? x : JSON.stringify(x));
+    writeLatest('{ not json');
+    check('a damaged latest.json: no banner', (await V.invoke('sync:check')).update === null);
+    writeLatest({ ...JSON.parse(goodLatest.toString()), version: MIN_EDIT_APP_VERSION, file: `EPL Tool-${MIN_EDIT_APP_VERSION} Setup.exe` });
+    check('latest.json naming the running version: no banner', (await V.invoke('sync:check')).update === null);
+    writeLatest({ ...JSON.parse(goodLatest.toString()), version: '0.7.9', file: 'EPL Tool-0.7.9 Setup.exe' });
+    check('latest.json naming an older version: no banner', (await V.invoke('sync:check')).update === null);
+    writeLatest({ ...JSON.parse(goodLatest.toString()), file: 'EPL Tool-0.9.9 Setup.exe' });
+    check('latest.json whose file name and version disagree: ignored', (await V.invoke('sync:check')).update === null);
+    writeLatest({ ...JSON.parse(goodLatest.toString()), file: '..\\EPL Tool-0.8.3 Setup.exe' });
+    check('latest.json pointing outside Installer/: ignored', (await V.invoke('sync:check')).update === null);
+    fs.writeFileSync(path.join(instDir, 'latest.json'), goodLatest);
+    sv = await V.invoke('sync:check');
+    check('latest.json back: the banner is back', sv.update?.version === '0.8.3', sv.update);
+    sv = await V.invoke('sync:dismiss-update');
+    check('closing the banner hides it…', sv.update === null);
+    sv = await V.invoke('sync:check');
+    check('…also at the next check', sv.update === null);
+    await V.stop();
+    await V.start();
+    await V.startup();
+    sv = await V.invoke('sync:check');
+    check('…until the next start', sv.update?.version === '0.8.3', sv.update);
+
+    // ── Install update ──
+    i = await V.invoke('sync:install-update');
+    check('in a development run: refused', !i.ok && /development run/.test(i.error) && (await V.stub()).quitCalls === 0, i);
+    await V.stub({ isPackaged: true });
+    const vTemp = path.join(tmp, 'pcV', 'temp', 'epl-tool-update');
+    i = await V.invoke('sync:install-update');
+    const copied = path.join(vTemp, 'EPL Tool-0.8.3 Setup.exe');
+    let st = await V.stub();
+    check('installed app: the setup is copied to this PC (checked) and started', i.ok && i.version === '0.8.3' &&
+      st.openedPaths.at(-1) === copied && fs.existsSync(copied) && sha(copied) === sha(s083), { i, opened: st.openedPaths });
+    await sleep(1800);
+    st = await V.stub();
+    check('…then EPL Tool closes (the setup starts the new version)', st.quitCalls === 1, st.quitCalls);
+
+    // A setup still syncing (content not yet the announced one), or not on this PC at all.
+    const inInstaller = path.join(instDir, 'EPL Tool-0.8.3 Setup.exe');
+    fs.writeFileSync(inInstaller, crypto.randomBytes(1000));
+    await U.stub({ isPackaged: true });
+    await U.invoke('sync:check');
+    i = await U.invoke('sync:install-update');
+    st = await U.stub();
+    check('a setup that is still syncing: refused, nothing started, the partial copy removed', !i.ok &&
+      /^The installer is not complete on this PC yet/.test(i.error) && st.openedPaths.length === 0 &&
+      !fs.existsSync(path.join(tmp, 'pcU', 'temp', 'epl-tool-update', 'EPL Tool-0.8.3 Setup.exe')), { i, st });
+    fs.rmSync(inInstaller);
+    i = await U.invoke('sync:install-update');
+    check('a setup not on this PC yet: the same message', !i.ok && /^The installer is not complete on this PC yet/.test(i.error), i);
+    fs.copyFileSync(s083, inInstaller);
+
+    // Installing while editing publishes first.
+    await A.stub({ isPackaged: true });
+    let r = await A.invoke('sync:start-editing');
+    await allowed('A edits', () => A.invoke('customers:update', ref, { customer_spoc: 'Anna before the update' }));
+    i = await A.invoke('sync:install-update');
+    st = await A.stub();
+    check('A installs while editing: the changes are published and editing ends first', r.ok && i.ok &&
+      spocOf(c, ref) === 'Anna before the update' && (await A.status()).phase === 'read' && claimsOf(c).length === 0 &&
+      st.openedPaths.at(-1)?.endsWith('EPL Tool-0.8.3 Setup.exe'), { r, i });
+
+    // ── Needed to edit: the banner can't be closed ──
+    await publishAs(c, { name: 'Ben Admin', account: PEOPLE.ben.account }, () => undefined, { minApp: '0.8.3' });
+    sv = await V.invoke('sync:check');
+    check('the shared database needs 0.8.3 to edit: the update is required', sv.update?.version === '0.8.3' &&
+      sv.update.required === true && sv.newerApp?.minAppVersion === '0.8.3', { update: sv.update, newerApp: sv.newerApp });
+    sv = await V.invoke('sync:dismiss-update');
+    check('a required update stays on screen', sv.update?.required === true, sv.update);
+    await U.invoke('sync:check');
+    r = await U.invoke('sync:start-editing');
+    check('…and editing is refused until then', !r.ok && /^This database was published by a newer EPL Tool\. Update EPL Tool to 0\.8\.3/.test(r.error), r);
+  } finally {
+    for (const p of pcs) await p.stop();
+  }
+}
+
 if (process.env.EPL_PC) {
   worker();
 } else {
@@ -220,6 +393,7 @@ if (process.env.EPL_PC) {
     await getIdentity();
     console.log(`schema ${SCHEMA_VERSION}`);
     await releaseChecks(tmp);
+    await installerChecks(tmp);
     finish(tmp);
   });
 }

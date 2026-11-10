@@ -1,9 +1,11 @@
 import { BrowserWindow, dialog } from 'electron';
 import { getIdentity } from '../auth';
 import {
-  applyUpdate, cancelClaim, checkNow, connectShared, dismissConflict, dismissReleased, finishEditing, forceRelease, getDetails,
-  getStatus, keepEditing, onStatus, publishNow, recoverUnpublished, refresh, setBusy, startEditing, stopWaiting, waitForSlot,
+  applyUpdate, cancelClaim, checkNow, connectShared, dismissConflict, dismissReleased, dismissUpdate, finishEditing, forceRelease,
+  getDetails, getStatus, keepEditing, onStatus, publishNow, recoverUnpublished, refresh, setBusy, startEditing, stopWaiting,
+  waitForSlot,
 } from '../sync/sync';
+import { installUpdate, openInstallerFolder, pickInstaller, publishInstaller } from '../sync/updates';
 import { handle } from './guard';
 
 // Shared database (Phases C–D). The channels are public like db:*: the setup and no-access screens need the status, and the
@@ -125,4 +127,38 @@ export function registerSyncHandlers() {
       return { ok: false, error: (err as Error).message };
     }
   }, { writes: false });
+
+  // Installer/ and the update banner (Phase E). Publishing a setup is for admins and doesn't touch the database.
+  handle('sync:pick-installer', 'admin', async () => {
+    try {
+      const pick = await pickInstaller();
+      return pick ? { ok: true, pick } : { ok: false, cancelled: true };
+    } catch (err) {
+      return { ok: false, error: (err as Error).message };
+    }
+  }, { writes: false });
+
+  handle('sync:publish-installer', 'admin', async (_e, file: string) => {
+    try {
+      await getIdentity();
+      return { ok: true, ...(await publishInstaller(String(file ?? ''))) };
+    } catch (err) {
+      return { ok: false, error: (err as Error).message };
+    }
+  }, { writes: false });
+
+  handle('sync:install-update', 'viewer', async () => {
+    try {
+      return await installUpdate();
+    } catch (err) {
+      return { ok: false, error: (err as Error).message };
+    }
+  });
+
+  handle('sync:open-installer-folder', 'viewer', () => openInstallerFolder());
+
+  handle('sync:dismiss-update', 'public', () => {
+    dismissUpdate();
+    return getStatus();
+  });
 }

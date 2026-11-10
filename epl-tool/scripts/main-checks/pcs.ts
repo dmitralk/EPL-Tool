@@ -55,6 +55,11 @@ export function worker(): void {
       else if (m.op === 'configure') configureTimings(m.args[0]);
       else if (m.op === 'heartbeat') { await heartbeatNow(); result = getStatus(); }
       else if (m.op === 'notices') result = notices.splice(0);
+      else if (m.op === 'stub') {
+        Object.assign(stub.__state, m.args[0] ?? {});
+        const st = stub.__state;
+        result = { isPackaged: st.isPackaged, appVersion: st.appVersion, openedPaths: st.openedPaths, quitCalls: st.quitCalls };
+      }
       else if (m.op === 'exit') { reply({ ok: true }); process.exit(0); }
       reply({ ok: true, result });
     } catch (e) {
@@ -127,6 +132,11 @@ export class Pc {
   heartbeat() { return this.ok('heartbeat'); }
   // The notifications shown since the last call (then forgotten).
   notices(): Promise<SyncNotice[]> { return this.ok('notices'); }
+  // Sets fields of the Electron stub on this PC (e.g. isPackaged, nextOpen, appVersion) and returns what it recorded
+  // (paths opened with shell.openPath, app.quit calls).
+  stub(set: Record<string, unknown> = {}): Promise<{ isPackaged: boolean; appVersion: string; openedPaths: string[]; quitCalls: number }> {
+    return this.ok('stub', set);
+  }
 
   // A crash: no chance to publish.
   async kill(): Promise<void> {

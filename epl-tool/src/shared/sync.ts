@@ -38,3 +38,13 @@ export function compareVersions(a: string, b: string): number {
   }
   return 0;
 }
+
+// Installer/ next to the shared database (dev-plan Phase E): the version of a setup file, read from its name — the built
+// "EPL Tool-0.8.1 Setup.exe" or the GitHub download "EPL.Tool-0.8.1.Setup.exe" — or null when it isn't one.
+export function installerVersion(fileName: string): string | null {
+  const m = /(?:^|[^\d.])(\d+\.\d+\.\d+)[ .]Setup\.exe$/i.exec(String(fileName ?? ''));
+  return m ? m[1] : null;
+}
+
+// How many installers stay in Installer/ (each is about 140 MB): the newest ones.
+export const INSTALLERS_KEPT = 2;
