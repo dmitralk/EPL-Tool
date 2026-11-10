@@ -181,9 +181,25 @@ export function useSyncActions() {
       report(r, 'Published — you are back in read mode');
     }),
     refresh: () => run('refresh', async () => { await api.refreshSync(); }),
-    recover: (action: 'publish' | 'discard') => run('recover', async () => {
-      const r = await api.recoverUnpublished(action) as PublishOutcome;
-      report(r, action === 'publish' ? 'Your earlier changes were published' : 'Your earlier changes were discarded');
+    recover: (action: 'resume' | 'publish' | 'discard') => run('recover', async () => {
+      const r = await api.recoverUnpublished(action) as {
+        ok: boolean; error?: string; conflict?: boolean; published?: boolean; generation?: number;
+        waiting?: SlotPerson; takeOver?: SlotPerson; cancelled?: boolean;
+      };
+      // Until the waiting / take-over dialogs (Phase D step 4): messages, and waiting starts at once.
+      if (r.waiting) {
+        await api.waitForSlot();
+        toast(`${r.waiting.user} is editing right now. Your changes are kept; you'll be told when the edit slot is free.`, 'info');
+        return;
+      }
+      if (r.takeOver) { toast(`${r.takeOver.user}'s editing session is inactive since ${formatWhen(r.takeOver.heartbeatAt)}.`, 'info'); return; }
+      if (r.cancelled) return;
+      if (action === 'resume' && r.ok) {
+        await refreshAuth();
+        toast('You are editing again, with your earlier changes.', 'success');
+        return;
+      }
+      report(r as PublishOutcome, action === 'publish' ? 'Your earlier changes were published' : 'Your earlier changes were discarded');
     }),
     dismissConflict: () => run('dismiss', async () => { await api.dismissSyncConflict(); }),
     stopWaiting: () => run('stop-waiting', async () => { await api.stopWaitingForSlot(); }),

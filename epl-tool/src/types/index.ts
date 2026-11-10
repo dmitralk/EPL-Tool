@@ -338,6 +338,72 @@ export interface SyncStatus {
     waitingSince: string | null;    // I asked to be told when the slot is free
   };
   legacySuggestion: { path: string } | null;  // v0.6 database in a synced folder: offer to connect as shared
+  conflictCount: number;            // conflict copies to review (EPL-Conflicts/, OneDrive copies, kept on this PC)
+}
+
+// Conflict copies (Phase D rescue tool): unpublished work kept in EPL-Conflicts/, OneDrive conflict copies of the shared
+// database, and copies kept on this PC when the shared folder could not take them.
+export interface ConflictCopyInfo {
+  file: string;
+  name: string;
+  source: 'conflicts' | 'onedrive' | 'local';
+  size: number;
+  modifiedAt: string;
+  error: string | null;                    // can't be read (damaged, or made by a newer EPL Tool)
+  basedOn: SyncPublishInfo | null;         // the published version the work started from
+  lastChange: { at: string; by: string; summary: string } | null;  // last activity entry in the copy
+}
+
+// A price list that is in the copy but not in the shared database: can be re-applied unless blocked.
+export interface ConflictPriceList {
+  price_list_id: string;
+  customer_ref_sap: string;
+  customer_name: string | null;
+  price_list_version: string;
+  effective: string;
+  mailing_date: string;
+  price_type: string;
+  entries: number;
+  created_at: string | null;
+  created_by: string | null;
+  blocked: string | null;                  // why it can't be re-applied (customer missing, duplicate, rights)
+}
+
+export interface ConflictRow {
+  key: string;
+  label: string;
+}
+
+export interface ConflictChange extends ConflictRow {
+  fields: { field: string; copy: unknown; shared: unknown }[];
+}
+
+// Rows that differ between the copy and the shared database (either side may have changed them).
+export interface ConflictTableDiff {
+  table: string;
+  label: string;
+  addedCount: number;                      // only in the copy
+  removedCount: number;                    // only in the shared database
+  changedCount: number;
+  added: ConflictRow[];                    // the first ones of each kind
+  removed: ConflictRow[];
+  changed: ConflictChange[];
+}
+
+export interface ConflictAnalysis {
+  copy: ConflictCopyInfo;
+  shared: SyncPublishInfo | null;          // the open database
+  priceLists: ConflictPriceList[];
+  priceListsOnlyInShared: number;
+  activity: { at: string; by: string; action: string; summary: string }[];  // recorded in the copy, not in the shared database
+  activityCount: number;
+  tables: ConflictTableDiff[];
+}
+
+export interface ReapplyResult {
+  price_list_id: string;
+  ok: boolean;
+  error: string | null;
 }
 
 export type SelectLogoResult = { ok: true; dataUrl: string } | { ok: false; error: string } | null;

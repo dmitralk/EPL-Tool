@@ -508,6 +508,25 @@ editing* works. Notifications also for a refused publish and a lost slot. Interi
 (release warning, released, waiting / slot free), and *Start editing* starts waiting by itself when someone is editing.
 `phase-d.checks.ts`: 100 checks (real timers, shortened, on a dedicated PC for the idle release).
 
+Step 3 (recovery with the slot + rescue tool) done 10 Nov 2026 (the user accepted the choices made within the design: early
+check on resume, take-over question on recovery, activity list in the review, re-applied lists keep their creation time,
+archive in read mode) — **Recovery:** [Resume editing] [Publish now] [Discard]
+(`sync:recover` with `resume`); Resume and Publish now go through the slot like *Start editing* (same waiting / take-over
+answers, the changes stay offered meanwhile; the session's own claim is reused while it still holds the slot). Refinement:
+before continuing on the kept copy the app checks at once whether someone published since (manifest generation / central
+sha256 — the check the next publish would make); if so the copy goes to `EPL-Conflicts/` right away (refused-publish
+message + notification), so nobody keeps editing a copy that can't be published. **Rescue tool** (`main/sync/rescue.ts`,
+`ipc/conflicts.ts`): `conflicts:list` (EPL-Conflicts/, OneDrive copies and copies kept on this PC, each with the version it
+started from and its last activity entry), `conflicts:analyze` (price lists only in the copy, each with why it can't be
+re-applied — customer missing, duplicate, rights; activity entries the shared database lacks = what was done in the copy;
+rows that differ per table, either side may have changed them; how many lists are only in the shared database),
+`conflicts:reapply` (editor + edit mode; `createPriceList` in `main/priceLists.ts`, now also used by `price-lists:create`;
+the re-applied list keeps its first creation time, the customer's "last price list" follows the usual latest rule, activity
+*"Re-applied price list … from <copy> (…, first created by …)"*), `conflicts:archive` (admins, also in read mode — it only
+moves the file to `archive/`). Copies are only read through a temporary copy on this PC, and only files that are conflict
+copies of this database are accepted. `conflictCount` in the status (Settings badge in step 4). Permission matrix: three new
+rows (review: everybody; re-apply: like creating price lists; archive: admins). `phase-d.checks.ts`: 148 checks.
+
 - [ ] **Edit slot:**
   - [x] a claim file per editing session in `EPL-EditSlot/`
   - [x] heartbeat every 3 min
@@ -517,9 +536,9 @@ editing* works. Notifications also for a refused publish and a lost slot. Interi
 - [ ] **Waiting:** a waiting dialog (step 4), and a Windows notification when the slot is free (done).
 - [x] ***Start editing* for Users** as well (role check: Admin or User).
 - [ ] **Recovery:**
-  - [ ] crash recovery (`work\session.json`)
-  - [ ] the `EPL-Conflicts/` folder
-  - [ ] **"Re-apply my price lists"** rescue tool, with a report of other differences
+  - [x] crash recovery (`work\session.json`): [Resume editing] [Publish now] [Discard], through the edit slot
+  - [x] the `EPL-Conflicts/` folder
+  - [x] **"Re-apply my price lists"** rescue tool, with a report of other differences (main process; screen in step 4)
 - [ ] **Help:** the editing topics.
 
 **Done when:** all scenarios in the multi-user study §7 (testing) work on two PCs.
@@ -623,6 +642,6 @@ All decisions are recorded (the last two on 5 Nov 2026):
 - **Session FX rates:** forgotten when the app closes.
 
 **Next step:** Phase D (edit slot) — started 9 Nov 2026 right after the v0.7.0 release, while the two-PC test of v0.7.0 runs
-with a colleague (separate SharePoint test folder with a copy of the database). Steps 1 (slot core) and 2 (idle release,
-waiting, notifications) are done; next is step 3 (recovery with the slot + rescue tool). Phases A and B were released as
-**v0.6.1** on 6 Nov 2026 (v0.6.0 was not released separately); Phase C as **v0.7.0** on 9 Nov 2026.
+with a colleague (separate SharePoint test folder with a copy of the database). Steps 1 (slot core), 2 (idle release,
+waiting, notifications) and 3 (recovery with the slot + rescue tool) are done; next is step 4 (screens). Phases A and B were
+released as **v0.6.1** on 6 Nov 2026 (v0.6.0 was not released separately); Phase C as **v0.7.0** on 9 Nov 2026.

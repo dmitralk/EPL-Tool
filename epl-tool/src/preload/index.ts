@@ -28,7 +28,8 @@ const api = {
   dismissSlotReleased: () => ipcRenderer.invoke('sync:dismiss-released'),
   publishNow: () => ipcRenderer.invoke('sync:publish'),
   finishEditing: () => ipcRenderer.invoke('sync:finish-editing'),
-  recoverUnpublished: (action: 'publish' | 'discard') => ipcRenderer.invoke('sync:recover', action),
+  recoverUnpublished: (action: 'resume' | 'publish' | 'discard', opts?: { takeOver?: boolean }) =>
+    ipcRenderer.invoke('sync:recover', action, opts),
   dismissSyncConflict: () => ipcRenderer.invoke('sync:dismiss-conflict'),
   onSyncStatus: (listener: (status: SyncStatus) => void) => {
     const wrapped = (_e: IpcRendererEvent, status: SyncStatus) => listener(status);
@@ -124,6 +125,12 @@ const api = {
   updateUser: (id: number, data: UserInput) => ipcRenderer.invoke('users:update', id, data),
   listAudit: (filters?: AuditFilters) => ipcRenderer.invoke('audit:list', filters),
   exportAuditXlsx: (filters?: AuditFilters) => ipcRenderer.invoke('audit:export-xlsx', filters),
+
+  // Conflict copies (rescue tool)
+  listConflictCopies: () => ipcRenderer.invoke('conflicts:list'),
+  analyzeConflictCopy: (file: string) => ipcRenderer.invoke('conflicts:analyze', file),
+  reapplyPriceLists: (file: string, ids: string[]) => ipcRenderer.invoke('conflicts:reapply', file, ids),
+  archiveConflictCopy: (file: string) => ipcRenderer.invoke('conflicts:archive', file),
 
   // Currencies
   getCurrencies: () => ipcRenderer.invoke('currencies:list'),

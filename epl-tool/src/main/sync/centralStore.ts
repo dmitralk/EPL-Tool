@@ -78,6 +78,9 @@ export interface CentralStore {
     meta: { appVersion: string; minAppVersion: string }): Promise<PublishResult>;
   saveConflictCopy(file: string, account: string | null): Promise<string>;
   findConflictCopies(): Promise<string[]>;
+  listConflictsFolder(): Promise<string[]>;
+  copyConflictCopy(file: string, dest: string): Promise<void>;
+  archiveConflictCopy(file: string): Promise<string>;
   canWrite(): Promise<boolean>;
   listClaims(): Promise<SlotClaim[]>;
   writeClaim(claim: SlotClaim): Promise<void>;
@@ -289,7 +292,7 @@ export class SyncedFolderStore implements CentralStore {
 
   // A refused publish keeps the working copy in EPL-Conflicts/ next to the central database.
   async saveConflictCopy(file: string, account: string | null): Promise<string> {
-    const dir = path.join(this.folder, CONFLICTS_DIR_NAME);
+    const dir = this.conflictsDir;
     await fsp.mkdir(dir, { recursive: true });
     const who = (account ?? 'unknown').replace(/[^A-Za-z0-9._-]/g, '_');
     const dest = path.join(dir, `${this.baseName}_${fileStamp()}_${who}.db`);
@@ -312,6 +315,49 @@ export class SyncedFolderStore implements CentralStore {
     } catch {
       return [];
     }
+  }
+
+  private get conflictsDir(): string {
+    return path.join(this.folder, CONFLICTS_DIR_NAME);
+  }
+
+  // The copies kept in EPL-Conflicts/ for this database (not the archive/ subfolder).
+  async listConflictsFolder(): Promise<string[]> {
+    const re = new RegExp(`^${escapeRegExp(this.baseName)}_.+\\.db$`, 'i');
+    try {
+      const entries = await fsp.readdir(this.conflictsDir, { withFileTypes: true });
+      return entries.filter(e => e.isFile() && re.test(e.name)).map(e => path.join(this.conflictsDir, e.name)).sort();
+    } catch {
+      return [];
+    }
+  }
+
+  // Only files that are conflict copies of this database (EPL-Conflicts/ or OneDrive's copies next to it).
+  private async requireConflictCopy(file: string): Promise<string> {
+    const target = path.resolve(file).toLowerCase();
+    const all = [...await this.listConflictsFolder(), ...await this.findConflictCopies()];
+    const found = all.find(f => path.resolve(f).toLowerCase() === target);
+    if (!found) throw new Error('This file is not a conflict copy of the shared database.');
+    return found;
+  }
+
+  // A conflict copy is read through a copy on this PC (the shared folder is never opened with SQLite).
+  async copyConflictCopy(file: string, dest: string): Promise<void> {
+    const source = await this.requireConflictCopy(file);
+    await fsp.mkdir(path.dirname(dest), { recursive: true });
+    await retry(() => fsp.copyFile(source, dest));
+  }
+
+  // A reviewed copy moves to EPL-Conflicts/archive/ (nothing is deleted).
+  async archiveConflictCopy(file: string): Promise<string> {
+    const source = await this.requireConflictCopy(file);
+    const dir = path.join(this.conflictsDir, 'archive');
+    await fsp.mkdir(dir, { recursive: true });
+    const { name, ext } = path.parse(source);
+    let dest = path.join(dir, `${name}${ext}`);
+    for (let i = 2; fs.existsSync(dest); i++) dest = path.join(dir, `${name}-${i}${ext}`);
+    await retry(() => fsp.rename(source, dest), 8);
+    return dest;
   }
 
   // People with Read permission on the SharePoint folder can't write: detected with a .tmp probe file (never synced).

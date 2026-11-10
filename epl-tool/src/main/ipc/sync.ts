@@ -97,8 +97,15 @@ export function registerSyncHandlers() {
 
   handle('sync:finish-editing', 'public', () => finishEditing());
 
-  handle('sync:recover', 'public', (_e, action: 'publish' | 'discard') =>
-    recoverUnpublished(action === 'publish' ? 'publish' : 'discard'));
+  // Unpublished changes from a previous run: resume, publish now (both through the edit slot) or discard.
+  handle('sync:recover', 'public', async (_e, action: 'resume' | 'publish' | 'discard', opts?: { takeOver?: boolean }) => {
+    try {
+      await getIdentity();
+      return await recoverUnpublished(action === 'resume' || action === 'publish' ? action : 'discard', { takeOver: !!opts?.takeOver });
+    } catch (err) {
+      return { ok: false, error: (err as Error).message };
+    }
+  });
 
   handle('sync:dismiss-conflict', 'public', () => {
     dismissConflict();

@@ -23,7 +23,8 @@ import {
 } from './centralStore';
 import { holderOf, inactiveHolderOf, isActive, isStale, newSlotId, takenOverBy, type SlotClaim } from './editSlot';
 import { isInSyncedFolder } from './oneDrive';
-import { cacheDir, localDataDir, workDir } from './paths';
+import { cacheDir, localConflictsDir, workDir } from './paths';
+import { countConflictCopies } from './rescue';
 import type { AppUser, SlotPerson, SyncPublishInfo, SyncStatus } from '../../types';
 
 // The connection to the database (multi-user study §5, dev-plan Phases C–D):
@@ -56,6 +57,7 @@ interface Shared {
   damagedCount: number;
   centralDamaged: boolean;
   conflictCopies: string[];
+  conflictCount: number;        // copies to review in the rescue tool (EPL-Conflicts/, OneDrive copies, kept on this PC)
   lastCheckAt: string | null;
   error: string | null;
   conflict: { savedTo: string | null; at: string; message: string } | null;  // last refused publish / lost slot
@@ -113,6 +115,9 @@ export type StartEditingResult =
   | { ok: false; waiting: SlotPerson }
   | { ok: false; takeOver: SlotPerson }
   | { ok: false; cancelled: true };
+
+// Resume editing / Publish now on unpublished changes from a previous run.
+export type RecoverResult = PublishOutcome | StartEditingResult;
 
 // Something the person should hear about even when EPL Tool is in the background: shown as a Windows notification by
 // main/notify.ts (recorded by the checks). The screens show the same events as banners.
@@ -302,8 +307,8 @@ export async function connectShared(centralPath: string, opts: { save?: boolean 
 
   const s: Shared = {
     store, phase: 'connecting', copy: null, offline: null, syncing: null, pending: null, manifest: null, lastProbe: null,
-    damagedCount: 0, centralDamaged: false, conflictCopies: [], lastCheckAt: null, error: null, conflict: null, recovery: null,
-    claims: [], waiting: null, released: null,
+    damagedCount: 0, centralDamaged: false, conflictCopies: [], conflictCount: 0, lastCheckAt: null, error: null, conflict: null,
+    recovery: null, claims: [], waiting: null, released: null,
   };
   shared = s;
   mode = 'shared';
@@ -343,6 +348,7 @@ export async function connectShared(centralPath: string, opts: { save?: boolean 
   if (opts.save) saveSharedConnection(target);
   legacySuggestion = null;
   s.conflictCopies = await store.findConflictCopies();
+  await updateConflictCount(s);
   s.recovery = findUnpublishedSession(target);
   emit();
 }
@@ -453,6 +459,7 @@ async function runCheck(): Promise<void> {
   s.offline = null;
   s.manifest = probe.manifest;
   s.conflictCopies = await s.store.findConflictCopies();
+  await updateConflictCount(s);
   await readClaims(s);
   watchSlotForWaiter(s);
   const key = probeKey(probe.size, probe.mtimeMs, probe.manifest);
@@ -1151,18 +1158,42 @@ async function keepRefusedCopy(s: Shared): Promise<string | null> {
   try {
     const saved = await s.store.saveConflictCopy(copy, account);
     await removeQuietly(copy);
+    await updateConflictCount(s);
     return saved;
   } catch {
-    const localDir = path.join(localDataDir(), 'conflicts');
+    const localDir = localConflictsDir();
     try {
       await fsp.mkdir(localDir, { recursive: true });
       const dest = path.join(localDir, `${path.parse(s.store.dbPath).name}_${fileStamp()}.db`);
       await fsp.rename(copy, dest);
+      await updateConflictCount(s);
       return dest;
     } catch {
       return null;
     }
   }
+}
+
+async function updateConflictCount(s: Shared): Promise<void> {
+  try {
+    s.conflictCount = await countConflictCopies(s.store);
+  } catch {
+    // counted again at the next check
+  }
+}
+
+// After a copy was archived: the count (and the OneDrive conflict-copy banner) follow at once.
+export async function refreshConflictCopies(): Promise<void> {
+  const s = shared;
+  if (!s) return;
+  s.conflictCopies = await s.store.findConflictCopies();
+  await updateConflictCount(s);
+  emit();
+}
+
+// The shared folder of the connected database (the rescue tool reads conflict copies through it), or null.
+export function getSharedStore(): CentralStore | null {
+  return mode === 'shared' && shared ? shared.store : null;
 }
 
 // Decided 9 Nov 2026: after a refused publish the app goes back to read mode on the fresh data.
@@ -1237,8 +1268,14 @@ export async function finishEditing(): Promise<PublishOutcome> {
   return r;
 }
 
-// Unpublished changes from a previous run: publish them now (same generation check) or discard them.
-export async function recoverUnpublished(action: 'publish' | 'discard'): Promise<PublishOutcome> {
+// Unpublished changes from a previous run (crash, or "Quit anyway"): resume editing them, publish them now, or discard them.
+// Resume and Publish now go through the edit slot like Start editing (waiting / take-over answers; the changes stay
+// offered meanwhile). The shared file must still be the one the changes started from: if someone published since, the copy
+// goes to EPL-Conflicts/ at once — the refusal its publish would get — so nobody goes on editing a copy that can't be
+// published.
+export async function recoverUnpublished(
+  action: 'resume' | 'publish' | 'discard', opts: { takeOver?: boolean } = {},
+): Promise<RecoverResult> {
   const s = shared;
   const sess = s?.recovery;
   if (!s || !sess || s.phase !== 'read') return { ok: false, error: 'There are no unpublished changes to recover.' };
@@ -1248,44 +1285,76 @@ export async function recoverUnpublished(action: 'publish' | 'discard'): Promise
     emit();
     return { ok: true, published: false, generation: s.copy?.generation ?? 0 };
   }
+  if (starting) return { ok: false, error: 'Editing is already being started.' };
   const blocked = startEditingBlocked(getActor(), { recovering: true });
   if (blocked) return { ok: false, error: blocked };
   if (!(await s.store.canWrite())) {
     return { ok: false, error: 'You have read-only access to the shared folder on SharePoint, so changes are not possible.' };
   }
-  // The edit slot first (my claim from that session is reused if it still holds the slot).
-  const got = await acquireSlot(s, { keepSlotId: sess.slotId, takeOver: true });
-  if (!('slotId' in got)) {
-    const who = 'waiting' in got ? got.waiting.user : null;
-    return { ok: false, error: who ? `${who} is editing right now. Your changes are kept: try again when the slot is free.`
-      : 'The edit slot could not be reserved. Your changes are kept: try again.' };
-  }
-  const workFile = workFileFor(s.store.dbPath);
-  closeDatabase();
+  starting = true;
   try {
-    openDatabase(workFile, { skipBackup: true, bootstrap: false });
-  } catch (err) {
-    await s.store.deleteClaim(got.slotId).catch(() => undefined);
-    openReadCopy(cacheFileFor(s.store.dbPath));
-    return { ok: false, error: `The unpublished copy can't be opened: ${(err as Error).message}` };
+    // The edit slot first (my claim from that session is reused if it still holds the slot).
+    const got = await acquireSlot(s, { keepSlotId: sess.slotId, takeOver: opts.takeOver });
+    if (!('slotId' in got)) return got;
+    const workFile = workFileFor(s.store.dbPath);
+    closeDatabase();
+    try {
+      openDatabase(workFile, { skipBackup: true, bootstrap: false });
+    } catch (err) {
+      await s.store.deleteClaim(got.slotId).catch(() => undefined);
+      openReadCopy(cacheFileFor(s.store.dbPath));
+      return { ok: false, error: `The unpublished copy can't be opened: ${(err as Error).message}` };
+    }
+    const holding: SlotClaim = { ...got, state: 'holding', heartbeatAt: nowIso() };
+    await s.store.writeClaim(holding).catch(() => undefined);
+    const e: EditState = {
+      since: sess.startedAt, workFile, slot: holding, lastBeat: Date.now(), activeAt: Date.now(),
+      baseGeneration: sess.baseGeneration,
+      baseSha: sess.baseSha, publishedBy: sess.publishedBy, publishedAt: sess.publishedAt, baseline: -1, seen: totalChanges(),
+      dirty: true, changedAt: sess.changedAt, publishing: null, lastPublishedAt: null, lastPublishedGeneration: null,
+      nextPublishAt: null, error: null, centralKey: null, centralChanged: null,
+    };
+    edit = e;
+    s.phase = 'edit';
+    s.recovery = null;
+    s.waiting = null;
+    s.released = null;
+    writeSession(e);
+    startHeartbeat();
+    scheduleIdle();
+    const moved = await centralMovedOn(s, e);
+    if (moved) return await refused(s, e, moved, await keepRefusedCopy(s));
+    if (action === 'resume') {
+      schedulePublish(e);
+      emit();
+      return { ok: true };
+    }
+    const r = await publishNow();
+    if (r.ok && edit === e) await endEditing(s, e, true);
+    emit();
+    return r;
+  } finally {
+    starting = false;
   }
-  const holding: SlotClaim = { ...got, state: 'holding', heartbeatAt: nowIso() };
-  await s.store.writeClaim(holding).catch(() => undefined);
-  const e: EditState = {
-    since: sess.startedAt, workFile, slot: holding, lastBeat: Date.now(), activeAt: Date.now(),
-    baseGeneration: sess.baseGeneration,
-    baseSha: sess.baseSha, publishedBy: sess.publishedBy, publishedAt: sess.publishedAt, baseline: -1, seen: totalChanges(),
-    dirty: true, changedAt: sess.changedAt, publishing: null, lastPublishedAt: null, lastPublishedGeneration: null,
-    nextPublishAt: null, error: null, centralKey: null, centralChanged: null,
-  };
-  edit = e;
-  s.phase = 'edit';
-  s.recovery = null;
-  startHeartbeat();
-  const r = await publishNow();
-  if (r.ok && edit === e) await endEditing(s, e, true);
-  emit();
-  return r;
+}
+
+// Has someone published since the working copy's base? Then its publish would be refused (the same check, made early).
+async function centralMovedOn(s: Shared, e: EditState): Promise<string | null> {
+  const manifest = await s.store.readManifest();
+  if (manifest && manifest.generation > e.baseGeneration) {
+    const when = manifest.publishedAt
+      ? ` on ${new Date(manifest.publishedAt).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}`
+      : '';
+    return `${manifest.publishedBy ?? 'Someone else'} published a newer version${when} after these changes were made.`;
+  }
+  try {
+    if (await sha256File(s.store.dbPath) !== e.baseSha) {
+      return 'The shared database was changed by someone else after these changes were made.';
+    }
+  } catch {
+    // can't be read right now: the publish checks again
+  }
+  return null;
 }
 
 // Restore in shared mode = the backup becomes the working copy and is published at once (the working copy, or the damaged
@@ -1442,5 +1511,6 @@ export function getStatus(): SyncStatus {
       waitingSince: s?.phase === 'read' ? s.waiting?.since ?? null : null,
     },
     legacySuggestion,
+    conflictCount: s?.conflictCount ?? 0,
   };
 }

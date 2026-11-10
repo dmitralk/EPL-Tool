@@ -7,10 +7,10 @@ import path from 'path';
 import { getIdentity, initIdentity } from '../../src/main/auth';
 import { SCHEMA_VERSION } from '../../src/main/database';
 import { MIN_EDIT_APP_VERSION } from '../../src/shared/sync';
-import { allowed, check, expectError, finish, run, setupTemp, sleep } from './harness';
+import { allowed, check, expectError, finish, run, setupTemp, sha, sleep } from './harness';
 import {
-  PEOPLE, Pc, ageClaim, centralQuery, claimsOf, generationOf, ls, manifestOf, prepareCentral, slotDirOf, spocOf, worker,
-  writeClaimAs, type Central, type Person,
+  PEOPLE, Pc, ageClaim, centralQuery, claimsOf, conflictsOf, generationOf, ls, manifestOf, prepareCentral, publishAs, slotDirOf,
+  spocOf, worker, writeClaimAs, type Central, type Person,
 } from './pcs';
 
 const OLA = { name: 'Ola Other', account: 'oth-o', machine: 'PC-OLA' };   // someone on a PC that OneDrive hears from late
@@ -235,7 +235,7 @@ async function slotChecks(tmp: string) {
     sb = await B.startup();
     check('B restarts: unpublished changes offered', !!sb.recovery, sb);
     p = await B.invoke('sync:recover', 'publish');
-    check('B: Publish now has to wait for Anna, the change is kept', !p.ok && /^Anna Admin is editing right now\. Your changes are kept/.test(p.error) &&
+    check('B: Publish now has to wait for Anna (answer: who is editing), the change is kept', !p.ok && p.waiting?.user === 'Anna Admin' &&
       !!(await B.status()).recovery, p);
     check("B removed its own taken-over claim", claimsOf(c).map(x => x.user).join() === 'Anna Admin', claimsOf(c));
     await A.invoke('sync:finish-editing');
@@ -431,6 +431,198 @@ async function slotChecks(tmp: string) {
     si = await I.status();
     check('Start editing again works; no message left', r.ok && si.phase === 'edit' && si.released === null, r);
     await I.invoke('sync:finish-editing');
+
+    // ── Recovery with the slot: Resume editing right after a crash (the claim still holds the slot) ──
+    await A.invoke('sync:start-editing');
+    await allowed('A edits', () => A.invoke('customers:update', ref, { customer_spoc: 'Anna, resumed' }));
+    const aResume = claimsOf(c)[0];
+    await A.kill();
+    await A.start();
+    await A.startup();
+    r = await A.invoke('sync:recover', 'resume');
+    sa = await A.status();
+    check('Resume editing: same edit slot, the change is still there, not published yet', r.ok && sa.phase === 'edit' &&
+      !!sa.edit?.dirty && !sa.recovery && claimsOf(c).map(x => x.slotId).join() === aResume.slotId &&
+      (await A.invoke('customers:get', ref)).customer_spoc === 'Anna, resumed' && spocOf(c, ref) !== 'Anna, resumed', { r, edit: sa.edit });
+    check('session.json follows the resumed session',
+      JSON.parse(fs.readFileSync(path.join(A.workDir, 'session.json'), 'utf-8')).slotId === aResume.slotId);
+    await allowed('A goes on editing', () => A.invoke('settings:create-unit', 'After resume'));
+    p = await A.invoke('sync:finish-editing');
+    check('Finish editing publishes both changes, slot released', p.ok && spocOf(c, ref) === 'Anna, resumed' &&
+      centralQuery(c, "SELECT 1 FROM units WHERE name = 'After resume'").length === 1 && claimsOf(c).length === 0, p);
+
+    // Someone took over meanwhile but published nothing: Resume asks before taking over their (now inactive) session too.
+    await A.invoke('sync:start-editing');
+    await allowed('A edits', () => A.invoke('customers:update', ref, { customer_spoc: 'Anna, after Ben' }));
+    const aGone = claimsOf(c)[0];
+    await A.kill();
+    ageClaim(c, aGone.slotId, 16);
+    r = await B.invoke('sync:start-editing', { takeOver: true });
+    check("B takes over Anna's inactive session", r.ok, r);
+    const bIdle = claimsOf(c).find(x => x.user === 'Ben Admin');
+    await B.kill();
+    if (bIdle) ageClaim(c, bIdle.slotId, 16);
+    await A.start();
+    await A.startup();
+    r = await A.invoke('sync:recover', 'resume');
+    check("A: Resume asks first — Ben's session is inactive; the changes stay offered", !r.ok && r.takeOver?.user === 'Ben Admin' &&
+      !!(await A.status()).recovery, r);
+    r = await A.invoke('sync:recover', 'resume', { takeOver: true });
+    sa = await A.status();
+    check('A takes over and resumes: nobody published meanwhile, so the kept copy goes on', r.ok && sa.phase === 'edit' &&
+      (await A.invoke('customers:get', ref)).customer_spoc === 'Anna, after Ben', { r, phase: sa.phase });
+    p = await A.invoke('sync:finish-editing');
+    check('…and is published', p.ok && spocOf(c, ref) === 'Anna, after Ben' && claimsOf(c).length === 0, p);
+    await B.start();
+    sb = await B.startup();
+    check('B restarts: nothing to recover, no claim left', !sb.recovery && claimsOf(c).length === 0, sb.recovery);
+
+    // Someone published meanwhile: Resume refuses at once and keeps the copy in EPL-Conflicts/ (no work on a lost copy).
+    await A.invoke('sync:start-editing');
+    await allowed('A edits', () => A.invoke('customers:update', ref, { customer_spoc: 'Anna, overtaken' }));
+    const aGone3 = claimsOf(c)[0];
+    await A.kill();
+    ageClaim(c, aGone3.slotId, 16);
+    await B.invoke('sync:start-editing', { takeOver: true });
+    await allowed('B edits', () => B.invoke('customers:update', ref, { customer_spoc: 'Ben, meanwhile' }));
+    await B.invoke('sync:finish-editing');
+    await A.start();
+    await A.startup();
+    r = await A.invoke('sync:recover', 'resume');
+    sa = await A.status();
+    check('Resume after Ben published: refused at once, the kept copy is in EPL-Conflicts/', !r.ok && r.conflict && !!r.savedTo &&
+      spocOf(c, ref, r.savedTo) === 'Anna, overtaken' && spocOf(c, ref) === 'Ben, meanwhile' && sa.phase === 'read' && !sa.recovery &&
+      /^Your changes were not published: Ben Admin published a newer version on .+ after these changes were made\./
+        .test(sa.conflict?.message ?? '') && claimsOf(c).length === 0, { r, conflict: sa.conflict });
+    na = await A.notices();
+    check('…with a notification', na.length === 1 && na[0].kind === 'refused', na);
+    await A.invoke('sync:dismiss-conflict');
+
+    // ── Rescue tool: review a conflict copy, re-apply its price lists, archive it ──
+    const plData = (version: string, effective: string, mailing: string) => ({
+      customer_ref_sap: ref, sap_plant: '', effective, mailing_date: mailing, price_list_version: version,
+      comments_about_changes: 'rescue check', price_type: 'Net Price', discount_percent: null,
+      entries: [
+        { product_type: 'T', rip_code: 'R1', product_name: 'P1', net_price: 10, currency: 'USD', unit: '100 L' },
+        { product_type: 'T', rip_code: 'R2', product_name: 'P2', net_price: 20, currency: 'USD', unit: '100 L' },
+      ],
+    });
+    await A.invoke('sync:start-editing');
+    const genRescue = generationOf(c);
+    const r1 = await A.invoke('price-lists:create', plData('RESCUE-1', '2031-02-01', '2031-01-15'));
+    await allowed('A creates a second price list', () => A.invoke('price-lists:create', plData('RESCUE-2', '2031-03-01', '2031-02-15')));
+    await allowed('A changes the customer', () => A.invoke('customers:update', ref, { country: 'Rescueland' }));
+    await allowed('A adds a unit', () => A.invoke('settings:create-unit', 'Rescue unit'));
+    // Meanwhile Ben published from a PC whose OneDrive was paused — with a list RESCUE-2 for the same customer and date.
+    const benR2 = `${ref}2031030120310220RESCUE-2`;
+    await publishAs(c, { name: 'Ben Admin', account: PEOPLE.ben.account }, d => d.prepare(`
+      INSERT INTO price_lists (price_list_id, customer_ref_sap, effective, mailing_date, price_list_version, price_type)
+      VALUES (?, ?, '2031-03-01', '2031-02-20', 'RESCUE-2', 'Net Price')`).run(benR2, ref));
+    p = await A.invoke('sync:publish');
+    const kept: string = p.savedTo;
+    check("setup: A's publish is refused, the work is kept in EPL-Conflicts/", !p.ok && p.conflict && !!kept &&
+      path.dirname(kept) === path.join(c.centralDir, 'EPL-Conflicts'), p);
+    await A.invoke('sync:dismiss-conflict');
+    const keptSha = sha(kept);
+
+    const listed = await A.invoke('conflicts:list') as any[];
+    const entry = listed.find(x => x.file === kept);
+    check('Conflict copies: listed with the version it started from and its last change', !!entry && entry.source === 'conflicts' &&
+      entry.error === null && entry.basedOn?.generation === genRescue && entry.lastChange?.summary === 'Added unit Rescue unit' &&
+      /Anna Admin/.test(entry.lastChange?.by ?? ''), entry);
+    const copiesNow = conflictsOf(c).filter(f => f.endsWith('.db')).length;
+    sa = await A.invoke('sync:check');
+    check('the status counts the copies to review', sa.conflictCount === copiesNow && listed.length === copiesNow,
+      { count: sa.conflictCount, copiesNow, listed: listed.length });
+
+    const an = await A.invoke('conflicts:analyze', kept);
+    const byVersion = Object.fromEntries(an.priceLists.map((l: any) => [l.price_list_version, l]));
+    check('review: the two price lists of the copy', an.priceLists.length === 2 && byVersion['RESCUE-1']?.price_list_id === r1.price_list_id &&
+      byVersion['RESCUE-1'].entries === 2 && byVersion['RESCUE-1'].created_by === 'Anna Admin' && !!byVersion['RESCUE-1'].customer_name,
+      an.priceLists);
+    check('RESCUE-1 can be re-applied; RESCUE-2 is blocked (Ben created one for the same date)', byVersion['RESCUE-1']?.blocked === null &&
+      /already exists for this customer/.test(byVersion['RESCUE-2']?.blocked ?? ''), an.priceLists);
+    check('review: what was done in the copy (activity the shared database lacks)', an.activityCount === 4 &&
+      an.activity.map((x: any) => x.action).join() === 'price_list.create,price_list.create,customer.update,unit.create', an.activity);
+    const custDiff = an.tables.find((t: any) => t.table === 'customers');
+    const unitDiff = an.tables.find((t: any) => t.table === 'units');
+    check('review: rows that differ — the customer field, the new unit', custDiff?.changedCount === 1 && custDiff.changed[0].key === ref &&
+      custDiff.changed[0].fields.map((f: any) => `${f.field}:${f.copy}`).join() === 'country:Rescueland' &&
+      unitDiff?.addedCount === 1 && unitDiff.added[0].key === 'Rescue unit', an.tables);
+    check("review: Ben's list counts as only in the shared database; compared with the newest version",
+      an.priceListsOnlyInShared === 1 && an.shared?.generation === genRescue + 1, { only: an.priceListsOnlyInShared, shared: an.shared });
+    check('reviewing never changes the copy in the shared folder', sha(kept) === keptSha && !fs.existsSync(`${kept}-wal`) &&
+      !fs.existsSync(`${kept}-journal`));
+
+    const anU = await U.invoke('conflicts:analyze', kept);
+    check('U (user) can review; RESCUE-1 is blocked for her (managed by PBP)',
+      /managed by PBP: only admins can change it/.test(anU.priceLists.find((l: any) => l.price_list_version === 'RESCUE-1')?.blocked ?? ''),
+      anU.priceLists);
+    await expectError('U: re-apply needs edit mode', () => U.invoke('conflicts:reapply', kept, [r1.price_list_id]),
+      /^Read-only — click Start editing to make changes\.$/);
+    check('V (viewer) can list the copies', (await V.invoke('conflicts:list') as any[]).some(x => x.file === kept));
+    await expectError('V: re-apply refused', () => V.invoke('conflicts:reapply', kept, [r1.price_list_id]), /^Viewers can only view and export\.$/);
+    await expectError('U: archive refused (admins only)', () => U.invoke('conflicts:archive', kept), /^Only admins can do this\.$/);
+    await expectError('A: re-apply needs edit mode too', () => A.invoke('conflicts:reapply', kept, [r1.price_list_id]),
+      /^Read-only — click Start editing/);
+
+    await A.invoke('sync:start-editing');
+    const res = await A.invoke('conflicts:reapply', kept, [r1.price_list_id, byVersion['RESCUE-2'].price_list_id, 'NOT-THERE']);
+    check('re-apply: RESCUE-1 created; RESCUE-2 refused (duplicate); an unknown id reported', res.length === 3 && res[0].ok &&
+      !res[1].ok && /already exists for this customer/.test(res[1].error) && !res[2].ok && /not in the copy/.test(res[2].error), res);
+    const back = (await A.sql('SELECT created_at, comments_about_changes FROM price_lists WHERE price_list_id = ?', [r1.price_list_id]))[0];
+    const lines = await A.sql('SELECT rip_code, net_price FROM price_list_entries WHERE price_list_id = ? ORDER BY rip_code', [r1.price_list_id]);
+    check('the re-applied list: same products and prices, first creation time kept', back?.created_at === byVersion['RESCUE-1'].created_at &&
+      back.comments_about_changes === 'rescue check' && lines.map((x: any) => `${x.rip_code}=${x.net_price}`).join() === 'R1=10,R2=20',
+      { back, lines });
+    const lastList = (await A.sql('SELECT last_price_list_id FROM customers WHERE customer_ref_sap = ?', [ref]))[0]?.last_price_list_id;
+    check("the customer's last price list stays the newest one (Ben's RESCUE-2, later date)", lastList === benR2, lastList);
+    const reAudit = (await A.sql("SELECT summary, details FROM audit_log WHERE action = 'price_list.create' ORDER BY id DESC LIMIT 1"))[0];
+    check('activity: "Re-applied … from <copy>", first creator in the text and details', !!reAudit &&
+      reAudit.summary.startsWith('Re-applied price list RESCUE-1 for ') && reAudit.summary.includes(`from ${path.basename(kept)}`) &&
+      reAudit.summary.includes('first created by Anna Admin') && JSON.parse(reAudit.details).reapplied_from === path.basename(kept), reAudit);
+    r = await A.invoke('conflicts:reapply', kept, [r1.price_list_id]);
+    check('re-applying twice is refused (duplicate guard)', !r[0].ok && /already exists/.test(r[0].error), r);
+    p = await A.invoke('sync:finish-editing');
+    check('published: RESCUE-1 is in the shared database', p.ok &&
+      centralQuery(c, 'SELECT 1 FROM price_lists WHERE price_list_id = ?', [r1.price_list_id]).length === 1, p);
+    const an2 = await A.invoke('conflicts:analyze', kept);
+    check('review again: only RESCUE-2 is left', an2.priceLists.map((l: any) => l.price_list_version).join() === 'RESCUE-2', an2.priceLists);
+
+    const countBefore = (await A.status()).conflictCount;
+    const arch = await A.invoke('conflicts:archive', kept);
+    sa = await A.status();
+    check('archive (admin, in read mode): moved to EPL-Conflicts/archive/, no longer listed or counted', arch.ok &&
+      path.dirname(arch.archivedTo) === path.join(c.centralDir, 'EPL-Conflicts', 'archive') && fs.existsSync(arch.archivedTo) &&
+      !fs.existsSync(kept) && !(await A.invoke('conflicts:list') as any[]).some(x => x.file === kept) &&
+      sa.conflictCount === countBefore - 1, { arch, count: sa.conflictCount, countBefore });
+    await expectError('only conflict copies can be read: the shared database itself is refused',
+      () => A.invoke('conflicts:analyze', c.central), /not a conflict copy/);
+    await expectError('…nor a path that leads out of EPL-Conflicts',
+      () => A.invoke('conflicts:analyze', path.join(c.centralDir, 'EPL-Conflicts', '..', 'EPL-Database.db')), /not a conflict copy/);
+    await expectError('…nor an archived copy', () => A.invoke('conflicts:archive', arch.archivedTo), /not a conflict copy/);
+
+    const oneDriveCopy = path.join(c.centralDir, 'EPL-Database-LAPTOP-OLA.db');
+    fs.copyFileSync(c.central, oneDriveCopy);
+    sa = await A.invoke('sync:check');
+    const odEntry = (await A.invoke('conflicts:list') as any[]).find(x => x.file === oneDriveCopy);
+    check('a OneDrive conflict copy is listed too', odEntry?.source === 'onedrive' && odEntry.error === null &&
+      sa.conflictCopies.includes(oneDriveCopy), odEntry);
+    const odArch = await A.invoke('conflicts:archive', oneDriveCopy);
+    sa = await A.status();
+    check('…and archived: the OneDrive conflict-copy banner goes away', odArch.ok && !fs.existsSync(oneDriveCopy) &&
+      sa.conflictCopies.length === 0, sa.conflictCopies);
+
+    const localDir = path.join(A.local, 'userData', 'conflicts');
+    fs.mkdirSync(localDir, { recursive: true });
+    const localCopy = path.join(localDir, 'EPL-Database_2026-11-10_09-00-00.db');
+    fs.copyFileSync(arch.archivedTo, localCopy);
+    const localEntry = (await A.invoke('conflicts:list') as any[]).find(x => x.file === localCopy);
+    check('a copy kept on this PC (shared folder unreachable at the time) is listed', localEntry?.source === 'local' &&
+      localEntry.basedOn?.generation === genRescue, localEntry);
+    const localArch = await A.invoke('conflicts:archive', localCopy);
+    check('…and archived on this PC', localArch.ok && path.dirname(localArch.archivedTo) === path.join(localDir, 'archive') &&
+      !fs.existsSync(localCopy), localArch);
 
     check('the edit slot folder is empty at the end (no temp files)', ls(slotDirOf(c)).length === 0, ls(slotDirOf(c)));
   } finally {

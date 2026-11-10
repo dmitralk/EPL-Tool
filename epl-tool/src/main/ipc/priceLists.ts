@@ -1,13 +1,9 @@
 import { getDb } from '../database';
 import { audit } from '../audit';
-import { getRealUser } from '../currentUser';
 import { getCustomerAccess, requireCustomerChange, withManagers } from '../customerAccess';
+import { createPriceList } from '../priceLists';
 import { actor, handle } from './guard';
 import type { CreatePriceListInput, PriceListFull, PriceListHeader } from '../../types';
-
-function buildPriceListId(data: CreatePriceListInput): string {
-  return `${data.customer_ref_sap}${data.effective.replace(/-/g, '')}${data.mailing_date.replace(/-/g, '')}${data.price_list_version}`;
-}
 
 function fetchFull(price_list_id: string): PriceListFull {
   const db = getDb();
@@ -58,82 +54,7 @@ export function registerPriceListHandlers() {
   });
 
   handle('price-lists:create', 'editor', (_e, data: CreatePriceListInput) => {
-    const db = getDb();
-    const customer = requireCustomerChange(db, actor(), data.customer_ref_sap);
-    const price_list_id = buildPriceListId(data);
-
-    const duplicate = db.prepare(`
-      SELECT 1 FROM price_lists
-      WHERE price_list_id = ?
-         OR (customer_ref_sap = ? AND effective = ? AND UPPER(TRIM(price_list_version)) = UPPER(TRIM(?)))
-      LIMIT 1
-    `).get(price_list_id, data.customer_ref_sap, data.effective, data.price_list_version);
-    if (duplicate) {
-      throw new Error(
-        `A price list with application date ${data.effective} and version ${data.price_list_version} already exists for this customer. ` +
-        'Please choose another date or version, or delete the existing price list.',
-      );
-    }
-
-    db.transaction(() => {
-      db.prepare(`
-        INSERT INTO price_lists (
-          price_list_id, customer_ref_sap, sap_plant, effective, mailing_date,
-          price_list_version, comments_about_changes, price_type, discount_percent, created_by_user_id
-        ) VALUES (
-          @price_list_id, @customer_ref_sap, @sap_plant, @effective, @mailing_date,
-          @price_list_version, @comments_about_changes, @price_type, @discount_percent, @created_by_user_id
-        )
-      `).run({
-        price_list_id,
-        customer_ref_sap: data.customer_ref_sap,
-        sap_plant: data.sap_plant || null,
-        effective: data.effective,
-        mailing_date: data.mailing_date,
-        price_list_version: data.price_list_version,
-        comments_about_changes: data.comments_about_changes || null,
-        price_type: data.price_type,
-        discount_percent: data.discount_percent ?? null,
-        created_by_user_id: getRealUser()?.id ?? null,
-      });
-
-      // Update customer last price list info
-      db.prepare(`
-        UPDATE customers SET
-          last_price_list_version = @version,
-          last_price_list_id = @price_list_id,
-          effective = @effective,
-          mailing_date = @mailing_date
-        WHERE customer_ref_sap = @ref
-      `).run({
-        version: data.price_list_version,
-        price_list_id,
-        effective: data.effective,
-        mailing_date: data.mailing_date,
-        ref: data.customer_ref_sap,
-      });
-
-      const entryStmt = db.prepare(`
-        INSERT INTO price_list_entries (price_list_id, product_type, rip_code, product_name, net_price, currency, unit)
-        VALUES (@price_list_id, @product_type, @rip_code, @product_name, @net_price, @currency, @unit)
-      `);
-      // Only the line fields come from the caller; the list id is always the server-computed one.
-      for (const e of data.entries) {
-        entryStmt.run({
-          product_type: e.product_type, rip_code: e.rip_code, product_name: e.product_name,
-          net_price: e.net_price, currency: e.currency, unit: e.unit, price_list_id,
-        });
-      }
-
-      audit(db, {
-        action: 'price_list.create', entityType: 'price_list', entityKey: price_list_id, customerRef: data.customer_ref_sap,
-        summary: `Created price list ${data.price_list_version} for ${customer.customer_short_name} ` +
-          `(effective ${data.effective}, ${data.entries.length} product${data.entries.length === 1 ? '' : 's'})`,
-        details: { price_type: data.price_type, discount_percent: data.discount_percent ?? null, mailing_date: data.mailing_date },
-      });
-    })();
-
-    return fetchFull(price_list_id);
+    return fetchFull(createPriceList(getDb(), actor(), data));
   });
 
   handle('price-lists:delete', 'editor', (_e, price_list_id: string) => {

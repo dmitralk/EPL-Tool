@@ -14,10 +14,12 @@ import { registerPrefsHandlers } from './prefs';
 import { registerUserHandlers } from './users';
 import { registerAuditHandlers } from './audit';
 import { registerSyncHandlers } from './sync';
+import { registerConflictHandlers } from './conflicts';
 
 export function registerAllIpcHandlers() {
   registerAuthHandlers();
   registerSyncHandlers();
+  registerConflictHandlers();
   registerPrefsHandlers();
   registerUserHandlers();
   registerAuditHandlers();

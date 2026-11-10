@@ -63,6 +63,7 @@ export function SyncBanners() {
     <div>
       {status.recovery && (
         <Banner tone="amber" icon={History} actions={<>
+          <BannerButton onClick={() => act.recover('resume')} disabled={working}>Resume editing</BannerButton>
           <BannerButton onClick={() => act.recover('publish')} disabled={working}>Publish now</BannerButton>
           <BannerButton onClick={() => act.recover('discard')} disabled={working}>Discard</BannerButton>
         </>}>

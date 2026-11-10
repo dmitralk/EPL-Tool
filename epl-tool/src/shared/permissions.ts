@@ -107,6 +107,18 @@ export function canStartEditing(u: U): boolean {
   return isEditor(u);
 }
 
+// Conflict copies (unpublished work kept in EPL-Conflicts/, Phase D rescue tool): everybody can review them; re-applying a
+// price list from one is creating it (same per-customer rule); archiving a reviewed copy is for admins.
+export function canReviewConflictCopies(u: U): boolean {
+  return canView(u);
+}
+
+export const canReapplyPriceLists = canManagePriceLists;
+
+export function canArchiveConflictCopies(u: U): boolean {
+  return isAdmin(u);
+}
+
 // Why the open copy of a shared database can't be changed: read mode, offline copy, or a newer app is needed.
 export type WriteBlock = 'read' | 'offline' | 'update';
 
@@ -231,6 +243,9 @@ export const PERMISSION_MATRIX: readonly MatrixRow[] = [
   { action: 'Try own FX rates on the Analysis screen for the current session', cells: global(canUseSessionFxRates) },
   { action: 'Back up now, restore a backup', cells: global(canBackup) },
   { action: 'Start editing the shared database (changes are then published for everybody)', cells: global(canStartEditing) },
+  { action: 'Review conflict copies (unpublished work kept in EPL-Conflicts)', cells: global(canReviewConflictCopies) },
+  { action: 'Re-apply price lists from a conflict copy', cells: perCustomer(canReapplyPriceLists) },
+  { action: 'Archive a reviewed conflict copy', cells: global(canArchiveConflictCopies) },
   { action: 'Manage users', cells: global(canManageUsers) },
   { action: 'View the activity log', cells: global(canViewActivity) },
 ];

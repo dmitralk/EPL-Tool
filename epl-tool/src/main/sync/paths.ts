@@ -18,3 +18,8 @@ export function cacheDir(): string {
 export function workDir(): string {
   return path.join(localDataDir(), 'work');
 }
+
+// Conflict copies kept on this PC when the shared folder could not take them.
+export function localConflictsDir(): string {
+  return path.join(localDataDir(), 'conflicts');
+}

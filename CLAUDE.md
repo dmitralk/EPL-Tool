@@ -4,7 +4,7 @@ This file is read automatically by Claude Code at conversation start. It gives f
 
 ---
 
-## Current state & next session (updated 10 Nov 2026: v0.7.0 released, Phase D steps 1–2 done)
+## Current state & next session (updated 10 Nov 2026: v0.7.0 released, Phase D steps 1–3 done)
 
 **Released:** **v0.7.0** (9 Nov 2026) = dev-plan Phase C (read copy + publish): https://github.com/dmitralk/EPL-Tool/releases/tag/v0.7.0.
 Before: **v0.6.1** (6 Nov 2026) = Phase A (foundations) + Phase B (access rights + Guides & Help).
@@ -21,11 +21,11 @@ another agent's docs-only pointer to a local-only AI study (`docs/local/`, exclu
    (decision 10) — running in parallel; fix what it finds in a v0.7.x patch.
 2. **Phase D (edit slot) → v0.8** — started right after the v0.7.0 release at the user's request (no need to wait for the
    test). Kickoff decisions + approved technical design in the dev-plan's Phase D section. **Step 1 (slot core, incl. the
-   take-over record `takesOver` accepted by the user) and step 2 (idle release, waiting, notifications) done and committed
-   on `main`, not pushed yet — ask before pushing.** **Next: step 3** (recovery with the slot: [Resume editing] + the rescue
-   tool `ipc/conflicts.ts` / `main/sync/rescue.ts`), then 4 (screens: claim/waiting/take-over dialogs, "Anna is editing"
-   status line, recovery banner, Conflict copies screen — replacing the interim toasts/banners of steps 1–2), 5 (Help
-   editing topics, README, *What's new*), then Phase E → release v0.8.0. Extend `phase-d.checks.ts` with each step.
+   take-over record `takesOver` accepted by the user), step 2 (idle release, waiting, notifications) and step 3 (recovery
+   with the slot: Resume editing; rescue tool) done and committed on `main`, not pushed yet — ask before pushing.** **Next:
+   step 4** (screens: claim/waiting/take-over dialogs, "Anna is editing" status line, recovery banner, Settings → Conflict
+   copies screen with review / re-apply / archive and a count badge — replacing the interim toasts/banners of steps 1–3), 5
+   (Help editing topics, README, *What's new*), then Phase E → release v0.8.0. Extend `phase-d.checks.ts` with each step.
 3. Open item: the tracked sample data files (Known issues). Company/proxy details live in `docs/local/corporate-network.md`.
 
 **Working agreements with the user**
@@ -49,7 +49,7 @@ another agent's docs-only pointer to a local-only AI study (`docs/local/`, exclu
 variables in the same PowerShell call: the one-liner is in `docs/local/corporate-network.md`, local only — see *Corporate
 network* below):
 `npx tsc --noEmit -p .` (exactly 4 known errors: `export.ts` ×2, `Step2ConfigurePricing.tsx`, `Step3ReviewProducts.tsx`),
-`npx eslint <changed files>`, `npm test` (62 tests), `npm run test:main` (main-process checks, see below), and packaging into a temp folder (`out/` is often locked by OneDrive):
+`npx eslint <changed files>`, `npm test` (67 tests), `npm run test:main` (main-process checks, see below), and packaging into a temp folder (`out/` is often locked by OneDrive):
 `node -e "require('@electron-forge/core').api.package({dir:process.cwd(),outDir:process.env.TEMP+'\\epl-pkg-check',interactive:false})"`,
 then delete that folder. Release procedure: see *GitHub Actions* below (`npm version X.Y.Z --no-git-tag-version`, commit, BOM-free
 annotated tag, push `main` + tag; CI runs `npm test`, builds and publishes).
@@ -83,6 +83,13 @@ annotated tag, push `main` + tag; CI runs `npm test`, builds and publishes).
   `waitForSlot`/`stopWaiting` + `watchSlotForWaiter` (at every check: one notice per taken→free change). `sync.ts` emits
   notices (`onNotice`: slot-free, released, refused, slot-lost); `main/notify.ts` shows them as Windows notifications
   (subscribed in `main/index.ts`, so the checks record them via the worker op `notices`).
+  **Recovery:** `recoverUnpublished('resume' | 'publish' | 'discard', { takeOver })` goes through `acquireSlot` (keeps the
+  session's claim if it still holds the slot; returns the same waiting / takeOver answers as Start editing), then
+  `centralMovedOn` (manifest generation / sha256) sends a copy that can no longer be published to `EPL-Conflicts/` at once.
+  **Rescue tool:** `main/sync/rescue.ts` (list / analyze / reapply / archive; copies are read through a temp copy;
+  `CentralStore.listConflictsFolder` / `copyConflictCopy` / `archiveConflictCopy` accept only conflict copies of this DB;
+  copies kept on this PC are in `localConflictsDir()`), `ipc/conflicts.ts`. Price-list creation lives in
+  `main/priceLists.ts` (`createPriceList`, `findDuplicatePriceList`) — used by `price-lists:create` and by re-apply.
 - Simulated PCs for the checks: `scripts/main-checks/pcs.ts` (used by `phase-c` and `phase-d`): each check file forks itself
   into worker "PCs" (`EPL_PC` env) with their own userData, `%LOCALAPPDATA%`, identity and computer name (`EPL_MACHINE`); the
   orchestrator publishes as "someone else" and writes/ages claim files.
@@ -90,7 +97,7 @@ annotated tag, push `main` + tag; CI runs `npm test`, builds and publishes).
 - The stored legacy logo path was a macOS path; the logo must be selected once in Settings (done by the user or still to do —
   ask if exports lack a logo).
 - The main-process checks are in the repo: `epl-tool/scripts/main-checks/` (`npm run test:main`: phase-a 51, phase-b 106,
-  phase-c 166, phase-d 100 — phase-d grows with each Phase D step; temp copies of the sample DBs; not run in CI). The sample DBs are at schema 0 (WAL, no
+  phase-c 166, phase-d 148 — phase-d grows with each Phase D step; temp copies of the sample DBs; not run in CI). The sample DBs are at schema 0 (WAL, no
   users), so the checks build their own databases from copies.
 - npm on this PC: `npm install <pkg>` also bumped an existing dev dependency (tsx) — check the `package.json`/lockfile diff and
   revert unintended changes; npm warns that package install scripts are held back (`allow-scripts`), so avoid a fresh `npm ci`
@@ -141,7 +148,8 @@ annotated tag, push `main` + tag; CI runs `npm test`, builds and publishes).
 │   │   │   ├── customerAccess.ts ← customer managers, requireCustomerChange / requireCustomerHide (per-customer refusals)
 │   │   │   ├── audit.ts    ← audit(db, entry) — call inside the same transaction as the change; diffFields()
 │   │   │   ├── localSettings.ts ← per-PC settings.json (connection {mode local|shared, path}, lastDbPath, per-user prefs); never in the DB
-│   │   │   ├── sync/       ← Phase C/D shared database: centralStore.ts (CentralStore/SyncedFolderStore — the only code touching the shared folder, incl. edit-slot claim files), sync.ts (connection, read/edit modes, edit slot, publish, recovery, status), editSlot.ts (slot rules, pure), paths.ts (%LOCALAPPDATA%\epl-tool cache/work), oneDrive.ts (synced-folder detection)
+│   │   │   ├── sync/       ← Phase C/D shared database: centralStore.ts (CentralStore/SyncedFolderStore — the only code touching the shared folder, incl. edit-slot claim files and conflict copies), sync.ts (connection, read/edit modes, edit slot, publish, recovery, status), editSlot.ts (slot rules, pure), rescue.ts (conflict copies: list, review, re-apply, archive), paths.ts (%LOCALAPPDATA%\epl-tool cache/work/conflicts), oneDrive.ts (synced-folder detection)
+│   │   │   ├── priceLists.ts ← createPriceList (rights, duplicate guard, customer update, audit) — used by price-lists:create and the rescue tool
 │   │   │   ├── logo.ts     ← logo stored in the DB as a data URL (app_settings.logo_data_url)
 │   │   │   ├── menu.ts     ← release menu policy (none on Windows) + DevTools guard (admins only in releases)
 │   │   │   ├── notify.ts   ← Windows notifications for the edit slot (slot free, released, refused, slot lost); Squirrel sets the app id
@@ -325,7 +333,8 @@ V  prefs:get, prefs:set
 P  db:select-file, db:open, db:create, db:get-path, db:is-open, db:last-open-error      V  db:open-folder
 P  sync:status, sync:select-central, sync:connect, sync:check, sync:apply-update, sync:refresh   (+ event sync:status → window)
 P  sync:start-editing ({ takeOver }; Admins/Users, or anybody on a DB without users), sync:cancel-claim, sync:wait-for-slot, sync:stop-waiting
-P  sync:set-busy, sync:keep-editing, sync:dismiss-released, sync:publish, sync:finish-editing, sync:recover, sync:dismiss-conflict
+P  sync:set-busy, sync:keep-editing, sync:dismiss-released, sync:publish, sync:finish-editing, sync:recover (resume/publish/discard, { takeOver }), sync:dismiss-conflict
+V  conflicts:list, conflicts:analyze      E  conflicts:reapply (edit mode; per-customer + duplicate checks per list)      A  conflicts:archive (no writes flag: moves a file only)
 P  backup:list, backup:open-folder, backup:restore (A when a DB is open; else admin in the backup)      A  backup:create
 V  users:list      A  users:create, users:update
 V  audit:list, audit:export-xlsx
@@ -705,7 +714,7 @@ npm install          # install dependencies
 npm start            # dev mode with Vite HMR (DevTools auto-open in dev)
 npm run package      # build unpackaged app (dev/testing only, no installer); prepackage prepares better-sqlite3 for Electron
 npm run make         # build distributable installers (Squirrel .exe + ZIP for Windows); premake does the same
-npm test             # unit tests (node:test via tsx): src/**/*.test.ts — shared/permissions.test.ts, shared/sync.test.ts, main/sync/editSlot.test.ts (62 tests); also run in CI
+npm test             # unit tests (node:test via tsx): src/**/*.test.ts — shared/permissions.test.ts, shared/sync.test.ts, main/sync/editSlot.test.ts (67 tests); also run in CI
 npm run test:main    # main-process checks (scripts/main-checks/*.checks.ts) on temp copies of the sample DBs; local only
 ```
 
@@ -720,7 +729,7 @@ A packaged app does not pick up source changes — rebuild it after every change
 
 **Type check / lint**: `npx tsc --noEmit -p .` and `npx eslint <files>` from `epl-tool/`. Pre-existing tsc errors (not blocking Vite builds): `export.ts` lines ~48/~358 (`Promise<Buffer>` casts) and `Step2ConfigurePricing.tsx` / `Step3ReviewProducts.tsx` (currency `string` passed where `'USD' | 'EUR'` expected). ESLint config lacks the `react-hooks` plugin, so existing `eslint-disable react-hooks/...` comments report "rule not found". ExcelJS's own `Buffer` type clashes with Node's `Buffer<ArrayBufferLike>`: pass images as `addImage({ base64 })` rather than `{ buffer }`.
 
-**Testing main-process code without launching the app** (launching opens the real SharePoint DB and writes a startup backup): **`npm run test:main`** runs `epl-tool/scripts/main-checks/*.checks.ts`. `run.js` bundles each file with esbuild (`platform: 'node'`, `external: ['better-sqlite3', 'exceljs']`, `alias: { electron: electron-stub.js }` — the stub captures `ipcMain.handle` into a Map, fakes `app.getPath` / `dialog`, and records `shell.openExternal` so mailto drafts don't open Outlook) and runs it with Electron's own Node (`ELECTRON_RUN_AS_NODE=1`, `NODE_PATH=epl-tool/node_modules`) — `better-sqlite3` is built for Electron's ABI, so plain `node` can't load it. `harness.ts` has the helpers (`invoke(channel, …)` calls the real handlers, `check`, `expectError`, `allowed`, `sha`, `userVersion`, `setupTemp`, `finish`). The checks only work on **copies** of the repo-root sample DBs in `%TEMP%`. `phase-a.checks.ts` (51: migrations, byte-identical re-open, allow-list, logo export, prefs, identity — the UPN/OneDrive checks are skipped off Windows work PCs) and `phase-b.checks.ts` (106: Migration 7 on both DB files, bootstrap, guard declarations, Admin/User/Viewer/unknown/deactivated rules via `EPL_DEV_*` + `initIdentity({ allowOverride: true })`, preview, email skip-reporting, audit entries, orphan/crafted-entry price-list cases, damaged-DB restore), `phase-c.checks.ts` (166: Migration 8, the shared-folder store, then read/edit mode on simulated PCs) and `phase-d.checks.ts` (100: the edit slot on simulated PCs — claim/hold, waiting, waiting window + cancel, competing and late claims, take-over and revived claims, crash recovery with the slot, sleeping laptop, Users within their rights, a v0.7 app read-only, 7-day cleanup, waiting + slot-free notifications, idle release with real shortened timers, notifications). `npm run test:main -- phase-b` runs one file; `EPL_CHECKS_VERBOSE=1` prints passing checks too. Not in CI (needs the local sample DBs). The scripts are type-checked by `tsc` (tsconfig includes `scripts/**/*`).
+**Testing main-process code without launching the app** (launching opens the real SharePoint DB and writes a startup backup): **`npm run test:main`** runs `epl-tool/scripts/main-checks/*.checks.ts`. `run.js` bundles each file with esbuild (`platform: 'node'`, `external: ['better-sqlite3', 'exceljs']`, `alias: { electron: electron-stub.js }` — the stub captures `ipcMain.handle` into a Map, fakes `app.getPath` / `dialog`, and records `shell.openExternal` so mailto drafts don't open Outlook) and runs it with Electron's own Node (`ELECTRON_RUN_AS_NODE=1`, `NODE_PATH=epl-tool/node_modules`) — `better-sqlite3` is built for Electron's ABI, so plain `node` can't load it. `harness.ts` has the helpers (`invoke(channel, …)` calls the real handlers, `check`, `expectError`, `allowed`, `sha`, `userVersion`, `setupTemp`, `finish`). The checks only work on **copies** of the repo-root sample DBs in `%TEMP%`. `phase-a.checks.ts` (51: migrations, byte-identical re-open, allow-list, logo export, prefs, identity — the UPN/OneDrive checks are skipped off Windows work PCs) and `phase-b.checks.ts` (106: Migration 7 on both DB files, bootstrap, guard declarations, Admin/User/Viewer/unknown/deactivated rules via `EPL_DEV_*` + `initIdentity({ allowOverride: true })`, preview, email skip-reporting, audit entries, orphan/crafted-entry price-list cases, damaged-DB restore), `phase-c.checks.ts` (166: Migration 8, the shared-folder store, then read/edit mode on simulated PCs) and `phase-d.checks.ts` (100: the edit slot on simulated PCs — claim/hold, waiting, waiting window + cancel, competing and late claims, take-over and revived claims, crash recovery with the slot, sleeping laptop, Users within their rights, a v0.7 app read-only, 7-day cleanup, waiting + slot-free notifications, idle release with real shortened timers, notifications, Resume editing / take-over / early refusal on recovery, rescue tool: list, review, re-apply with rights and duplicate checks, archive, OneDrive and local copies, refused paths). `npm run test:main -- phase-b` runs one file; `EPL_CHECKS_VERBOSE=1` prints passing checks too. Not in CI (needs the local sample DBs). The scripts are type-checked by `tsc` (tsconfig includes `scripts/**/*`).
 
 ### Corporate network (company Windows machines)
 Direct access to GitHub/npm/Electron downloads is blocked and HTTPS is SSL-inspected. The working setup — session environment
@@ -773,6 +782,6 @@ The connection is kept only in the local **`settings.json`**: `connection: { mod
 - **PBP emails in drafts**: the customer page displays PBP copy/common from `admin_emails` (Settings), but drafts use each customer's own `email_pbp_copy` / `email_pbp_common` columns. Changing an admin email in Settings does not change existing customers' drafts. Candidate fix: build recipients from `admin_emails` in `export:open-mail-bulk`.
 - **Data files in the repo**: `EPL-Database.db`, `EPL-Database BackUp.db`, `All_Prices.xlsx`, `All_PricesTest.xlsx` are tracked in git and contain customer names, emails and prices. If the repo is public, make it private or untrack them (history keeps old copies unless rewritten).
 - **Pre-existing type/lint errors**: see Build commands → Type check / lint.
-- **Multi-user access + user access rights (Phase C released; edit slot next)**: `docs/multi-user-study.md` (local read copy + single "edit slot" via claim files next to the DB on SharePoint + atomic publish with a generation check), `docs/access-rights-study.md` (Windows-account identity, Admin/User/Viewer roles, per-customer pricing mode Open / Managed by PBP / Managed by named users, server-side IPC guard, audit log) and `docs/dev-plan.md` (phases A–F, releases v0.6–v0.8.1, in-app Help plan, historical price-list import spec). Decisions are recorded in each study. **Phase A (Foundations) and Phase B (access rights + Guides & Help) done and released as v0.6.1 on 6 Nov 2026** (permission matrix checked by the user with *Preview as…*). **Phase C (read copy + publish) released as v0.7.0 on 9 Nov 2026** (two-PC test with a colleague running on the release); in v0.7 only admins edit the shared database, and two admins editing at once is caught by the generation check. **Phase D (edit slot) in progress** (steps 1–2 done: claim files, Users may start editing, v0.7 apps read-only after a v0.8 publish via `minAppVersion` 0.8.0, idle release after 30 min, waiting with notifications). Heads-up for Migration 7: the bootstrap admin is whoever's Windows identity first opens a database with v0.6.1 (on the Windows dev PC that is the account whose UPN is one of the named admins); the other admins are then added in Settings → Users. With v0.7, a shared database without users gets its first admin at *Start editing*.
+- **Multi-user access + user access rights (Phase C released; edit slot next)**: `docs/multi-user-study.md` (local read copy + single "edit slot" via claim files next to the DB on SharePoint + atomic publish with a generation check), `docs/access-rights-study.md` (Windows-account identity, Admin/User/Viewer roles, per-customer pricing mode Open / Managed by PBP / Managed by named users, server-side IPC guard, audit log) and `docs/dev-plan.md` (phases A–F, releases v0.6–v0.8.1, in-app Help plan, historical price-list import spec). Decisions are recorded in each study. **Phase A (Foundations) and Phase B (access rights + Guides & Help) done and released as v0.6.1 on 6 Nov 2026** (permission matrix checked by the user with *Preview as…*). **Phase C (read copy + publish) released as v0.7.0 on 9 Nov 2026** (two-PC test with a colleague running on the release); in v0.7 only admins edit the shared database, and two admins editing at once is caught by the generation check. **Phase D (edit slot) in progress** (steps 1–3 done: claim files, Users may start editing, v0.7 apps read-only after a v0.8 publish via `minAppVersion` 0.8.0, idle release after 30 min, waiting with notifications, Resume editing, rescue tool in the main process). Heads-up for Migration 7: the bootstrap admin is whoever's Windows identity first opens a database with v0.6.1 (on the Windows dev PC that is the account whose UPN is one of the named admins); the other admins are then added in Settings → Users. With v0.7, a shared database without users gets its first admin at *Start editing*.
 - **Open product questions (not yet decided by the user)**: (1) mass wizard Step 1 customer dropdown currently only *filters* the table — the user may prefer that ticking in the dropdown also selects rows for repricing; (2) after deleting a price list, the customer falls back to the remaining list with the latest *effective* date (not the most recently *created*) — confirm if this is the desired rule.
 - **AI features (study only, nothing implemented; 9 Nov 2026)**: using the company's per-user LLM service from EPL Tool was studied and tested end to end on the Windows dev PC (browser sign-in, quota, model list, a model answer). Findings, connection details, integration design (sign-in in the main process, `net.fetch`, encrypted token cache, no AI write path), use cases, open questions and a re-runnable test script are in **`docs/local/ai-study.md`** + `docs/local/llmhub-test/`. That folder is **local only**: excluded through `.git/info/exclude` because this GitHub repo is public and the study contains internal company details — it exists only in the SharePoint-synced working folder, not in clones. Don't copy those details (hosts, IDs, internal links) into tracked files or code before the open questions in the study (incl. repo visibility) are settled.
