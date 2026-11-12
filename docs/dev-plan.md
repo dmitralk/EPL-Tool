@@ -403,7 +403,7 @@ parallel.
 - a publish on top of a newer central version is refused and the work is kept
 - offline start works from the last copy
 
-### Phase D — Edit slot (3–4 d) — **steps 1–5 built 10 Nov 2026** (on `main`; two-PC test pending; released with Phase E as v0.8.0)
+### Phase D — Edit slot (3–4 d) — **steps 1–5 built 10 Nov 2026; released with Phase E as v0.8.0 on 12 Nov 2026** (two-PC test on the release)
 
 **Kickoff decisions (confirmed by the user on 9 Nov 2026 — all proposals accepted).** Design in the multi-user study
 §5.5–5.7; timeouts decided earlier (§8: take-over after 15 min without heartbeat, release after 30 min without changes).
@@ -571,7 +571,7 @@ title, every placeholder is known and every `help:` link exists (confirmed by br
 
 **Done when:** all scenarios in the multi-user study §7 (testing) work on two PCs.
 
-### Phase E — Rollout (1.5–2 d) → release v0.8
+### Phase E — Rollout (1.5–2 d) → release v0.8 — **released as v0.8.0 on 12 Nov 2026** (go-live pending)
 
 **Kickoff decisions (confirmed by the user on 10 Nov 2026 — all proposals accepted, except the release order).**
 
@@ -719,9 +719,9 @@ table; *Editing* and *Activity log* mention force releases; *Getting started* li
 the card), the card and updates. *What's new* v0.8.0 final.
 
 - [x] **Settings → Shared database** card: current editor, last publish, generation, and *Force release* for admins.
-- [ ] **Updates:**
+- [x] **Updates:**
   - [x] An `Installer/` folder on SharePoint with `latest.json`; the app shows an update banner.
-  - [ ] The release procedure gains a step: copy the installer to SharePoint.
+  - [x] The release procedure gains a step: copy the installer to SharePoint (README: *Publish an installer…* on the card).
 - [x] **Help:** onboarding, rules of use, FAQ / troubleshooting. README and CLAUDE.md.
 - [ ] **Go-live** (§6) and a pilot with one colleague before everyone else.
 
@@ -814,10 +814,7 @@ All decisions are recorded (the last two on 5 Nov 2026):
 - **Historical import:** Admins plus Users, for the customers they may change.
 - **Session FX rates:** forgotten when the app closes.
 
-**Next step:** Phase D (edit slot) — started 9 Nov 2026 right after the v0.7.0 release, while the two-PC test of v0.7.0 runs
-with a colleague (separate SharePoint test folder with a copy of the database). Steps 1 (slot core), 2 (idle release,
-waiting, notifications), 3 (recovery with the slot + rescue tool), 4 (screens) and 5 (Help editing topics, README, draft
-*What's new*) are done (10 Nov 2026). Phase E: kickoff decisions and technical design approved 10 Nov 2026; step 1 (Force
-release) and 2 (installer folder + updates) done 10 Nov 2026, steps 3 (screens) and 4 (Help, docs) 12 Nov 2026; next:
-release v0.8.0. Phases A and B were
+**Next step:** the two-PC test of **v0.8.0** (released 12 Nov 2026 = Phases D + E) with a colleague, on the release (fixes
+as v0.8.x), then the go-live (§6) with one pilot colleague first; after that Phase F (historical import, v0.8.1). Phase D
+was built 9–10 Nov 2026 (steps 1–5), Phase E 10–12 Nov 2026 (steps 1–4). Phases A and B were
 released as **v0.6.1** on 6 Nov 2026 (v0.6.0 was not released separately); Phase C as **v0.7.0** on 9 Nov 2026.

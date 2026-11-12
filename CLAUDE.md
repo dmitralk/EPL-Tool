@@ -4,14 +4,14 @@ This file is read automatically by Claude Code at conversation start. It gives f
 
 ---
 
-## Current state & next session (updated 12 Nov 2026: v0.7.0 released; Phase D built; Phase E steps 1–4 done, v0.8.0 next)
+## Current state & next session (updated 12 Nov 2026: v0.8.0 released = Phases D + E; two-PC test and go-live next)
 
-**Released:** **v0.7.0** (9 Nov 2026) = dev-plan Phase C (read copy + publish): https://github.com/dmitralk/EPL-Tool/releases/tag/v0.7.0.
-Before: **v0.6.1** (6 Nov 2026) = Phase A (foundations) + Phase B (access rights + Guides & Help).
+**Released:** **v0.8.0** (12 Nov 2026) = dev-plan Phases D (edit slot) + E (rollout): https://github.com/dmitralk/EPL-Tool/releases/tag/v0.8.0.
+Before: **v0.7.0** (9 Nov 2026) = Phase C (read copy + publish); **v0.6.1** (6 Nov 2026) = Phase A (foundations) + Phase B
+(access rights + Guides & Help).
 
-**Phase D (edit slot) → v0.8 — built (steps 1–5), two-PC test pending.** Kickoff decisions (11 points) + approved technical
-design + progress notes are in the dev-plan's Phase D section (read it first). Built in reviewable steps, one commit each,
-all on `main` and **not pushed** (`origin/main` is still the v0.7.0 release commit `96f07f9`; ask before pushing):
+**Phase D (edit slot) — released in v0.8.0.** Kickoff decisions (11 points) + approved technical
+design + progress notes are in the dev-plan's Phase D section (read it first). Built in reviewable steps, one commit each:
 1. `a9e446a` slot core — claim files in `EPL-EditSlot/`, waiting window, heartbeat, lost slot, take-over question + the
    `takesOver` record (accepted by the user), Users may start editing, `MIN_EDIT_APP_VERSION` 0.8.0
 2. `4150e96` idle release after 30 min (busy screens keep the slot, Keep editing), waiting + slot-free notification,
@@ -25,11 +25,10 @@ all on `main` and **not pushed** (`origin/main` is still the v0.7.0 release comm
    `shared/sync.ts` via `help/values.ts` (`HELP_VALUES`, checked by `help/help.test.ts`); "?" links from the waiting /
    take-over dialog, the Conflict copies screens and the red banner; README; draft *What's new* v0.8.0
 
-**Phase E (rollout) → v0.8.0 — in progress.** Kickoff decisions (9 points, 10 Nov 2026: all proposals accepted except the
+**Phase E (rollout) — released in v0.8.0.** Kickoff decisions (9 points, 10 Nov 2026: all proposals accepted except the
 release order — v0.8.0 is tagged right after Phase E, the two-PC test runs on the release, fixes as v0.8.x) and the
 **approved technical design** (with: two installers kept, Install update refused in a dev run, force releases recorded in
-the Activity log by the next publish) are in the dev-plan's Phase E section. Build order, one commit each, asking first (also
-on `main`, **not pushed**):
+the Activity log by the next publish) are in the dev-plan's Phase E section. Build order, one commit each:
 1. `1c7c6fc` Force release: release records `EPL-EditSlot/<slotId>.release.json`, `forceRelease` /
    `getDetails` in `sync.ts`, `logReleases` at publish, `sync:force-release` (admin) + `sync:details` (viewer),
    `canForceRelease` + matrix row; `phase-e.checks.ts` (46)
@@ -46,20 +45,21 @@ on `main`, **not pushed**):
    `useSyncActions().installUpdate / openInstallerFolder / dismissUpdate`, Activity area *Shared database* (`sync.`),
    `canPublishInstaller` + matrix row (`useCan().forceRelease` / `.publishInstaller`, not gated by `writable`); checked
    visually in the isolated dev instance
-4. Help + docs (the commit after `db79291`): new topics *Installing EPL Tool & first start* (`14-installing.md`), *Rules of
+4. `9cf08ca` Help + docs: new topics *Installing EPL Tool & first start* (`14-installing.md`), *Rules of
    use* (`15-rules-of-use.md`, moved out of *Shared database*), *Onboarding a new user* (`16-onboarding.md`, admins: per
    colleague + checklist to send, publishing a setup, going live) and *FAQ & troubleshooting* (`17-faq.md`); *Shared
    database* gains the card, Force release, Updates; Help values `INSTALLERS_KEPT`, `CLEANUP_DAYS`; README (install from
-   `Installer/`, release procedure step 4: publish the setup with the card); final *What's new* v0.8.0 (dated 12 Nov 2026 —
-   change the date if the tag is made later)
+   `Installer/`, release procedure step 4: publish the setup with the card); final *What's new* v0.8.0
+Then the release commit (version 0.8.0) and the annotated tag `v0.8.0`, pushed with `main`.
 
 **Next session:**
-- **Release v0.8.0** (ask first): `npm version 0.8.0 --no-git-tag-version`, commit, BOM-free annotated tag `v0.8.0`, push
-  `main` + tag; then, once CI has published the release, download the setup and publish it into the real `Installer/` with
-  the card (*Publish an installer…*), and run the two-PC test on the release (fixes as v0.8.x).
-- **Two-PC test of v0.7.0** with a colleague (separate SharePoint test folder) — results not reported yet. `main` now holds
-  unreleased Phase D work, so a v0.7.x fix would go on a branch from tag `v0.7.0` (tag v0.7.x there, then bring the fix
-  into `main`).
+- After the v0.8.0 CI build: download the setup from the release and publish it into the real `Installer/` with the card
+  (*Publish an installer…*) — this is also the first real test of the card on the shared database.
+- **Two-PC test of v0.8.0** with a colleague (separate SharePoint test folder), on the release; fixes as v0.8.x. Also
+  confirm there that Squirrel's setup updates an existing install and starts it (*Install update*). The results of the
+  earlier v0.7.0 test were never reported; v0.7.x fixes are no longer planned (v0.8.0 supersedes it).
+- Then the go-live (dev-plan §6, Help *Onboarding a new user*) with one pilot colleague first, and Phase F (historical
+  import, v0.8.1).
 - **Visual checks**: procedure, helper scripts and pitfalls in `docs/local/visual-check/README.md` (local only; ask before
   starting the app).
 - Open item: the tracked sample data files (Known issues). Company/proxy details live in `docs/local/corporate-network.md`.
@@ -829,7 +829,7 @@ The connection is kept only in the local **`settings.json`**: `connection: { mod
 
 **Release procedure**: bump `epl-tool/package.json` (`npm version X.Y.Z --no-git-tag-version`), commit, then `git tag -a vX.Y.Z -F notes.txt` (notes = tag message) and `git push origin main vX.Y.Z`. On Windows PowerShell 5 write `notes.txt` without a BOM (`[IO.File]::WriteAllText(path, text, (New-Object Text.UTF8Encoding($false)))`) — `Set-Content -Encoding utf8` adds one and it ends up at the start of the release notes. CI requires Node 22 (`@electron/rebuild` 4 needs >= 22.12).
 
-**Release history**: latest published release is **v0.7.0** (9 Nov 2026: shared database — local read copy, change detection, offline copy, admin edit mode with auto-publish and the generation check, `EPL-Conflicts/`, setup screen and status line, Guides & Help *Shared database*; Migration 8). Before: **v0.6.1** (6 Nov 2026: users and roles, per-customer pricing management, activity log, New Customer, Preview as…, session FX rates, Guides & Help, logo in the DB, per-user email templates; Migration 7). v0.6.0 was never tagged. Before that: **v0.5.2** (Emails tab, backups, Analysis columns/column picker, searchable customer dropdowns, unified email dialog, price list delete, duplicate guard, dialog close fix). Tags v0.5.0 and v0.5.1 exist but their CI builds failed (Node 20; then native rebuild in the packager temp dir) — no releases for them.
+**Release history**: latest published release is **v0.8.0** (12 Nov 2026: shared editing — the edit slot (claim files in `EPL-EditSlot/`, waiting with notifications, take-over, idle release after 30 min, Resume editing after a crash), Users may edit within their rights, Conflict copies with re-apply, Settings → Shared database with Force release, `Installer/` + Install update banner, Guides & Help: editing, conflict copies, installing, rules of use, onboarding, FAQ; no schema change, `minAppVersion` 0.8.0). Before: **v0.7.0** (9 Nov 2026: shared database — local read copy, change detection, offline copy, admin edit mode with auto-publish and the generation check, `EPL-Conflicts/`, setup screen and status line, Guides & Help *Shared database*; Migration 8). Before: **v0.6.1** (6 Nov 2026: users and roles, per-customer pricing management, activity log, New Customer, Preview as…, session FX rates, Guides & Help, logo in the DB, per-user email templates; Migration 7). v0.6.0 was never tagged. Before that: **v0.5.2** (Emails tab, backups, Analysis columns/column picker, searchable customer dropdowns, unified email dialog, price list delete, duplicate guard, dialog close fix). Tags v0.5.0 and v0.5.1 exist but their CI builds failed (Node 20; then native rebuild in the packager temp dir) — no releases for them.
 
 ---
 
@@ -848,6 +848,6 @@ The connection is kept only in the local **`settings.json`**: `connection: { mod
 - **PBP emails in drafts**: the customer page displays PBP copy/common from `admin_emails` (Settings), but drafts use each customer's own `email_pbp_copy` / `email_pbp_common` columns. Changing an admin email in Settings does not change existing customers' drafts. Candidate fix: build recipients from `admin_emails` in `export:open-mail-bulk`.
 - **Data files in the repo**: `EPL-Database.db`, `EPL-Database BackUp.db`, `All_Prices.xlsx`, `All_PricesTest.xlsx` are tracked in git and contain customer names, emails and prices. If the repo is public, make it private or untrack them (history keeps old copies unless rewritten).
 - **Pre-existing type/lint errors**: see Build commands → Type check / lint.
-- **Multi-user access + user access rights (Phase C released; edit slot built, Phase E next)**: `docs/multi-user-study.md` (local read copy + single "edit slot" via claim files next to the DB on SharePoint + atomic publish with a generation check), `docs/access-rights-study.md` (Windows-account identity, Admin/User/Viewer roles, per-customer pricing mode Open / Managed by PBP / Managed by named users, server-side IPC guard, audit log) and `docs/dev-plan.md` (phases A–F, releases v0.6–v0.8.1, in-app Help plan, historical price-list import spec). Decisions are recorded in each study. **Phase A (Foundations) and Phase B (access rights + Guides & Help) done and released as v0.6.1 on 6 Nov 2026** (permission matrix checked by the user with *Preview as…*). **Phase C (read copy + publish) released as v0.7.0 on 9 Nov 2026** (two-PC test with a colleague running on the release); in v0.7 only admins edit the shared database, and two admins editing at once is caught by the generation check. **Phase D (edit slot) built on `main`, two-PC test pending** (steps 1–5 done: claim files, Users may start editing, v0.7 apps read-only after a v0.8 publish via `minAppVersion` 0.8.0, idle release after 30 min, waiting with notifications, Resume editing, rescue tool, the screens, the Help editing topics); Phase E steps 1–4 done (Force release, Installer/ + update banner, Shared database card, onboarding / install / rules / FAQ Help), release v0.8.0 next. Heads-up for Migration 7: the bootstrap admin is whoever's Windows identity first opens a database with v0.6.1 (on the Windows dev PC that is the account whose UPN is one of the named admins); the other admins are then added in Settings → Users. With v0.7, a shared database without users gets its first admin at *Start editing*.
+- **Multi-user access + user access rights (released up to v0.8.0; go-live and Phase F next)**: `docs/multi-user-study.md` (local read copy + single "edit slot" via claim files next to the DB on SharePoint + atomic publish with a generation check), `docs/access-rights-study.md` (Windows-account identity, Admin/User/Viewer roles, per-customer pricing mode Open / Managed by PBP / Managed by named users, server-side IPC guard, audit log) and `docs/dev-plan.md` (phases A–F, releases v0.6–v0.8.1, in-app Help plan, historical price-list import spec). Decisions are recorded in each study. **Phase A (Foundations) and Phase B (access rights + Guides & Help) done and released as v0.6.1 on 6 Nov 2026** (permission matrix checked by the user with *Preview as…*). **Phase C (read copy + publish) released as v0.7.0 on 9 Nov 2026** (two-PC test with a colleague running on the release); in v0.7 only admins edit the shared database, and two admins editing at once is caught by the generation check. **Phase D (edit slot) released in v0.8.0** (steps 1–5 done: claim files, Users may start editing, v0.7 apps read-only after a v0.8 publish via `minAppVersion` 0.8.0, idle release after 30 min, waiting with notifications, Resume editing, rescue tool, the screens, the Help editing topics); Phase E steps 1–4 done (Force release, Installer/ + update banner, Shared database card, onboarding / install / rules / FAQ Help) — **Phases D + E released as v0.8.0 on 12 Nov 2026** (two-PC test on the release, then go-live). Heads-up for Migration 7: the bootstrap admin is whoever's Windows identity first opens a database with v0.6.1 (on the Windows dev PC that is the account whose UPN is one of the named admins); the other admins are then added in Settings → Users. With v0.7, a shared database without users gets its first admin at *Start editing*.
 - **Open product questions (not yet decided by the user)**: (1) mass wizard Step 1 customer dropdown currently only *filters* the table — the user may prefer that ticking in the dropdown also selects rows for repricing; (2) after deleting a price list, the customer falls back to the remaining list with the latest *effective* date (not the most recently *created*) — confirm if this is the desired rule.
 - **AI features (study only, nothing implemented; 9 Nov 2026)**: using the company's per-user LLM service from EPL Tool was studied and tested end to end on the Windows dev PC (browser sign-in, quota, model list, a model answer). Findings, connection details, integration design (sign-in in the main process, `net.fetch`, encrypted token cache, no AI write path), use cases, open questions and a re-runnable test script are in **`docs/local/ai-study.md`** + `docs/local/llmhub-test/`. That folder is **local only**: excluded through `.git/info/exclude` because this GitHub repo is public and the study contains internal company details — it exists only in the SharePoint-synced working folder, not in clones. Don't copy those details (hosts, IDs, internal links) into tracked files or code before the open questions in the study (incl. repo visibility) are settled.
