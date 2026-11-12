@@ -17,6 +17,8 @@ Everybody can read it.
 - email addresses: assign, replace, remove
 - products, Standard EPL (drafts, prices, publish, discard), packaging, currencies, units
 - PBP emails, the logo, default FX rates, users, backup restores
+- shared database (area *Shared database*): each publish, and each **Force release** of an edit slot (recorded with the
+  next publish, at the time of the release)
 
 Each entry shows the person's name and Windows account. When an admin uses **Preview as…**, entries read
 *"Admin (account) as Previewed user"*.

@@ -40,7 +40,9 @@ access to the SharePoint folder is read-only.
   you get a **Windows notification** and a banner *The edit slot is free* with **Start editing**. Nobody gets the slot
   automatically: the first person to click **Start editing** gets it. **Stop waiting** ends the wait.
 - **Cancel**: nothing happens, you keep reading.
-- In a hurry? The status line tells you who is editing: ask them to click **Finish editing**.
+- In a hurry? The status line tells you who is editing: ask them to click **Finish editing**. If they are away and their
+  session is kept by a dialog left open, an admin can **Force release** it (see
+  [Shared database](help:shared-database)).
 
 ## Taking over an inactive session
 
@@ -63,7 +65,7 @@ change**: EPL Tool publishes your changes, frees the edit slot and goes back to 
 - {{IDLE_WARNING}} before, an amber banner warns you: *No changes for almost {{IDLE_RELEASE}}: at 11:15 EPL Tool
   publishes your changes and ends editing*. **Keep editing** starts the count again; **Finish editing** ends now.
 - An **open dialog or wizard** (for example halfway through a new price list) keeps the slot: the count starts again
-  when it closes.
+  when it closes. Don't leave one open when you walk away: an admin may have to force release your session.
 - Afterwards a grey banner and a Windows notification tell you that editing ended; **Start editing** on the banner
   starts again.
 - If publishing isn't possible at that moment (for example no network), you keep the slot and EPL Tool tries again a
@@ -93,6 +95,8 @@ the latest data:
   was asleep) and someone took over.
 - *Your editing session ended: this PC gave no sign of life for too long*: the same, but nobody has taken over yet.
   Someone could have, so editing doesn't simply carry on.
+- *Dmitri released your edit slot at 11:02*: an admin ended your session with **Force release** (Settings → Shared
+  database), for example because a dialog was left open while you were away.
 - *Your changes were not published*: someone else published while you were editing. This is very rare: it happens when
   OneDrive was paused or offline on one of the two PCs. As soon as EPL Tool notices, a red banner warns you: click
   **Finish editing**.

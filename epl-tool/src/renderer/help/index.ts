@@ -16,11 +16,17 @@ import whatsNew from './10-whats-new.md?raw';
 import sharedDatabase from './11-shared-database.md?raw';
 import editing from './12-editing.md?raw';
 import conflictCopies from './13-conflict-copies.md?raw';
+import installing from './14-installing.md?raw';
+import rulesOfUse from './15-rules-of-use.md?raw';
+import onboarding from './16-onboarding.md?raw';
+import faq from './17-faq.md?raw';
 
 export const HELP_TOPICS: { id: string; body: string }[] = [
   { id: 'getting-started', body: gettingStarted },
+  { id: 'installing', body: installing },
   { id: 'shared-database', body: sharedDatabase },
   { id: 'editing', body: editing },
+  { id: 'rules-of-use', body: rulesOfUse },
   { id: 'roles', body: roles },
   { id: 'pricing-modes', body: pricingModes },
   { id: 'price-lists', body: priceLists },
@@ -30,5 +36,7 @@ export const HELP_TOPICS: { id: string; body: string }[] = [
   { id: 'activity', body: activity },
   { id: 'backups', body: backups },
   { id: 'conflict-copies', body: conflictCopies },
+  { id: 'onboarding', body: onboarding },
+  { id: 'faq', body: faq },
   { id: 'whats-new', body: whatsNew },
 ].map(t => ({ ...t, body: fillHelpValues(t.body) }));

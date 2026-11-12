@@ -146,7 +146,7 @@ export function DatabaseSelector() {
           </Button>
           <p className="text-xs text-gray-500 -mt-1 px-1">
             Choose the database file in the SharePoint folder synced to this PC. EPL Tool works on a copy that it keeps up to
-            date; admins click <b>Start editing</b> to make changes.
+            date; Admins and Users click <b>Start editing</b> to make changes.
           </p>
 
           <div className="flex gap-2 pt-2">

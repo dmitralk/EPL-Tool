@@ -2,8 +2,8 @@
 // code uses, so Help can't contradict the app. A line that is only "{{NAME}}" is a generated block (HELP_BLOCKS, rendered by
 // the Help screen). Plain module (no "?raw" imports) so that help.test.ts can check the topics against it.
 import {
-  AUTO_PUBLISH_SECONDS, CHANGE_CHECK_SECONDS, IDLE_RELEASE_MINUTES, IDLE_WARNING_MINUTES, MIN_EDIT_APP_VERSION,
-  SLOT_HEARTBEAT_SECONDS, SLOT_TAKEOVER_MINUTES, SLOT_WAIT_SECONDS, describeSeconds,
+  AUTO_PUBLISH_SECONDS, CHANGE_CHECK_SECONDS, CLAIM_CLEANUP_DAYS, IDLE_RELEASE_MINUTES, IDLE_WARNING_MINUTES,
+  INSTALLERS_KEPT, MIN_EDIT_APP_VERSION, SLOT_HEARTBEAT_SECONDS, SLOT_TAKEOVER_MINUTES, SLOT_WAIT_SECONDS, describeSeconds,
 } from '../../shared/sync';
 
 export const HELP_VALUES: Record<string, string> = {
@@ -15,6 +15,8 @@ export const HELP_VALUES: Record<string, string> = {
   IDLE_RELEASE: describeSeconds(IDLE_RELEASE_MINUTES * 60),
   IDLE_WARNING: describeSeconds(IDLE_WARNING_MINUTES * 60),
   MIN_EDIT_VERSION: MIN_EDIT_APP_VERSION,
+  INSTALLERS_KEPT: String(INSTALLERS_KEPT),
+  CLEANUP_DAYS: `${CLAIM_CLEANUP_DAYS} days`,
 };
 
 export const HELP_BLOCKS = ['ROLES', 'PERMISSION_MATRIX'] as const;

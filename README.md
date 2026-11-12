@@ -78,14 +78,19 @@ npm run package
 1. `cd epl-tool` and `npm version X.Y.Z --no-git-tag-version`; commit.
 2. Create an annotated tag whose message is the release notes: `git tag -a vX.Y.Z -F notes.txt`
 3. `git push origin main vX.Y.Z`
+4. When the GitHub Release is published, download its setup and, in EPL Tool, go to **Settings → Shared database → Publish an
+   installer…** (admins). The setup is copied to `Installer/` next to the shared database, and everybody with an older
+   version gets an **Install update** banner (from v0.8).
 
-The tag triggers the Windows build and publishes a GitHub Release with `EPL Tool-X.Y.Z Setup.exe` and the ZIP attached. Share the release page link with users: https://github.com/dmitralk/EPL-Tool/releases
+The tag triggers the Windows build and publishes a GitHub Release with `EPL Tool-X.Y.Z Setup.exe` and the ZIP attached. Release page: https://github.com/dmitralk/EPL-Tool/releases
 
 ---
 
 ## First-time setup
 
-1. Launch the app
+1. Install EPL Tool: run the setup from the `Installer/` folder next to the shared database (or from the release page). No
+   admin rights are needed; if Windows shows *Windows protected your PC*, click *More info → Run anyway* (the setup is not
+   signed)
 2. Click **Connect to shared database** and select the database file in the SharePoint folder synced to your PC (or **Open a
    local database** for a test database that is not shared). Next time the app reconnects by itself
 3. The first time a database is used with v0.6 or later, the first admin is created: with a local database, the person
@@ -93,7 +98,8 @@ The tag triggers the Windows build and publishes a GitHub Release with `EPL Tool
    adds the other people in **Settings → Users** (by company email, with a role) and gives them access to the SharePoint
    folder separately (Edit for Admins and Users, Read for Viewers)
 4. If exports show no logo, an admin goes to **Settings → Company Logo** and selects the logo image (PNG, JPEG or GIF, under 1 MB). It is stored inside the database, so exports made on any computer show it — this only needs to be done once (logos chosen with older versions were only linked to a file on one computer and must be selected again)
-5. The app is ready to use
+5. The app is ready to use. Admins: the steps for each new colleague and for going live are in **Guides & Help → Onboarding a
+   new user**
 
 The original one-off Excel import (`All_Prices.xlsx`) has been removed. A wizard for uploading historical price lists for existing customers and products is planned (see [docs/dev-plan.md](docs/dev-plan.md)).
 
@@ -110,8 +116,8 @@ The original one-off Excel import (`All_Prices.xlsx`) has been removed. A wizard
 | **Analysis** | Every price list line vs the Standard EPL (USD, EUR, or All currencies via FX); choose columns; export to Excel |
 | **Products** | Add, edit, or delete products (admins) |
 | **Standard EPL** | Versioned standard prices (USD + EUR): draft → publish (admins), compare versions; packaging charges; export / email |
-| **Guides & Help** | Documentation and how-to guides: shared database, editing, roles and permissions, pricing modes, wizards, emails, FX rates, activity log, backups, conflict copies, what's new (sidebar, above *Change Database*) |
-| **Settings** | Database, users (admins), activity log, backups, conflict copies, logo, PBP emails, units, packaging, currencies, hidden customers |
+| **Guides & Help** | Documentation and how-to guides: getting started, installing, shared database, editing, rules of use, roles and permissions, pricing modes, wizards, emails, FX rates, activity log, backups, conflict copies, onboarding (admins), FAQ, what's new (sidebar, above *Change Database*) |
+| **Settings** | Shared database (who is editing, Force release, installer), users (admins), activity log, backups, conflict copies, logo, PBP emails, units, packaging, currencies, hidden customers |
 
 Customer pickers everywhere work like Power BI slicers: click the dropdown, type part of the name or SAP code, tick one or several customers.
 
@@ -173,6 +179,12 @@ The database is a single `.db` file. To switch databases, use **Change Database*
   `EPL-Conflicts/`, and **Settings → Conflict copies** re-applies its price lists and lists what else was done in it. Once
   data is published with v0.8, v0.7 apps can only read it. Details: **Guides & Help → Shared database / Editing the shared
   database / Conflict copies** and [docs/multi-user-study.md](docs/multi-user-study.md).
+- **Settings → Shared database** (v0.8): who is editing, every editing session in `EPL-EditSlot/`, the last publish, the
+  version needed to edit and the one running. Admins can **Force release** a session (a release record in `EPL-EditSlot/`;
+  the editor's app gives up at its next check and keeps unpublished work in `EPL-Conflicts/`; the release is added to the
+  activity log by the next publish) and **Publish an installer…** into `Installer/` (with `latest.json`; the two newest
+  setups are kept). Older apps then show an **Install update** banner, which copies the setup to the PC, checks it, starts it
+  and closes EPL Tool (publishing first when editing).
 - **Local database** (*Open a local database*): opened directly, as before v0.7 — for test databases. A database that has
   been published as shared (it has a `.manifest.json` next to it) can't be opened this way.
 

@@ -94,7 +94,7 @@ dialog, FX popover, import wizard). It is written for users; the files in `docs/
 |---|---|
 | v0.6 | Getting started & your access · Roles & permissions · Pricing management modes · Creating price lists (single / mass) · Customers & New Customer · Emails tab & PBP emails · Analysis & FX rates (session vs default) · Activity log · Backups · *What's new* |
 | v0.7 | Shared database: read mode, *data of …* status, refresh, offline copy, "newer data still syncing", updating the app, editing for admins and conflicts — **written 9 Nov 2026** (topic *Shared database*) |
-| v0.8 | Editing: *Start editing*, waiting for the slot, auto-publish, **timeouts**, take-over, crash recovery, conflicts and *Re-apply my price lists* — **written 10 Nov 2026** (topics *Editing the shared database* and *Conflict copies*; *Shared database* rewritten for v0.8, incl. the rules of use) · Onboarding a new user (admins, incl. SharePoint permissions) · Rules of use · FAQ / troubleshooting (OneDrive, SmartScreen) — Phase E |
+| v0.8 | Editing: *Start editing*, waiting for the slot, auto-publish, **timeouts**, take-over, crash recovery, conflicts and *Re-apply my price lists* — **written 10 Nov 2026** (topics *Editing the shared database* and *Conflict copies*; *Shared database* rewritten for v0.8) · **written 12 Nov 2026 (Phase E):** *Installing EPL Tool & first start* · *Rules of use* (own topic) · *Onboarding a new user* (admins, incl. SharePoint permissions, publishing a setup and going live) · *FAQ & troubleshooting* (OneDrive, SmartScreen, notifications, Outlook, updates) · the card, *Force release* and *Updates* in *Shared database* |
 | v0.8.1 | Historical import: template, validation messages, what is never created |
 
 **Effort:** 0.5 d to build the Help screen, then about 0.25 d of writing per release (included in the phase estimates).
@@ -709,11 +709,20 @@ start; *"Preparing the update…"*, then *"The setup is starting: EPL Tool close
 isolated dev instance (update banner, card as admin, Force release confirmation and result, Install update refused in a dev
 run, required update, card as a User via *Preview as…*); unit tests: 80.
 
+Step 4 (Help, docs) done 12 Nov 2026 — new topics *Installing EPL Tool & first start* (`14-installing.md`), *Rules of use*
+(`15-rules-of-use.md`, moved out of *Shared database*, which links to it), *Onboarding a new user* (`16-onboarding.md`:
+per colleague incl. the checklist to send, publishing a setup, going live = §6) and *FAQ & troubleshooting* (`17-faq.md`);
+*Shared database* gains *Settings → Shared database*, *Force release (admins)*, *Updates* and `Installer` in the folder
+table; *Editing* and *Activity log* mention force releases; *Getting started* links the new topics. New Help values
+`INSTALLERS_KEPT` and `CLEANUP_DAYS` (from `shared/sync.ts`). The setup screen says *Admins and Users click Start editing*
+(was v0.7 wording). README: first-time setup (install from `Installer/`), release procedure step 4 (publish the setup with
+the card), the card and updates. *What's new* v0.8.0 final.
+
 - [x] **Settings → Shared database** card: current editor, last publish, generation, and *Force release* for admins.
 - [ ] **Updates:**
   - [x] An `Installer/` folder on SharePoint with `latest.json`; the app shows an update banner.
   - [ ] The release procedure gains a step: copy the installer to SharePoint.
-- [ ] **Help:** onboarding, rules of use, FAQ / troubleshooting. README and CLAUDE.md.
+- [x] **Help:** onboarding, rules of use, FAQ / troubleshooting. README and CLAUDE.md.
 - [ ] **Go-live** (§6) and a pilot with one colleague before everyone else.
 
 ### Phase F — Historical price-list import (2–3 d) → release v0.8.1
@@ -809,6 +818,6 @@ All decisions are recorded (the last two on 5 Nov 2026):
 with a colleague (separate SharePoint test folder with a copy of the database). Steps 1 (slot core), 2 (idle release,
 waiting, notifications), 3 (recovery with the slot + rescue tool), 4 (screens) and 5 (Help editing topics, README, draft
 *What's new*) are done (10 Nov 2026). Phase E: kickoff decisions and technical design approved 10 Nov 2026; step 1 (Force
-release) and 2 (installer folder + updates) done 10 Nov 2026, step 3 (screens) 12 Nov 2026; next step 4 (Help, docs) →
-v0.8.0. Phases A and B were
+release) and 2 (installer folder + updates) done 10 Nov 2026, steps 3 (screens) and 4 (Help, docs) 12 Nov 2026; next:
+release v0.8.0. Phases A and B were
 released as **v0.6.1** on 6 Nov 2026 (v0.6.0 was not released separately); Phase C as **v0.7.0** on 9 Nov 2026.

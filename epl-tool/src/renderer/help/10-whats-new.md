@@ -1,6 +1,6 @@
 # What's new
 
-## v0.8.0 — Shared editing
+## v0.8.0 — Shared editing (12 Nov 2026)
 
 Several people can now make changes to the shared database, one at a time. See
 [Editing the shared database](help:editing).
@@ -18,6 +18,13 @@ Several people can now make changes to the shared database, one at a time. See
   price lists** and see what else was done in it; admins archive the reviewed copies. See
   [Conflict copies](help:conflict-copies).
 - **Windows notifications** when the edit slot is free, when editing ended, and when changes could not be published.
+- **Settings → Shared database:** who is editing, every editing session, the last publish, the version needed to edit
+  and the version on your PC. Admins can **Force release** a session that keeps the slot (for example a dialog left open
+  on an unattended PC); its unpublished changes are kept as a conflict copy. See [Shared database](help:shared-database).
+- **Updates from the shared folder:** admins publish a new setup with **Publish an installer…**; everybody else gets a
+  banner with **Install update** (publishes your changes first, starts the setup and closes EPL Tool).
+- **New guides:** [Installing EPL Tool & first start](help:installing), [Rules of use](help:rules-of-use),
+  [Onboarding a new user](help:onboarding) (admins, incl. going live) and [FAQ & troubleshooting](help:faq).
 - **Update needed to edit:** once someone has published with this version, EPL Tool v0.7 can only read the data; install
   version {{MIN_EDIT_VERSION}} or later to make changes.
 
