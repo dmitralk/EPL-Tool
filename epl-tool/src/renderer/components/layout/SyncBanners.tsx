@@ -60,9 +60,23 @@ export function SyncBanners() {
   const act = useSyncActions();
   const flow = useEditFlow();
   const [confirmDiscard, setConfirmDiscard] = useState(false);
+  const [installStarted, setInstallStarted] = useState(false);
   if (!status || status.mode !== 'shared') return null;
-  const working = !!act.working || flow.running;
+  const working = !!act.working || flow.running || installStarted;
   const edit = status.edit;
+
+  // Update banner (Phase E): Install update finishes editing first (publishing the changes), then the setup starts and
+  // EPL Tool closes.
+  const updateLine = (version: string) => installStarted ? 'The setup is starting: EPL Tool closes now.'
+    : act.working === 'install' ? 'Preparing the update…'
+    : `EPL Tool ${version} is available in the Installer folder next to the shared database.` +
+      (edit ? ' Install update publishes your changes first.' : '');
+  const updateButtons = <>
+    <BannerButton disabled={working} onClick={async () => { if (await act.installUpdate()) setInstallStarted(true); }}>
+      Install update
+    </BannerButton>
+    <BannerButton onClick={act.openInstallerFolder} disabled={working}>Open folder</BannerButton>
+  </>;
 
   return (
     <div>
@@ -178,10 +192,24 @@ export function SyncBanners() {
       )}
 
       {status.newerApp && (
-        <Banner tone="amber" icon={AlertTriangle}>
+        <Banner tone="amber" icon={AlertTriangle} actions={status.update && updateButtons}>
           This database was published by a newer version of EPL Tool. Update EPL Tool
           {status.newerApp.minAppVersion ? ` to ${status.newerApp.minAppVersion}` : ''} to make changes; you can still look
-          things up and export.
+          things up and export.{status.update && ` ${updateLine(status.update.version)}`}
+        </Banner>
+      )}
+
+      {status.update && !status.newerApp && (
+        <Banner tone="blue" icon={Download} actions={<>
+          {updateButtons}
+          {!status.update.required && (
+            <button onClick={act.dismissUpdate} disabled={working} title="Hide until EPL Tool is started again"
+              className="p-1 rounded hover:bg-white/60"><X size={14} /></button>
+          )}
+        </>}>
+          {updateLine(status.update.version)}{!installStarted && act.working !== 'install' && (
+            <> Published by {status.update.publishedBy ?? 'an admin'} at {formatWhen(status.update.publishedAt)}.</>
+          )}
         </Banner>
       )}
 

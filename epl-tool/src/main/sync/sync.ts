@@ -762,6 +762,7 @@ export async function getDetails(): Promise<SyncDetails | null> {
   return {
     dbPath: s.store.dbPath,
     folder: s.store.folder,
+    appVersion: app.getVersion(),
     localCopy: s.phase === 'edit' && edit ? edit.workFile : s.copy ? cacheFileFor(s.store.dbPath) : null,
     manifest: m ? {
       generation: m.generation, publishedBy: m.publishedBy, publishedAt: m.publishedAt, appVersion: m.appVersion,

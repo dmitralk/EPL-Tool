@@ -4,7 +4,6 @@ import { Activity, FileWarning, Plus, Trash2, Users } from 'lucide-react';
 import { api } from '../../lib/ipc';
 import { useCan } from '../../lib/auth';
 import { useSync } from '../../lib/syncState';
-import { statusLine } from '../../lib/sync';
 import { ipcErrorMessage } from '../../lib/utils';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
@@ -13,6 +12,7 @@ import { useToast } from '../../components/ui/toast';
 import { ConfirmDialog, Dialog } from '../../components/ui/dialog';
 import { BackupPanel } from '../../components/BackupPanel';
 import { AdminOnlyNote } from '../../components/LockBadge';
+import { SharedDatabaseCard } from './SharedDatabaseCard';
 import type { AdminEmail, LogoInfo, SelectLogoResult, Unit } from '../../../types';
 
 export function SettingsScreen() {
@@ -126,31 +126,26 @@ export function SettingsScreen() {
         </div>
       )}
 
-      {/* Database */}
-      <Card>
-        <CardHeader><CardTitle>Database</CardTitle></CardHeader>
-        <CardContent>
-          <div>
-            <Label>
-              {status?.mode === 'shared' ? 'Shared database (central file in the synced SharePoint folder)'
-                : status?.mode === 'local' ? 'Local database (opened directly, not shared)' : 'Current Database Path (this PC)'}
-            </Label>
-            <div className="text-sm text-gray-600 bg-gray-50 px-3 py-2 rounded-md border border-gray-200 font-mono break-all">
-              {dbPath ?? 'No database open'}
+      {/* Database: the Shared database card in shared mode, the file path otherwise */}
+      {status?.mode === 'shared' ? <SharedDatabaseCard /> : (
+        <Card>
+          <CardHeader><CardTitle>Database</CardTitle></CardHeader>
+          <CardContent>
+            <div>
+              <Label>
+                {status?.mode === 'local' ? 'Local database (opened directly, not shared)' : 'Current Database Path (this PC)'}
+              </Label>
+              <div className="text-sm text-gray-600 bg-gray-50 px-3 py-2 rounded-md border border-gray-200 font-mono break-all">
+                {dbPath ?? 'No database open'}
+              </div>
             </div>
-          </div>
-          {status?.mode === 'shared' && (
-            <p className="text-sm text-gray-600 mt-2">
-              {statusLine(status).text}{status.data && <> · generation {status.data.generation}</>}.{' '}
-              {status.phase === 'read' && 'You work on a copy on this PC; it is refreshed when someone publishes.'}
+            <p className="text-xs text-gray-400 mt-2">
+              To change the database, use "Change Database" in the sidebar.{' '}
+              <Link to="/help/shared-database" className="text-blue-600 hover:underline">About the shared database</Link>
             </p>
-          )}
-          <p className="text-xs text-gray-400 mt-2">
-            To change the database, use "Change Database" in the sidebar.{' '}
-            <Link to="/help/shared-database" className="text-blue-600 hover:underline">About the shared database</Link>
-          </p>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Users + Activity */}
       <div className="grid grid-cols-2 gap-5">
@@ -206,7 +201,7 @@ export function SettingsScreen() {
 
       {/* Backups */}
       {dbOpen && (
-        <Card>
+        <Card id="backups">
           <CardHeader>
             <div className="flex items-center justify-between">
               <CardTitle>Backups</CardTitle>

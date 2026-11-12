@@ -14,6 +14,7 @@ const AREAS: [string, string][] = [
   ['customer.', 'Customers'], ['price_list.', 'Price lists'], ['email.', 'Emails'], ['product.', 'Products'],
   ['epl.', 'Standard EPL'], ['packaging.', 'Packaging'], ['currency.', 'Currencies'], ['unit.', 'Units'],
   ['pbp_email.', 'PBP emails'], ['settings.', 'Settings'], ['fx.', 'FX rates'], ['user.', 'Users'], ['backup.', 'Backups'],
+  ['sync.', 'Shared database'],
 ];
 
 const SELECT = 'h-9 text-sm border border-gray-300 rounded-md px-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500';

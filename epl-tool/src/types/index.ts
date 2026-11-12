@@ -378,7 +378,8 @@ export interface SlotReleaseInfo {
 export interface SyncDetails {
   dbPath: string;                   // the central database
   folder: string;                   // the shared folder
-  localCopy: string | null;         // the copy open on this PC (read copy, or working copy while editing)
+  appVersion: string;               // the EPL Tool running on this PC
+  localCopy: string | null;          // the copy open on this PC (read copy, or working copy while editing)
   manifest: {
     generation: number;
     publishedBy: string | null;

@@ -2,8 +2,8 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import { api } from './ipc';
 import { useSync } from './syncState';
 import {
-  canBackup, canChangeCustomer, canChangeCustomerAccess, canCreateCustomer, canEditReferenceData, canHideCustomer,
-  canManageUsers, canRestoreCustomer, customerLockReason, isAdmin, isEditor, readOnlyMessage, type PermCustomer,
+  canBackup, canChangeCustomer, canChangeCustomerAccess, canCreateCustomer, canEditReferenceData, canForceRelease,
+  canHideCustomer, canManageUsers, canPublishInstaller, canRestoreCustomer, customerLockReason, isAdmin, isEditor, readOnlyMessage, type PermCustomer,
 } from '../../shared/permissions';
 import type { AuthState } from '../../types';
 
@@ -55,6 +55,9 @@ export function useCan() {
       manageUsers: w(canManageUsers(user)),
       backup: w(canBackup(user)),
       restoreCustomers: w(canRestoreCustomer(user)),
+      // Shared folder only (EPL-EditSlot/, Installer/), so also in read mode.
+      forceRelease: canForceRelease(user),
+      publishInstaller: canPublishInstaller(user),
       createCustomer: w(canCreateCustomer(user)),
       changeCustomer: (c: PermCustomer) => w(canChangeCustomer(user, c)),
       hideCustomer: (c: PermCustomer) => w(canHideCustomer(user, c)),

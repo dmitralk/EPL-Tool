@@ -693,9 +693,25 @@ goes to `%TEMP%\epl-tool-update\`, and EPL Tool closes 1.5 s after the setup was
 `phase-e.checks.ts`: 84 checks (sha256 check, required banner, pruning and the dev-run refusal broken on purpose once);
 unit tests: 78.
 
-- [ ] **Settings → Shared database** card: current editor, last publish, generation, and *Force release* for admins.
+Step 3 (screens) done 12 Nov 2026 — `screens/Settings/SharedDatabaseCard.tsx` replaces the *Database* card in shared mode
+(local mode unchanged): status, shared database, *Editing now*, last publish (generation, who, app version), *To edit*
+(minimum version + the version running on this PC — `SyncDetails.appVersion`), my copy, the editing sessions table (state
+badges, ended sessions greyed with *by …*, release records), *Installer* (published version; *Open folder*; admins:
+*Publish an installer…* → confirmation with the version found, the size and the version published now), buttons *Open
+shared folder*, *Backups* (scrolls to the card), *Conflict copies*; reloaded at every check. Admins: *Force release* on every
+open session that isn't theirs, confirmation with since / last change / last sign of life and what happens to the editor.
+`SyncBanners.tsx`: blue banner *"EPL Tool 0.8.1 is available…"* with [Install update] [Open folder] [×] (× = until the next
+start; *"Preparing the update…"*, then *"The setup is starting: EPL Tool closes now."*); when the update is required the amber
+*newer version* banner gets [Install update] [Open folder] and no ×. `useSyncActions()` gains `installUpdate`,
+`openInstallerFolder`, `dismissUpdate`. Activity: area filter *Shared database* (`sync.`). Choice within the design: a rule
+`canPublishInstaller` (admins) with its own matrix row *"Publish a new EPL Tool setup for everybody"*; `useCan()` offers
+`forceRelease` / `publishInstaller` without the writable gate (they don't write the database). Checked visually in the
+isolated dev instance (update banner, card as admin, Force release confirmation and result, Install update refused in a dev
+run, required update, card as a User via *Preview as…*); unit tests: 80.
+
+- [x] **Settings → Shared database** card: current editor, last publish, generation, and *Force release* for admins.
 - [ ] **Updates:**
-  - [ ] An `Installer/` folder on SharePoint with `latest.json`; the app shows an update banner.
+  - [x] An `Installer/` folder on SharePoint with `latest.json`; the app shows an update banner.
   - [ ] The release procedure gains a step: copy the installer to SharePoint.
 - [ ] **Help:** onboarding, rules of use, FAQ / troubleshooting. README and CLAUDE.md.
 - [ ] **Go-live** (§6) and a pilot with one colleague before everyone else.
@@ -793,5 +809,6 @@ All decisions are recorded (the last two on 5 Nov 2026):
 with a colleague (separate SharePoint test folder with a copy of the database). Steps 1 (slot core), 2 (idle release,
 waiting, notifications), 3 (recovery with the slot + rescue tool), 4 (screens) and 5 (Help editing topics, README, draft
 *What's new*) are done (10 Nov 2026). Phase E: kickoff decisions and technical design approved 10 Nov 2026; step 1 (Force
-release) and 2 (installer folder + updates) done, next step 3 (screens), then 4 (Help, docs) → v0.8.0. Phases A and B were
+release) and 2 (installer folder + updates) done 10 Nov 2026, step 3 (screens) 12 Nov 2026; next step 4 (Help, docs) →
+v0.8.0. Phases A and B were
 released as **v0.6.1** on 6 Nov 2026 (v0.6.0 was not released separately); Phase C as **v0.7.0** on 9 Nov 2026.

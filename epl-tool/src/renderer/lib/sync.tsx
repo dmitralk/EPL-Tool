@@ -183,5 +183,16 @@ export function useSyncActions() {
     stopWaiting: () => run('stop-waiting', async () => { await api.stopWaitingForSlot(); }),
     keepEditing: () => run('keep', async () => { await api.keepEditing(); }),
     dismissReleased: () => run('dismiss-released', async () => { await api.dismissSlotReleased(); }),
+    // Updates (Phase E): Install update copies the setup from Installer/, starts it and closes EPL Tool (true then).
+    installUpdate: () => run('install', async () => {
+      const r = await api.installUpdate() as { ok: true; version: string } | { ok: false; error: string };
+      if (!r.ok) toast(r.error, 'error');
+      return r.ok;
+    }),
+    openInstallerFolder: () => run('installer-folder', async () => {
+      const r = await api.openInstallerFolder() as { ok: true } | { ok: false; error: string };
+      if (!r.ok) toast(r.error, 'error');
+    }),
+    dismissUpdate: () => run('dismiss-update', async () => { await api.dismissUpdate(); }),
   };
 }

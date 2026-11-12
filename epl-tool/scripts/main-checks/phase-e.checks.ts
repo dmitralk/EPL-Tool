@@ -57,7 +57,8 @@ async function releaseChecks(tmp: string) {
       d.sessions[0].slotId === bClaim.slotId && d.sessions[0].user === 'Ben Admin' && d.sessions[0].machine === 'PC-B' &&
       d.sessions[0].state === 'editing' && d.sessions[0].holder && !d.sessions[0].mine && d.sessions[0].endedBy === null &&
       d.sessions[0].appVersion === MIN_EDIT_APP_VERSION && d.releases.length === 0, d);
-    check('the card names the shared database and its folder', d.dbPath === c.central && d.folder === c.centralDir, d);
+    check('the card names the shared database, its folder and the running EPL Tool',
+      d.dbPath === c.central && d.folder === c.centralDir && d.appVersion === MIN_EDIT_APP_VERSION, d);
     const db = await B.invoke('sync:details');
     check("on Ben's PC the session is his own", db.sessions[0]?.mine === true && db.sessions[0].holder, db.sessions);
     const dv = await V.invoke('sync:details');

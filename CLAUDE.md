@@ -4,7 +4,7 @@ This file is read automatically by Claude Code at conversation start. It gives f
 
 ---
 
-## Current state & next session (updated 10 Nov 2026: v0.7.0 released; Phase D built; Phase E steps 1–2 done)
+## Current state & next session (updated 12 Nov 2026: v0.7.0 released; Phase D built; Phase E steps 1–3 done)
 
 **Released:** **v0.7.0** (9 Nov 2026) = dev-plan Phase C (read copy + publish): https://github.com/dmitralk/EPL-Tool/releases/tag/v0.7.0.
 Before: **v0.6.1** (6 Nov 2026) = Phase A (foundations) + Phase B (access rights + Guides & Help).
@@ -28,26 +28,31 @@ all on `main` and **not pushed** (`origin/main` is still the v0.7.0 release comm
 **Phase E (rollout) → v0.8.0 — in progress.** Kickoff decisions (9 points, 10 Nov 2026: all proposals accepted except the
 release order — v0.8.0 is tagged right after Phase E, the two-PC test runs on the release, fixes as v0.8.x) and the
 **approved technical design** (with: two installers kept, Install update refused in a dev run, force releases recorded in
-the Activity log by the next publish) are in the dev-plan's Phase E section. Build order, one commit each, asking first:
+the Activity log by the next publish) are in the dev-plan's Phase E section. Build order, one commit each, asking first (also
+on `main`, **not pushed**):
 1. `1c7c6fc` Force release: release records `EPL-EditSlot/<slotId>.release.json`, `forceRelease` /
    `getDetails` in `sync.ts`, `logReleases` at publish, `sync:force-release` (admin) + `sync:details` (viewer),
    `canForceRelease` + matrix row; `phase-e.checks.ts` (46)
-2. the latest commit on `main` — installer folder + updates: `Installer/latest.json`, `installerVersion()` /
+2. `aabf08c` installer folder + updates: `Installer/latest.json`, `installerVersion()` /
    `INSTALLERS_KEPT` in `shared/sync.ts`, `CentralStore.readInstallerInfo / publishInstaller / copyInstaller`,
    `SyncStatus.update` (`required`, dismissed until restart), `main/sync/updates.ts` (`sync:pick-installer`,
    `sync:publish-installer`, `sync:install-update`, `sync:open-installer-folder`, `sync:dismiss-update`); the Electron stub
    records `shell.openPath` / `app.quit` and plays an installed app (`Pc.stub({ isPackaged: true })`); phase-e 84
-3. **next:** screens: Settings → Shared database card (replaces the *Database* card in shared mode; sessions, releases, last
-   publish, installer, Force release with confirmation, *Publish an installer…* with confirmation of the version found),
-   update banner ([Install update] [Open folder] [×]; [×] hidden when `required`; the newer-app banner gets [Install
-   update] too); also add `['sync.', 'Shared database']` to the Activity screen's `AREAS` so publishes and force releases
-   can be filtered
-4. Help (Installing & first start, Rules of use moved out of *Shared database*, Onboarding a new user incl. go-live §6, FAQ
-   & troubleshooting; Force release and updates in *Shared database*), docs (README release procedure: publish the setup
+3. screens (the commit after `aabf08c`): `screens/Settings/SharedDatabaseCard.tsx` (replaces the *Database* card in shared
+   mode: status, *Editing now*, last publish, *To edit* + this PC's version (`SyncDetails.appVersion`), my copy, sessions
+   table + release records, Installer, Open shared folder / Backups / Conflict copies; admins: *Force release* with
+   confirmation, *Publish an installer…* with confirmation of the version found), update banner in `SyncBanners.tsx`
+   ([Install update] [Open folder] [×]; [×] hidden when `required`, then the amber newer-app banner carries the buttons),
+   `useSyncActions().installUpdate / openInstallerFolder / dismissUpdate`, Activity area *Shared database* (`sync.`),
+   `canPublishInstaller` + matrix row (`useCan().forceRelease` / `.publishInstaller`, not gated by `writable`); checked
+   visually in the isolated dev instance
+4. **next:** Help (Installing & first start, Rules of use moved out of *Shared database*, Onboarding a new user incl. go-live §6, FAQ
+   & troubleshooting; Force release, the card and updates in *Shared database*), docs (README release procedure: publish the setup
    with the card after the GitHub release), final *What's new* → release v0.8.0 (ask before tag/push)
 
 **Next session:**
-- Phase E step 3 (see above), then 4.
+- Phase E step 4 (see above), then the release v0.8.0 (`npm version 0.8.0 --no-git-tag-version`, commit, BOM-free
+  annotated tag, push `main` + tag — ask first), then publish the setup into the real `Installer/` with the card.
 - **Two-PC test of v0.7.0** with a colleague (separate SharePoint test folder) — results not reported yet. `main` now holds
   unreleased Phase D work, so a v0.7.x fix would go on a branch from tag `v0.7.0` (tag v0.7.x there, then bring the fix
   into `main`).
@@ -79,7 +84,7 @@ the Activity log by the next publish) are in the dev-plan's Phase E section. Bui
 variables in the same PowerShell call: the one-liner is in `docs/local/corporate-network.md`, local only — see *Corporate
 network* below):
 `npx tsc --noEmit -p .` (exactly 4 known errors: `export.ts` ×2, `Step2ConfigurePricing.tsx`, `Step3ReviewProducts.tsx`),
-`npx eslint <changed files>`, `npm test` (78 tests), `npm run test:main` (main-process checks, see below), and packaging into a temp folder (`out/` is often locked by OneDrive):
+`npx eslint <changed files>`, `npm test` (80 tests), `npm run test:main` (main-process checks, see below), and packaging into a temp folder (`out/` is often locked by OneDrive):
 `node -e "require('@electron-forge/core').api.package({dir:process.cwd(),outDir:process.env.TEMP+'\\epl-pkg-check',interactive:false})"`,
 then delete that folder. Release procedure: see *GitHub Actions* below (`npm version X.Y.Z --no-git-tag-version`, commit, BOM-free
 annotated tag, push `main` + tag; CI runs `npm test`, builds and publishes).
@@ -258,7 +263,7 @@ annotated tag, push `main` + tag; CI runs `npm test`, builds and publishes).
 │   │           ├── Help/HelpScreen.tsx         ← routes /help, /help/:topic: topic list + search, "Your access" block, generated roles/matrix
 │   │           ├── Dashboard.tsx               ← stats cards, recent price lists table; "+ New Price List" routes to /price-lists/new (gateway)
 │   │           ├── Settings/
-│   │           │   ├── SettingsScreen.tsx      ← DB path, Users + Activity links, Backups, logo, PBP Emails (admins add/edit/remove), units, packaging/currencies/hidden customers links; admin-only cards locked for others
+│   │           │   ├── SettingsScreen.tsx      ← DB path (local) or the Shared database card (SharedDatabaseCard.tsx: sessions, Force release, Installer), Users + Activity links, Backups, logo, PBP Emails (admins add/edit/remove), units, packaging/currencies/hidden customers links; admin-only cards locked for others
 │   │           │   ├── UsersScreen.tsx         ← route /settings/users (admins): add/edit/deactivate, SharePoint reminder + Open shared folder, customers without active manager, Preview as…
 │   │           │   ├── ActivityScreen.tsx      ← route /settings/activity (everybody): filters (user, area/action, customer, dates, text), details, Excel export
 │   │           │   ├── ConflictCopiesScreen.tsx ← route /settings/conflicts (shared DB): conflict copies list; ?file= review (re-apply price lists, activity, differences), archive (admins)
@@ -771,7 +776,7 @@ npm install          # install dependencies
 npm start            # dev mode with Vite HMR (DevTools auto-open in dev)
 npm run package      # build unpackaged app (dev/testing only, no installer); prepackage prepares better-sqlite3 for Electron
 npm run make         # build distributable installers (Squirrel .exe + ZIP for Windows); premake does the same
-npm test             # unit tests (node:test via tsx): src/**/*.test.ts — shared/permissions.test.ts, shared/sync.test.ts, main/sync/editSlot.test.ts, renderer/help/help.test.ts (78 tests); also run in CI
+npm test             # unit tests (node:test via tsx): src/**/*.test.ts — shared/permissions.test.ts, shared/sync.test.ts, main/sync/editSlot.test.ts, renderer/help/help.test.ts (80 tests); also run in CI
 npm run test:main    # main-process checks (scripts/main-checks/*.checks.ts) on temp copies of the sample DBs; local only
 ```
 
@@ -839,6 +844,6 @@ The connection is kept only in the local **`settings.json`**: `connection: { mod
 - **PBP emails in drafts**: the customer page displays PBP copy/common from `admin_emails` (Settings), but drafts use each customer's own `email_pbp_copy` / `email_pbp_common` columns. Changing an admin email in Settings does not change existing customers' drafts. Candidate fix: build recipients from `admin_emails` in `export:open-mail-bulk`.
 - **Data files in the repo**: `EPL-Database.db`, `EPL-Database BackUp.db`, `All_Prices.xlsx`, `All_PricesTest.xlsx` are tracked in git and contain customer names, emails and prices. If the repo is public, make it private or untrack them (history keeps old copies unless rewritten).
 - **Pre-existing type/lint errors**: see Build commands → Type check / lint.
-- **Multi-user access + user access rights (Phase C released; edit slot built, Phase E next)**: `docs/multi-user-study.md` (local read copy + single "edit slot" via claim files next to the DB on SharePoint + atomic publish with a generation check), `docs/access-rights-study.md` (Windows-account identity, Admin/User/Viewer roles, per-customer pricing mode Open / Managed by PBP / Managed by named users, server-side IPC guard, audit log) and `docs/dev-plan.md` (phases A–F, releases v0.6–v0.8.1, in-app Help plan, historical price-list import spec). Decisions are recorded in each study. **Phase A (Foundations) and Phase B (access rights + Guides & Help) done and released as v0.6.1 on 6 Nov 2026** (permission matrix checked by the user with *Preview as…*). **Phase C (read copy + publish) released as v0.7.0 on 9 Nov 2026** (two-PC test with a colleague running on the release); in v0.7 only admins edit the shared database, and two admins editing at once is caught by the generation check. **Phase D (edit slot) built on `main`, two-PC test pending** (steps 1–5 done: claim files, Users may start editing, v0.7 apps read-only after a v0.8 publish via `minAppVersion` 0.8.0, idle release after 30 min, waiting with notifications, Resume editing, rescue tool, the screens, the Help editing topics); Phase E next. Heads-up for Migration 7: the bootstrap admin is whoever's Windows identity first opens a database with v0.6.1 (on the Windows dev PC that is the account whose UPN is one of the named admins); the other admins are then added in Settings → Users. With v0.7, a shared database without users gets its first admin at *Start editing*.
+- **Multi-user access + user access rights (Phase C released; edit slot built, Phase E next)**: `docs/multi-user-study.md` (local read copy + single "edit slot" via claim files next to the DB on SharePoint + atomic publish with a generation check), `docs/access-rights-study.md` (Windows-account identity, Admin/User/Viewer roles, per-customer pricing mode Open / Managed by PBP / Managed by named users, server-side IPC guard, audit log) and `docs/dev-plan.md` (phases A–F, releases v0.6–v0.8.1, in-app Help plan, historical price-list import spec). Decisions are recorded in each study. **Phase A (Foundations) and Phase B (access rights + Guides & Help) done and released as v0.6.1 on 6 Nov 2026** (permission matrix checked by the user with *Preview as…*). **Phase C (read copy + publish) released as v0.7.0 on 9 Nov 2026** (two-PC test with a colleague running on the release); in v0.7 only admins edit the shared database, and two admins editing at once is caught by the generation check. **Phase D (edit slot) built on `main`, two-PC test pending** (steps 1–5 done: claim files, Users may start editing, v0.7 apps read-only after a v0.8 publish via `minAppVersion` 0.8.0, idle release after 30 min, waiting with notifications, Resume editing, rescue tool, the screens, the Help editing topics); Phase E steps 1–3 done (Force release, Installer/ + update banner, Shared database card), step 4 (Help) + release v0.8.0 next. Heads-up for Migration 7: the bootstrap admin is whoever's Windows identity first opens a database with v0.6.1 (on the Windows dev PC that is the account whose UPN is one of the named admins); the other admins are then added in Settings → Users. With v0.7, a shared database without users gets its first admin at *Start editing*.
 - **Open product questions (not yet decided by the user)**: (1) mass wizard Step 1 customer dropdown currently only *filters* the table — the user may prefer that ticking in the dropdown also selects rows for repricing; (2) after deleting a price list, the customer falls back to the remaining list with the latest *effective* date (not the most recently *created*) — confirm if this is the desired rule.
 - **AI features (study only, nothing implemented; 9 Nov 2026)**: using the company's per-user LLM service from EPL Tool was studied and tested end to end on the Windows dev PC (browser sign-in, quota, model list, a model answer). Findings, connection details, integration design (sign-in in the main process, `net.fetch`, encrypted token cache, no AI write path), use cases, open questions and a re-runnable test script are in **`docs/local/ai-study.md`** + `docs/local/llmhub-test/`. That folder is **local only**: excluded through `.git/info/exclude` because this GitHub repo is public and the study contains internal company details — it exists only in the SharePoint-synced working folder, not in clones. Don't copy those details (hosts, IDs, internal links) into tracked files or code before the open questions in the study (incl. repo visibility) are settled.

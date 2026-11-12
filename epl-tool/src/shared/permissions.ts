@@ -124,6 +124,11 @@ export function canForceRelease(u: U): boolean {
   return isAdmin(u);
 }
 
+// Updates (Phase E): admins copy a new EPL Tool setup to Installer/ next to the shared database; everybody can install it.
+export function canPublishInstaller(u: U): boolean {
+  return isAdmin(u);
+}
+
 // Why the open copy of a shared database can't be changed: read mode, offline copy, or a newer app is needed.
 export type WriteBlock = 'read' | 'offline' | 'update';
 
@@ -249,6 +254,7 @@ export const PERMISSION_MATRIX: readonly MatrixRow[] = [
   { action: 'Back up now, restore a backup', cells: global(canBackup) },
   { action: 'Start editing the shared database (changes are then published for everybody)', cells: global(canStartEditing) },
   { action: 'Force release the edit slot (Settings → Shared database)', cells: global(canForceRelease) },
+  { action: 'Publish a new EPL Tool setup for everybody (Settings → Shared database)', cells: global(canPublishInstaller) },
   { action: 'Review conflict copies (unpublished work kept in EPL-Conflicts)', cells: global(canReviewConflictCopies) },
   { action: 'Re-apply price lists from a conflict copy', cells: perCustomer(canReapplyPriceLists) },
   { action: 'Archive a reviewed conflict copy', cells: global(canArchiveConflictCopies) },
